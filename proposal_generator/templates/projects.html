@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}실적 DB – 정량적 제안서 시스템{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0"><i class="bi bi-folder me-2"></i>실적 DB</h2>
+  <button class="btn btn-primary" onclick="openAddModal()">
+    <i class="bi bi-plus-circle me-1"></i>실적 추가
+  </button>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead class="table-dark">
+      <tr>
+        <th>사업명</th>
+        <th>발주처</th>
+        <th class="text-end">계약금액 (VAT포함)</th>
+        <th>계약일</th>
+        <th>완료일</th>
+        <th class="text-center">액션</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in projects %}
+      <tr data-id="{{ p.id }}">
+        <td class="fw-semibold">{{ p.name }}</td>
+        <td>{{ p.client or '–' }}</td>
+        <td class="text-end">{{ '{:,}'.format(p.amount) }}원</td>
+        <td>{{ p.contract_date or '–' }}</td>
+        <td>{{ p.completion_date or '–' }}</td>
+        <td class="text-center">
+          <button class="btn btn-sm btn-outline-secondary me-1" onclick='openEditModal({{ p | tojson }})'>수정</button>
+          <button class="btn btn-sm btn-outline-danger" onclick="deleteProject({{ p.id }}, '{{ p.name }}')">삭제</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if not projects %}
+<p class="text-muted text-center py-4">등록된 실적이 없습니다.</p>
+{% endif %}
+
+<!-- Add/Edit Modal -->
+<div class="modal fade" id="projModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="projModalTitle">실적 추가</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="proj-id">
+        <div class="mb-3">
+          <label class="form-label">사업명 <span class="text-danger">*</span></label>
+          <input type="text" id="proj-name" class="form-control" required>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label">발주처</label>
+            <input type="text" id="proj-client" class="form-control">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">계약금액 (VAT포함, 원)</label>
+            <input type="number" id="proj-amount" class="form-control" value="0">
+          </div>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">계약일</label>
+            <input type="text" id="proj-contract-date" class="form-control" placeholder="2024-01-01">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">완료일</label>
+            <input type="text" id="proj-completion-date" class="form-control" placeholder="2024-12-31">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" onclick="saveProject()">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function openAddModal() {
+  document.getElementById('projModalTitle').textContent = '실적 추가';
+  ['proj-id','proj-name','proj-client','proj-contract-date','proj-completion-date'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('proj-amount').value = 0;
+  new bootstrap.Modal(document.getElementById('projModal')).show();
+}
+
+function openEditModal(p) {
+  document.getElementById('projModalTitle').textContent = '실적 수정';
+  document.getElementById('proj-id').value = p.id;
+  document.getElementById('proj-name').value = p.name;
+  document.getElementById('proj-client').value = p.client || '';
+  document.getElementById('proj-amount').value = p.amount || 0;
+  document.getElementById('proj-contract-date').value = p.contract_date || '';
+  document.getElementById('proj-completion-date').value = p.completion_date || '';
+  new bootstrap.Modal(document.getElementById('projModal')).show();
+}
+
+async function saveProject() {
+  const id = document.getElementById('proj-id').value;
+  const body = {
+    name: document.getElementById('proj-name').value,
+    client: document.getElementById('proj-client').value,
+    amount: parseInt(document.getElementById('proj-amount').value) || 0,
+    contract_date: document.getElementById('proj-contract-date').value,
+    completion_date: document.getElementById('proj-completion-date').value,
+    certificate_path: '',
+  };
+  const url = id ? `/api/projects/${id}` : '/api/projects';
+  const method = id ? 'PUT' : 'POST';
+  const res = await fetch(url, {method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (res.ok) { location.reload(); }
+  else { alert('저장 실패: ' + (await res.json()).detail); }
+}
+
+async function deleteProject(id, name) {
+  if (!confirm(`"${name}" 실적을 삭제하시겠습니까?`)) return;
+  const res = await fetch(`/api/projects/${id}`, {method: 'DELETE'});
+  if (res.ok) { location.reload(); }
+  else { alert('삭제 실패'); }
+}
+</script>
+{% endblock %}

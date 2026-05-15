@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}기술자 DB – 정량적 제안서 시스템{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0"><i class="bi bi-people me-2"></i>기술자 DB</h2>
+  <div>
+    <button class="btn btn-outline-secondary me-2" data-bs-toggle="modal" data-bs-target="#csvImportModal">
+      <i class="bi bi-file-earmark-spreadsheet me-1"></i>CSV 일괄 가져오기
+    </button>
+    <button class="btn btn-primary" onclick="openAddModal()">
+      <i class="bi bi-plus-circle me-1"></i>기술자 추가
+    </button>
+  </div>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-hover align-middle" id="tech-table">
+    <thead class="table-dark">
+      <tr>
+        <th>이름</th>
+        <th>자격기준</th>
+        <th>등급</th>
+        <th>입사일</th>
+        <th>상태</th>
+        <th class="text-center">액션</th>
+      </tr>
+    </thead>
+    <tbody id="tech-tbody">
+      {% for t in technicians %}
+      <tr data-id="{{ t.id }}">
+        <td class="fw-semibold">{{ t.name }}</td>
+        <td>{{ t.qualification }}</td>
+        <td><span class="badge grade-badge-{{ t.grade }}">{{ t.grade }}</span></td>
+        <td>{{ t.hire_date or '–' }}</td>
+        <td>
+          {% if t.is_active %}
+          <span class="badge bg-success">재직중</span>
+          {% else %}
+          <span class="badge bg-secondary">비활성</span>
+          {% endif %}
+        </td>
+        <td class="text-center">
+          <button class="btn btn-sm btn-outline-secondary me-1" onclick='openEditModal({{ t | tojson }})'>수정</button>
+          <button class="btn btn-sm btn-outline-danger" onclick="deleteTech({{ t.id }}, '{{ t.name }}')">삭제</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if not technicians %}
+<p class="text-muted text-center py-4">등록된 기술자가 없습니다.</p>
+{% endif %}
+
+<!-- Add/Edit Modal -->
+<div class="modal fade" id="techModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="techModalTitle">기술자 추가</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="tech-id">
+        <div class="mb-3">
+          <label class="form-label">이름 <span class="text-danger">*</span></label>
+          <input type="text" id="tech-name" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">자격기준</label>
+          <input type="text" id="tech-qual" class="form-control" value="정보통신기술자">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">등급 <span class="text-danger">*</span></label>
+          <select id="tech-grade" class="form-select">
+            <option value="특급">특급</option>
+            <option value="고급">고급</option>
+            <option value="중급">중급</option>
+            <option value="초급">초급</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">입사일</label>
+          <input type="text" id="tech-hire-date" class="form-control" placeholder="2024.01.01">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" onclick="saveTech()">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CSV Import Modal -->
+<div class="modal fade" id="csvImportModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">CSV 일괄 가져오기</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">CSV 형식: <code>이름,자격기준,등급,입사일</code></p>
+        <p class="text-muted small">예: <code>홍길동,정보통신기술자,특급,2020.01.01</code></p>
+        <textarea id="csv-text" class="form-control font-monospace" rows="10"
+                  placeholder="이름,자격기준,등급,입사일&#10;홍길동,정보통신기술자,특급,2020.01.01"></textarea>
+        <div id="csv-result" class="mt-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" onclick="importCsv()">가져오기</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const GRADE_WEIGHTS = {'특급': 4.0, '고급': 3.0, '중급': 2.0, '초급': 1.0};
+
+function openAddModal() {
+  document.getElementById('techModalTitle').textContent = '기술자 추가';
+  document.getElementById('tech-id').value = '';
+  document.getElementById('tech-name').value = '';
+  document.getElementById('tech-qual').value = '정보통신기술자';
+  document.getElementById('tech-grade').value = '특급';
+  document.getElementById('tech-hire-date').value = '';
+  new bootstrap.Modal(document.getElementById('techModal')).show();
+}
+
+function openEditModal(t) {
+  document.getElementById('techModalTitle').textContent = '기술자 수정';
+  document.getElementById('tech-id').value = t.id;
+  document.getElementById('tech-name').value = t.name;
+  document.getElementById('tech-qual').value = t.qualification;
+  document.getElementById('tech-grade').value = t.grade;
+  document.getElementById('tech-hire-date').value = t.hire_date || '';
+  new bootstrap.Modal(document.getElementById('techModal')).show();
+}
+
+async function saveTech() {
+  const id = document.getElementById('tech-id').value;
+  const body = {
+    name: document.getElementById('tech-name').value,
+    qualification: document.getElementById('tech-qual').value,
+    grade: document.getElementById('tech-grade').value,
+    hire_date: document.getElementById('tech-hire-date').value,
+  };
+  const url = id ? `/api/technicians/${id}` : '/api/technicians';
+  const method = id ? 'PUT' : 'POST';
+  const res = await fetch(url, {method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (res.ok) { location.reload(); }
+  else { alert('저장 실패: ' + (await res.json()).detail); }
+}
+
+async function deleteTech(id, name) {
+  if (!confirm(`"${name}" 기술자를 삭제하시겠습니까?`)) return;
+  const res = await fetch(`/api/technicians/${id}`, {method: 'DELETE'});
+  if (res.ok) { location.reload(); }
+  else { alert('삭제 실패'); }
+}
+
+async function importCsv() {
+  const text = document.getElementById('csv-text').value.trim();
+  const lines = text.split('\n').filter(l => l.trim());
+  let ok = 0, fail = 0;
+  for (const line of lines) {
+    const parts = line.split(',').map(p => p.trim());
+    if (parts.length < 4) { fail++; continue; }
+    const [name, qualification, grade, hire_date] = parts;
+    if (!['특급','고급','중급','초급'].includes(grade)) { fail++; continue; }
+    const res = await fetch('/api/technicians', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name, qualification, grade, hire_date})
+    });
+    if (res.ok) ok++; else fail++;
+  }
+  document.getElementById('csv-result').innerHTML =
+    `<div class="alert alert-${fail ? 'warning' : 'success'}">${ok}명 추가 완료, ${fail}개 실패</div>`;
+  if (ok > 0) setTimeout(() => location.reload(), 1500);
+}
+</script>
+{% endblock %}

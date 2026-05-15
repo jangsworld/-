@@ -1,0 +1,670 @@
+{% extends "base.html" %}
+{% block title %}{{ bid.bid_name }} – 제안서 작성{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <a href="/" class="btn btn-sm btn-outline-secondary me-2">
+      <i class="bi bi-arrow-left"></i> 목록
+    </a>
+    <span class="fs-5 fw-bold">{{ bid.bid_name }}</span>
+  </div>
+  <div>
+    <span class="badge bg-primary fs-6" id="grand-total-badge">
+      총점: {{ '%.2f'|format(scores.grand_total) }}점
+    </span>
+  </div>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-3" id="bidTabs" role="tablist">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-config">공고 설정</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-management">경영실태</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-experience">수행경험</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-technician">기술인력</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-reputation">신인도</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-extra">추가 항목</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-generate">최종 생성</button></li>
+</ul>
+
+<div class="tab-content" id="bidTabContent">
+
+  <!-- ===== Tab 1: 공고 설정 ===== -->
+  <div class="tab-pane fade show active" id="tab-config">
+    <div class="row g-4">
+      <div class="col-md-6">
+        <div class="card h-100">
+          <div class="card-header fw-semibold">기본 정보</div>
+          <div class="card-body">
+            <div class="mb-3">
+              <label class="form-label">공고명</label>
+              <input type="text" class="form-control bid-field" data-field="bid_name" value="{{ bid.bid_name }}">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">공고번호</label>
+              <input type="text" class="form-control bid-field" data-field="bid_number" value="{{ bid.bid_number or '' }}">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">발주기관</label>
+              <input type="text" class="form-control bid-field" data-field="client" value="{{ bid.client or '' }}">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">입찰공고일</label>
+              <input type="text" class="form-control bid-field" data-field="bid_date" value="{{ bid.bid_date or '' }}" placeholder="2025-01-01">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">회사명</label>
+              <input type="text" class="form-control bid-field" data-field="company_name" value="{{ bid.company_name or '' }}">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">사업비 (VAT포함, 원)</label>
+              <input type="number" class="form-control bid-field" data-field="bid_amount" value="{{ bid.bid_amount or 0 }}">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card mb-3">
+          <div class="card-header fw-semibold">배점 설정</div>
+          <div class="card-body">
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label">경영실태 배점</label>
+                <input type="number" step="0.1" class="form-control bid-field" data-field="score_management" value="{{ bid.score_management }}">
+              </div>
+              <div class="col-6">
+                <label class="form-label">수행경험 배점</label>
+                <input type="number" step="0.1" class="form-control bid-field" data-field="score_experience" value="{{ bid.score_experience }}">
+              </div>
+              <div class="col-6">
+                <label class="form-label">기술인력 배점</label>
+                <input type="number" step="0.1" class="form-control bid-field" data-field="score_technician" value="{{ bid.score_technician }}">
+              </div>
+              <div class="col-6">
+                <label class="form-label">신인도 배점</label>
+                <input type="number" step="0.1" class="form-control bid-field" data-field="score_reputation" value="{{ bid.score_reputation }}">
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Threshold settings (collapsible) -->
+        <div class="card">
+          <div class="card-header">
+            <button class="btn btn-link p-0 fw-semibold text-decoration-none" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#thresholdCollapse">
+              <i class="bi bi-sliders me-1"></i>임계값 설정 (고급)
+            </button>
+          </div>
+          <div class="collapse" id="thresholdCollapse">
+            <div class="card-body">
+              <p class="text-muted small mb-2">보유인력 기준 (원점수 → 비율)</p>
+              <div id="ret-thresholds">
+                {% for row in retention_thresholds %}
+                <div class="row g-1 mb-1 thresh-row" data-type="retention">
+                  <div class="col-5"><input type="number" class="form-control form-control-sm thresh-min" value="{{ row[0] }}" placeholder="최소점수"></div>
+                  <div class="col-5"><input type="number" step="0.01" class="form-control form-control-sm thresh-frac" value="{{ row[1] }}" placeholder="비율"></div>
+                  <div class="col-2"><button class="btn btn-sm btn-outline-danger thresh-del" type="button">×</button></div>
+                </div>
+                {% endfor %}
+              </div>
+              <button class="btn btn-sm btn-outline-secondary mb-3" id="add-ret-thresh">+ 행 추가</button>
+
+              <p class="text-muted small mb-2">투입인력 기준 (원점수 → 비율)</p>
+              <div id="dep-thresholds">
+                {% for row in deployment_thresholds %}
+                <div class="row g-1 mb-1 thresh-row" data-type="deployment">
+                  <div class="col-5"><input type="number" class="form-control form-control-sm thresh-min" value="{{ row[0] }}" placeholder="최소점수"></div>
+                  <div class="col-5"><input type="number" step="0.01" class="form-control form-control-sm thresh-frac" value="{{ row[1] }}" placeholder="비율"></div>
+                  <div class="col-2"><button class="btn btn-sm btn-outline-danger thresh-del" type="button">×</button></div>
+                </div>
+                {% endfor %}
+              </div>
+              <button class="btn btn-sm btn-outline-secondary" id="add-dep-thresh">+ 행 추가</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mt-2 text-muted small">
+      <i class="bi bi-info-circle me-1"></i>입력 후 자동 저장됩니다.
+    </div>
+  </div>
+
+  <!-- ===== Tab 2: 경영실태 ===== -->
+  <div class="tab-pane fade" id="tab-management">
+    <div class="row g-3">
+      <div class="col-md-5">
+        <div class="card">
+          <div class="card-header fw-semibold">신용평가등급</div>
+          <div class="card-body">
+            <select class="form-select bid-field" data-field="credit_rating">
+              {% for r in ['AAA','AA+','AA','AA-','A+','A','A-','BBB+','BBB','BBB-','BB+','BB','BB-','B+','B','B-','CCC','CC','C','D'] %}
+              <option value="{{ r }}" {% if bid.credit_rating == r %}selected{% endif %}>{{ r }}</option>
+              {% endfor %}
+            </select>
+            <div class="mt-3 p-3 bg-light rounded text-center">
+              <div class="text-muted small">경영실태 점수</div>
+              <div class="fs-3 fw-bold text-primary" id="mgmt-score">
+                {{ '%.2f'|format(scores.management.score) }}점
+              </div>
+              <div class="text-muted small">/ {{ scores.management.max_score }}점</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-7">
+        <div class="card">
+          <div class="card-header fw-semibold">
+            <i class="bi bi-folder2-open me-1"></i>신용평가등급 서류
+          </div>
+          <div class="card-body">
+            <div id="docs-신용평가등급" class="doc-section" data-folder="신용평가등급"></div>
+            <button class="btn btn-sm btn-outline-primary mt-2" onclick="openUpload('신용평가등급')">
+              <i class="bi bi-upload me-1"></i>파일 업로드
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Tab 3: 수행경험 ===== -->
+  <div class="tab-pane fade" id="tab-experience">
+    <div class="row g-3">
+      <div class="col-md-5">
+        <div class="card">
+          <div class="card-header fw-semibold">전체 실적 DB</div>
+          <div class="card-body p-0">
+            <div class="table-responsive" style="max-height:400px;overflow-y:auto;">
+              <table class="table table-sm table-hover mb-0">
+                <thead class="table-secondary sticky-top">
+                  <tr>
+                    <th width="30"><input type="checkbox" id="proj-select-all" title="전체선택"></th>
+                    <th>사업명</th>
+                    <th class="text-end">계약금액</th>
+                    <th>계약일</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for p in all_projects %}
+                  <tr>
+                    <td><input type="checkbox" class="proj-check" data-id="{{ p.id }}"
+                         {% if p.id in selected_project_ids %}checked{% endif %}></td>
+                    <td class="small">{{ p.name }}</td>
+                    <td class="text-end small">{{ '{:,}'.format(p.amount) }}</td>
+                    <td class="small">{{ p.contract_date or '–' }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-7">
+        <div class="card mb-3">
+          <div class="card-header fw-semibold">이번 공고 포함 실적</div>
+          <div class="card-body p-0">
+            <div class="table-responsive" style="max-height:260px;overflow-y:auto;">
+              <table class="table table-sm mb-0" id="selected-projects-table">
+                <thead class="table-secondary sticky-top">
+                  <tr><th>사업명</th><th>발주처</th><th class="text-end">계약금액</th></tr>
+                </thead>
+                <tbody id="selected-projects-body">
+                  {% for p in all_projects if p.id in selected_project_ids %}
+                  <tr><td class="small">{{ p.name }}</td><td class="small">{{ p.client }}</td><td class="text-end small">{{ '{:,}'.format(p.amount) }}</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <div class="row text-center">
+              <div class="col-4">
+                <div class="text-muted small">총 실적금액</div>
+                <div class="fw-bold" id="exp-total-amount">{{ '{:,}'.format(scores.experience.total_amount) }}원</div>
+              </div>
+              <div class="col-4">
+                <div class="text-muted small">사업비 대비</div>
+                <div class="fw-bold" id="exp-pct">{{ '%.1f'|format(scores.experience.percentage) }}%</div>
+              </div>
+              <div class="col-4">
+                <div class="text-muted small">평가점수</div>
+                <div class="fw-bold text-primary fs-5" id="exp-score">{{ '%.2f'|format(scores.experience.score) }}점</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card mt-3">
+          <div class="card-header fw-semibold"><i class="bi bi-folder2-open me-1"></i>실적증명서 서류</div>
+          <div class="card-body">
+            <div id="docs-실적증명서" class="doc-section" data-folder="실적증명서"></div>
+            <button class="btn btn-sm btn-outline-primary mt-2" onclick="openUpload('실적증명서')">
+              <i class="bi bi-upload me-1"></i>파일 업로드
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Tab 4: 기술인력 ===== -->
+  <div class="tab-pane fade" id="tab-technician">
+    <div class="row g-3">
+      <!-- Col 1: 기술자 DB -->
+      <div class="col-lg-4">
+        <div class="card h-100">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span class="fw-semibold">기술자 DB</span>
+            <button class="btn btn-sm btn-primary" onclick="openAddTechModal()">
+              <i class="bi bi-plus"></i> 추가
+            </button>
+          </div>
+          <div class="card-body p-0">
+            <div style="max-height:450px;overflow-y:auto;">
+              <table class="table table-sm table-hover mb-0" id="tech-db-table">
+                <thead class="table-secondary sticky-top">
+                  <tr>
+                    <th>보유</th>
+                    <th>투입</th>
+                    <th>이름</th>
+                    <th>등급</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for t in all_techs %}
+                  <tr>
+                    <td><input type="checkbox" class="ret-check" data-id="{{ t.id }}"
+                         {% if t.id in ret_ids %}checked{% endif %}></td>
+                    <td><input type="checkbox" class="dep-check" data-id="{{ t.id }}"
+                         {% if t.id in dep_ids %}checked{% endif %}></td>
+                    <td class="small">{{ t.name }}</td>
+                    <td><span class="badge grade-badge-{{ t.grade }}">{{ t.grade }}</span></td>
+                    <td>
+                      <button class="btn btn-link btn-sm p-0 me-1" onclick='openEditTechModal({{ t | tojson }})' title="수정"><i class="bi bi-pencil"></i></button>
+                      <button class="btn btn-link btn-sm p-0 text-danger" onclick="deleteTech({{ t.id }}, '{{ t.name }}')" title="삭제"><i class="bi bi-trash"></i></button>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Col 2: 보유인력 -->
+      <div class="col-lg-4">
+        <div class="card h-100">
+          <div class="card-header fw-semibold">보유인력</div>
+          <div class="card-body">
+            <ul class="list-group list-group-flush" id="retention-list">
+              {% for t in all_techs if t.id in ret_ids %}
+              <li class="list-group-item d-flex justify-content-between align-items-center py-1 px-0">
+                <span class="small">{{ t.name }}</span>
+                <span class="badge grade-badge-{{ t.grade }}">{{ t.grade }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+            <div class="mt-3 p-2 bg-light rounded text-center">
+              <div class="text-muted small">보유인력 원점수 / 평가점수</div>
+              <div class="fw-bold">
+                <span id="ret-raw">{{ scores.technician.retention_raw }}</span>점 →
+                <span class="text-primary" id="ret-score">{{ '%.2f'|format(scores.technician.retention_score) }}</span>점
+                / <span>{{ '%.1f'|format(scores.technician.max_score / 2) }}</span>점
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Col 3: 투입인력 -->
+      <div class="col-lg-4">
+        <div class="card h-100">
+          <div class="card-header fw-semibold">투입인력</div>
+          <div class="card-body">
+            <ul class="list-group list-group-flush" id="deployment-list">
+              {% for t in all_techs if t.id in dep_ids %}
+              <li class="list-group-item d-flex justify-content-between align-items-center py-1 px-0">
+                <span class="small">{{ t.name }}</span>
+                <span class="badge grade-badge-{{ t.grade }}">{{ t.grade }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+            <div class="mt-3 p-2 bg-light rounded text-center">
+              <div class="text-muted small">투입인력 원점수 / 평가점수</div>
+              <div class="fw-bold">
+                <span id="dep-raw">{{ scores.technician.deployment_raw }}</span>점 →
+                <span class="text-primary" id="dep-score">{{ '%.2f'|format(scores.technician.deployment_score) }}</span>점
+                / <span>{{ '%.1f'|format(scores.technician.max_score / 2) }}</span>점
+              </div>
+            </div>
+            <div class="mt-2 p-2 bg-primary bg-opacity-10 rounded text-center">
+              <div class="text-muted small">기술인력 합계</div>
+              <div class="fw-bold fs-5 text-primary">
+                <span id="tech-total-score">{{ '%.2f'|format(scores.technician.total_score) }}</span>점
+                / {{ scores.technician.max_score }}점
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Technician documents -->
+    <div class="card mt-3">
+      <div class="card-header fw-semibold"><i class="bi bi-folder2-open me-1"></i>기술자 서류</div>
+      <div class="card-body" id="tech-docs-container">
+        <p class="text-muted small">보유인력 또는 투입인력을 선택하면 서류 폴더가 표시됩니다.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Tab 5: 신인도 ===== -->
+  <div class="tab-pane fade" id="tab-reputation">
+    <div class="row g-3">
+      <div class="col-md-5">
+        <div class="card">
+          <div class="card-header fw-semibold">입찰참가자격 제한 현황</div>
+          <div class="card-body">
+            <div class="form-check mb-2">
+              <input class="form-check-input bid-field" type="radio" name="restriction_status"
+                     data-field="restriction_status" value="none"
+                     {% if bid.restriction_status == 'none' %}checked{% endif %}>
+              <label class="form-check-label">제한없음 (입찰참가자격 제한사실 없음)</label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input bid-field" type="radio" name="restriction_status"
+                     data-field="restriction_status" value="restricted"
+                     {% if bid.restriction_status == 'restricted' %}checked{% endif %}>
+              <label class="form-check-label">제한있음</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input bid-field" type="radio" name="restriction_status"
+                     data-field="restriction_status" value="no_docs"
+                     {% if bid.restriction_status == 'no_docs' %}checked{% endif %}>
+              <label class="form-check-label">증빙자료 미제출</label>
+            </div>
+            <div class="mt-3 p-3 bg-light rounded text-center">
+              <div class="text-muted small">신인도 점수</div>
+              <div class="fs-3 fw-bold text-primary" id="rep-score">
+                {{ '%.2f'|format(scores.reputation.score) }}점
+              </div>
+              <div class="text-muted small">/ {{ scores.reputation.max_score }}점</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-7">
+        <div class="card mb-3">
+          <div class="card-header fw-semibold"><i class="bi bi-folder2-open me-1"></i>입찰참가자격등록증 서류</div>
+          <div class="card-body">
+            <div id="docs-입찰참가자격등록증" class="doc-section" data-folder="입찰참가자격등록증"></div>
+            <button class="btn btn-sm btn-outline-primary mt-2" onclick="openUpload('입찰참가자격등록증')">
+              <i class="bi bi-upload me-1"></i>파일 업로드
+            </button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header fw-semibold"><i class="bi bi-folder2-open me-1"></i>부정당업자확인서 서류</div>
+          <div class="card-body">
+            <div id="docs-부정당업자확인서" class="doc-section" data-folder="부정당업자확인서"></div>
+            <button class="btn btn-sm btn-outline-primary mt-2" onclick="openUpload('부정당업자확인서')">
+              <i class="bi bi-upload me-1"></i>파일 업로드
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Tab 6: 추가 항목 ===== -->
+  <div class="tab-pane fade" id="tab-extra">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="mb-0">추가 항목</h5>
+      <button class="btn btn-primary btn-sm" onclick="openAddExtraModal()">
+        <i class="bi bi-plus"></i> 항목 추가
+      </button>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover" id="extra-items-table">
+        <thead class="table-secondary">
+          <tr>
+            <th>항목명</th>
+            <th class="text-center">배점</th>
+            <th class="text-center">취득점수</th>
+            <th>설명</th>
+            <th class="text-center">액션</th>
+          </tr>
+        </thead>
+        <tbody id="extra-items-body">
+          {% for item in extra_items %}
+          <tr data-id="{{ item.id }}">
+            <td>{{ item.name }}</td>
+            <td class="text-center">{{ item.max_score }}</td>
+            <td class="text-center">{{ item.actual_score }}</td>
+            <td class="text-muted small">{{ item.description or '' }}</td>
+            <td class="text-center">
+              <button class="btn btn-sm btn-outline-secondary me-1" onclick='openEditExtraModal({{ item | tojson }})'>수정</button>
+              <button class="btn btn-sm btn-outline-danger" onclick="deleteExtraItem({{ item.id }})">삭제</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="table-light fw-bold">
+            <td colspan="2">소계</td>
+            <td class="text-center" id="extra-total">{{ '%.2f'|format(scores.extra.total) }}</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% if not extra_items %}
+    <p class="text-muted text-center py-3">추가 항목이 없습니다.</p>
+    {% endif %}
+  </div>
+
+  <!-- ===== Tab 7: 최종 생성 ===== -->
+  <div class="tab-pane fade" id="tab-generate">
+    <div class="row g-4">
+      <div class="col-md-7">
+        <div class="card">
+          <div class="card-header fw-semibold">평가항목 종합</div>
+          <div class="card-body p-0">
+            <table class="table mb-0">
+              <thead class="table-dark">
+                <tr><th>평가항목</th><th class="text-center">배점</th><th class="text-center">취득점수</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>경영실태</td>
+                  <td class="text-center">{{ scores.management.max_score }}점</td>
+                  <td class="text-center fw-semibold" id="gen-mgmt-score">{{ '%.2f'|format(scores.management.score) }}점</td>
+                </tr>
+                <tr>
+                  <td>수행경험</td>
+                  <td class="text-center">{{ scores.experience.max_score }}점</td>
+                  <td class="text-center fw-semibold" id="gen-exp-score">{{ '%.2f'|format(scores.experience.score) }}점</td>
+                </tr>
+                <tr>
+                  <td>기술인력</td>
+                  <td class="text-center">{{ scores.technician.max_score }}점</td>
+                  <td class="text-center fw-semibold" id="gen-tech-score">{{ '%.2f'|format(scores.technician.total_score) }}점</td>
+                </tr>
+                <tr>
+                  <td>신인도</td>
+                  <td class="text-center">{{ scores.reputation.max_score }}점</td>
+                  <td class="text-center fw-semibold" id="gen-rep-score">{{ '%.2f'|format(scores.reputation.score) }}점</td>
+                </tr>
+                {% for item in extra_items %}
+                <tr>
+                  <td>{{ item.name }}</td>
+                  <td class="text-center">{{ item.max_score }}점</td>
+                  <td class="text-center fw-semibold">{{ item.actual_score }}점</td>
+                </tr>
+                {% endfor %}
+                <tr class="table-secondary fw-bold fs-5">
+                  <td>합계</td>
+                  <td class="text-center">–</td>
+                  <td class="text-center text-primary" id="gen-grand-total">{{ '%.2f'|format(scores.grand_total) }}점</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-5">
+        <div class="card mb-3">
+          <div class="card-header fw-semibold">PPT 생성</div>
+          <div class="card-body text-center">
+            <div class="display-4 fw-bold text-primary mb-2" id="gen-total-display">
+              {{ '%.2f'|format(scores.grand_total) }}점
+            </div>
+            <p class="text-muted small mb-3">현재 계산된 총점</p>
+            <a href="/api/bids/{{ bid.id }}/generate" class="btn btn-lg btn-success w-100" id="ppt-generate-btn">
+              <i class="bi bi-file-earmark-slides me-2"></i>PPT 생성 및 다운로드
+            </a>
+            <p class="text-muted small mt-2">클릭하면 .pptx 파일이 다운로드됩니다</p>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header fw-semibold">PPT 내용 미리보기</div>
+          <div class="card-body small text-muted">
+            <p><strong>슬라이드 구성:</strong></p>
+            <ol class="ps-3">
+              <li>표지 (회사명, 날짜)</li>
+              <li>평가항목 종합표</li>
+              <li>경영실태 (신용평가등급: {{ bid.credit_rating }})</li>
+              <li>수행경험 ({{ scores.experience.percentage }}%)</li>
+              <li>기술인력 개요</li>
+              <li>보유인력 목록 ({{ scores.technician.retention_list | length }}명)</li>
+              <li>투입인력 목록 ({{ scores.technician.deployment_list | length }}명)</li>
+              <li>신인도</li>
+              {% for item in extra_items %}
+              <li>{{ item.name }}</li>
+              {% endfor %}
+            </ol>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div> <!-- tab-content -->
+
+<!-- ===== Hidden data for JS ===== -->
+<script>
+  const BID_ID = {{ bid.id }};
+  const ALL_TECHS = {{ all_techs | tojson }};
+  const ALL_PROJECTS = {{ all_projects | tojson }};
+</script>
+
+<!-- ===== Add/Edit Technician Modal ===== -->
+<div class="modal fade" id="techModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="techModalTitle">기술자 추가</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="tech-edit-id">
+        <div class="mb-3">
+          <label class="form-label">이름 <span class="text-danger">*</span></label>
+          <input type="text" id="tech-name" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">자격기준</label>
+          <input type="text" id="tech-qual" class="form-control" value="정보통신기술자">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">등급 <span class="text-danger">*</span></label>
+          <select id="tech-grade" class="form-select">
+            <option value="특급">특급</option>
+            <option value="고급">고급</option>
+            <option value="중급">중급</option>
+            <option value="초급">초급</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">입사일</label>
+          <input type="text" id="tech-hire-date" class="form-control" placeholder="2024.01.01">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" onclick="saveTech()">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Add/Edit Extra Item Modal ===== -->
+<div class="modal fade" id="extraModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="extraModalTitle">추가 항목</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="extra-edit-id">
+        <div class="mb-3">
+          <label class="form-label">항목명 <span class="text-danger">*</span></label>
+          <input type="text" id="extra-name" class="form-control" required>
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col">
+            <label class="form-label">배점</label>
+            <input type="number" step="0.01" id="extra-max-score" class="form-control" value="0">
+          </div>
+          <div class="col">
+            <label class="form-label">취득점수</label>
+            <input type="number" step="0.01" id="extra-actual-score" class="form-control" value="0">
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">설명</label>
+          <textarea id="extra-desc" class="form-control" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" onclick="saveExtra()">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== File Upload Modal ===== -->
+<div class="modal fade" id="uploadModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">파일 업로드</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">폴더: <span id="upload-folder-label"></span></p>
+        <div class="drop-zone border rounded p-4 text-center" id="drop-zone">
+          <i class="bi bi-cloud-upload display-5 text-muted"></i>
+          <p class="mt-2">파일을 여기에 드래그하거나 클릭하여 선택하세요</p>
+          <input type="file" id="file-input" class="d-none" multiple>
+        </div>
+        <div id="upload-progress" class="mt-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/bid_detail.js"></script>
+{% endblock %}

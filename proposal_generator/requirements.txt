@@ -1,1 +1,6 @@
 python-pptx
+fastapi
+uvicorn[standard]
+jinja2
+python-multipart
+aiofiles
