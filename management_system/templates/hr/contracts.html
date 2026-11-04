@@ -46,7 +46,7 @@
     <thead><tr><th>구분</th><th>성명</th><th>부서</th><th>고용형태</th><th>제목</th><th>계약기간</th><th>만료</th><th class="num">연봉</th><th>상태</th><th>체결일</th><th>수정일</th></tr></thead>
     <tbody>
     {% for d in docs %}
-      <tr onclick="location.href='/hr/documents/{{ d.id }}'" style="cursor:pointer">
+      <tr data-href="/hr/documents/{{ d.id }}">
         <td><span class="badge text-bg-light border">{{ d.category }}</span></td>
         <td class="fw-semibold">{{ d.name }}{% if d.resign_date %} <span class="text-muted small">(퇴사)</span>{% endif %}</td>
         <td>{{ d.department or '' }}</td><td class="small">{{ d.employment_type }}</td><td>{{ d.title }}</td>

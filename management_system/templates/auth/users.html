@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}사용자 관리{% endblock %}
+{% block page_title %}<i class="bi bi-people me-2"></i>사용자 · 권한 관리{% endblock %}
+{% block content %}
+{% if temp %}
+<div class="alert alert-warning">
+  <b><i class="bi bi-key"></i> {{ temp_user }}</b> 임시 비밀번호: <code class="fs-5 user-select-all">{{ temp }}</code>
+  <div class="small mt-1">이 화면을 벗어나면 다시 볼 수 없습니다. 메신저·메일 대신 <b>직접 전달</b>하세요. 최초 로그인 시 변경과 2단계 인증 등록이 강제됩니다.</div>
+</div>
+{% endif %}
+<div class="row g-3">
+  <div class="col-12"><div class="card">
+    <div class="card-header d-flex">사용자 목록 <span class="badge text-bg-secondary ms-2">{{ users|length }}명</span><span class="help ms-auto">권장 운영 인원 5명 이하 · 퇴사자는 즉시 '중지'</span></div>
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead><tr><th>아이디</th><th>이름 / 권한 / 사용</th><th>2FA</th><th>상태</th><th>최근 로그인</th><th class="text-end">관리</th></tr></thead>
+      <tbody>{% for u in users %}
+      <tr>
+        <td class="fw-semibold">{{ u.username }}</td>
+        <td><form method="post" action="/admin/users/{{ u.id }}/update" class="d-flex gap-1 align-items-center">
+          <input class="form-control form-control-sm" style="width:110px" name="display_name" value="{{ u.display_name }}">
+          <select class="form-select form-select-sm" style="width:auto" name="role">{% for k, v in roles.items() %}<option value="{{ k }}" {% if u.role == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+          <label class="small text-nowrap"><input type="checkbox" class="form-check-input" name="is_active" value="1" {% if u.is_active %}checked{% endif %}> 사용</label>
+          <button class="btn btn-sm btn-outline-primary">저장</button></form></td>
+        <td>{% if u.totp_enabled %}<i class="bi bi-shield-check text-success"></i>{% else %}<span class="small text-muted">미등록</span>{% endif %}</td>
+        <td class="small">{% if not u.is_active %}<span class="badge text-bg-secondary">중지</span>{% elif u.locked_until and u.locked_until > now %}<span class="badge text-bg-danger">잠김</span>{% elif u.must_change_pw %}<span class="badge text-bg-warning">비번변경 대기</span>{% else %}정상{% endif %}</td>
+        <td class="small text-muted">{{ u.last_login_at or '-' }}<br>{{ u.last_login_ip or '' }}</td>
+        <td class="text-end text-nowrap">
+          {% if u.locked_until and u.locked_until > now %}<form method="post" action="/admin/users/{{ u.id }}/unlock" class="d-inline"><button class="btn btn-sm btn-outline-success">잠금해제</button></form>{% endif %}
+          <form method="post" action="/admin/users/{{ u.id }}/reset-password" class="d-inline" data-confirm="{{ u.username }}의 비밀번호를 초기화하고 임시 비밀번호를 발급할까요?"><button class="btn btn-sm btn-outline-secondary">비번 초기화</button></form>
+          <form method="post" action="/admin/users/{{ u.id }}/reset-2fa" class="d-inline" data-confirm="{{ u.username }}의 2단계 인증을 초기화할까요? (휴대폰 분실·교체 시)"><button class="btn btn-sm btn-outline-secondary">2FA 초기화</button></form>
+        </td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+  </div></div>
+  <div class="col-lg-6">
+    <form class="card h-100" method="post" action="/admin/users">
+      <div class="card-header">사용자 추가</div>
+      <div class="card-body row g-2">
+        <div class="col-6"><label class="form-label small">아이디</label><input class="form-control form-control-sm" name="username" pattern="[A-Za-z0-9._\-]{3,30}" required></div>
+        <div class="col-6"><label class="form-label small">이름</label><input class="form-control form-control-sm" name="display_name" required></div>
+        <div class="col-12"><label class="form-label small">권한</label><select class="form-select form-select-sm" name="role">{% for k, v in roles.items() %}<option value="{{ k }}" {% if k == 'hr' %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+        <div class="col-12 help">임시 비밀번호가 자동 발급됩니다.</div>
+      </div>
+      <div class="card-footer text-end"><button class="btn btn-sm btn-primary">추가</button></div>
+    </form>
+  </div>
+  <div class="col-lg-6">
+    <div class="card h-100"><div class="card-header small">권한 안내</div><div class="card-body small">
+      <p class="mb-1"><b>시스템관리자</b> – 전체 기능 + 사용자·권한·설정·접속기록 관리</p>
+      <p class="mb-1"><b>인사담당</b> – 인사 전 메뉴 조회·등록·수정 (연봉·계약서·상벌 포함)</p>
+      <p class="mb-0"><b>조회자</b> – 대시보드(인원 현황)·임직원 기본정보 조회만. 연봉·연락처·주소·계좌·상벌·휴직 정보 비공개</p>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

@@ -8,7 +8,7 @@
     {% for y in years %}<li class="nav-item"><a class="nav-link py-1 {% if y == year %}active{% endif %}" href="?year={{ y }}">{{ y }}년</a></li>{% endfor %}
   </ul>
   <form method="get" class="ms-2"><input type="hidden" name="year" value="{{ year }}">
-    <select class="form-select form-select-sm" name="department" onchange="this.form.submit()"><option value="">전체 부서</option>
+    <select class="form-select form-select-sm" name="department" data-autosubmit><option value="">전체 부서</option>
       {% for x in depts %}<option {% if department == x %}selected{% endif %}>{{ x }}</option>{% endfor %}</select></form>
   <div class="ms-auto btn-group btn-group-sm">
     <a class="btn btn-outline-secondary" href="/hr/salaries/export.csv?year={{ year }}"><i class="bi bi-download"></i> 엑셀(CSV)</a>
@@ -95,8 +95,8 @@
 </div></div></div>
 {% endblock %}
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script>
+<script nonce="{{ csp_nonce }}" src="/static/vendor/chartjs/chart.umd.min.js"></script>
+<script nonce="{{ csp_nonce }}">
 const TREND = {{ trend|tojson }}, DEPT = {{ ov.dept_avg|tojson }}, RANK = {{ ov.rank_avg|tojson }}, DIST = {{ ov.distribution|tojson }};
 const YEAR = {{ year }};
 new Chart(document.getElementById('cTrend'), {

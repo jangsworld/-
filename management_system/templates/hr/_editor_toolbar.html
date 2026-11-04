@@ -22,7 +22,7 @@
   <button type="button" class="btn btn-sm btn-light" data-cmd="insertHorizontalRule" title="구분선"><i class="bi bi-hr"></i></button>
   <button type="button" class="btn btn-sm btn-light" data-cmd="removeFormat" title="서식 지우기"><i class="bi bi-eraser"></i></button>
 </div>
-<script>
+<script nonce="{{ csp_nonce }}">
 function initEditor(paper, onDirty) {
   document.querySelectorAll('#toolbar [data-cmd]').forEach(b => b.addEventListener('click', () => {
     paper.focus(); document.execCommand(b.dataset.cmd, false, null); onDirty();

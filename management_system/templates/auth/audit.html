@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}접속기록{% endblock %}
+{% block page_title %}<i class="bi bi-journal-text me-2"></i>접속기록 · 감사로그{% endblock %}
+{% block content %}
+<div class="alert alert-light border small"><i class="bi bi-info-circle"></i> 개인정보 처리시스템의 접속기록은 <b>1년 이상 보관</b>하고 <b>월 1회 이상 점검</b>해야 합니다(개인정보의 안전성 확보조치 기준 제8조). 대량 조회·내보내기, 업무시간 외 접속, 반복 로그인 실패를 확인하세요.</div>
+<div class="card mb-3"><div class="card-header">
+  <form class="row g-2 align-items-center" method="get">
+    <div class="col-auto"><input class="form-control form-control-sm" name="q" value="{{ f.q }}" placeholder="사용자·작업·대상·IP"></div>
+    <div class="col-auto"><input type="date" class="form-control form-control-sm" name="date_from" value="{{ f.date_from }}"></div>
+    <div class="col-auto">~</div>
+    <div class="col-auto"><input type="date" class="form-control form-control-sm" name="date_to" value="{{ f.date_to }}"></div>
+    <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">조회</button></div>
+    <div class="col text-end"><a class="btn btn-sm btn-outline-secondary" href="/admin/audit/export.csv?q={{ f.q|urlencode }}&date_from={{ f.date_from }}&date_to={{ f.date_to }}"><i class="bi bi-download"></i> CSV</a></div>
+  </form></div>
+  <div class="table-responsive" style="max-height:520px"><table class="table table-sm mb-0">
+    <thead class="sticky-top"><tr><th>일시</th><th>사용자</th><th>IP</th><th>모듈</th><th>작업</th><th>대상</th><th>내용</th></tr></thead><tbody>
+    {% for l in logs %}<tr><td class="small text-muted text-nowrap">{{ l.created_at }}</td><td>{{ l.username or '' }}</td><td class="small">{{ l.ip or '' }}</td><td class="small">{{ l.module }}</td>
+      <td>{{ l.action }}</td><td class="small">{{ l.target or '' }}</td><td class="small text-muted text-truncate" style="max-width:320px">{{ l.detail or '' }}</td></tr>
+    {% else %}<tr><td colspan="7" class="text-center text-muted p-3">기록 없음</td></tr>{% endfor %}</tbody>
+  </table></div></div>
+<div class="card"><div class="card-header">최근 로그인 실패 (50건)</div>
+  <table class="table table-sm mb-0"><thead><tr><th>일시</th><th>입력 아이디</th><th>IP</th><th>사유</th></tr></thead><tbody>
+  {% for a in attempts %}<tr><td class="small">{{ a.created_at }}</td><td>{{ a.username }}</td><td>{{ a.ip }}</td><td class="small">{{ a.reason }}</td></tr>
+  {% else %}<tr><td colspan="4" class="text-center text-muted p-3">없음</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

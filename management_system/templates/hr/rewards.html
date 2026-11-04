@@ -44,8 +44,8 @@
 {% include "hr/_reward_modal.html" %}
 {% endblock %}
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script>
+<script nonce="{{ csp_nonce }}" src="/static/vendor/chartjs/chart.umd.min.js"></script>
+<script nonce="{{ csp_nonce }}">
 const BY_YEAR = {{ by_year|tojson }}, BY_DEPT = {{ by_dept|tojson }};
 const ds = (obj) => [
   { label: '포상', data: Object.values(obj).map(v => v['포상']), backgroundColor: '#57b36b', borderRadius: 4 },

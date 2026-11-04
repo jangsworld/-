@@ -1,0 +1,12 @@
+{% extends "auth/_auth_base.html" %}
+{% block content %}
+<form method="post" action="/login" autocomplete="off">
+  <input type="hidden" name="next" value="{{ next }}">
+  <div class="mb-2"><label class="form-label small">아이디</label>
+    <input class="form-control" name="username" value="{{ username or '' }}" autocomplete="username" required autofocus></div>
+  <div class="mb-3"><label class="form-label small">비밀번호</label>
+    <input class="form-control" type="password" name="password" autocomplete="current-password" required></div>
+  <button class="btn btn-primary w-100"><i class="bi bi-box-arrow-in-right me-1"></i>로그인</button>
+</form>
+<p class="help mt-3 mb-0">비밀번호를 잊었거나 계정이 잠긴 경우 시스템관리자에게 초기화를 요청하세요.</p>
+{% endblock %}

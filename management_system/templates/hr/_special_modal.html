@@ -21,7 +21,7 @@
     <div class="col-md-6"><label class="form-label small">정부지원금</label><input class="form-control form-control-sm" name="subsidy" placeholder="육아휴직 지원금, 대체인력 지원금 등"></div>
     <div class="col-md-6"><label class="form-label small">비고</label><input class="form-control form-control-sm" name="note"></div>
   </div><div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div></form></div></div>
-<script>
+<script nonce="{{ csp_nonce }}">
 (() => {
   const WS = {{ work_specials|tojson }};
   const cat = document.getElementById('spCat');

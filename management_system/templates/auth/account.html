@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}내 계정{% endblock %}
+{% block page_title %}<i class="bi bi-shield-lock me-2"></i>내 계정 · 보안{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-5"><div class="card h-100"><div class="card-header">계정 정보</div><div class="card-body">
+    <dl class="info-grid">
+      <dt>아이디</dt><dd>{{ u.username }}</dd><dt>이름</dt><dd>{{ u.display_name }}</dd>
+      <dt>권한</dt><dd>{{ roles[u.role] }}</dd>
+      <dt>2단계 인증</dt><dd>{% if u.totp_enabled %}<span class="text-success"><i class="bi bi-shield-check"></i> 사용 중</span>{% else %}<a href="/account/2fa">등록하기</a>{% endif %}</dd>
+      <dt>비밀번호 변경일</dt><dd>{{ u.pw_changed_at or '-' }}</dd>
+      <dt>최근 로그인</dt><dd>{{ u.last_login_at or '-' }} ({{ u.last_login_ip or '' }})</dd>
+    </dl>
+    <a href="/account/password" class="btn btn-sm btn-outline-primary"><i class="bi bi-key"></i> 비밀번호 변경</a>
+  </div></div></div>
+  <div class="col-lg-7"><div class="card mb-3"><div class="card-header d-flex">로그인 중인 기기 <span class="badge text-bg-secondary ms-2">{{ sessions|length }}</span>
+      <form method="post" action="/account/logout-others" class="ms-auto" data-confirm="현재 기기를 제외한 모든 세션을 종료할까요?"><button class="btn btn-sm btn-outline-danger">다른 기기 모두 로그아웃</button></form></div>
+    <table class="table table-sm mb-0"><thead><tr><th>IP</th><th>브라우저</th><th>로그인</th><th>마지막 활동</th></tr></thead><tbody>
+    {% for s in sessions %}<tr><td>{{ s.ip }}</td><td class="small text-truncate" style="max-width:260px">{{ s.user_agent }}</td><td class="small">{{ s.created_at }}</td><td class="small">{{ s.last_seen }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    <div class="card"><div class="card-header">최근 로그인 시도 <span class="help">본인이 아닌 시도가 있으면 즉시 비밀번호를 변경하세요</span></div>
+    <table class="table table-sm mb-0"><thead><tr><th>일시</th><th>IP</th><th>결과</th></tr></thead><tbody>
+    {% for l in logins %}<tr><td class="small">{{ l.created_at }}</td><td>{{ l.ip }}</td><td>{% if l.success %}<span class="text-success">성공</span>{% else %}<span class="text-danger">실패</span> <span class="small text-muted">{{ l.reason }}</span>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+</div>
+{% endblock %}

@@ -1,18 +1,38 @@
 """공통 유틸리티: 템플릿 엔진, 포맷 필터, 날짜 계산, 금액 한글 변환."""
 import os
-import re
 from datetime import date, datetime, timedelta
 
+import nh3
 from fastapi.templating import Jinja2Templates
 
-from app.db import BASE_DIR
+from app.config import APP_DIR as BASE_DIR, settings
 
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+
+def _security_context(request) -> dict:
+    """모든 화면 공통: 로그인 사용자, 권한, CSRF 토큰, CSP nonce."""
+    user = getattr(request.state, "user", None)
+    sess = getattr(request.state, "session", None)
+    role = user["role"] if user else None
+    return {
+        "current_user": user,
+        "csrf_token": sess["csrf_token"] if sess else "",
+        "csp_nonce": getattr(request.state, "csp_nonce", ""),
+        "idle_minutes": settings.session_idle_minutes,
+        "perms": {
+            "admin": role == "admin",
+            "write": role in ("admin", "hr"),
+            "salary": role in ("admin", "hr"),   # 연봉·계약서 열람
+            "pii": role in ("admin", "hr"),      # 연락처·주소·계좌 등 개인정보 열람
+        },
+    }
+
+
+templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"), context_processors=[_security_context])
 
 
 # ── 날짜 ────────────────────────────────────────────────────────────────
 def today() -> date:
-    override = os.environ.get("MGMT_TODAY")  # 테스트용 기준일 고정
+    override = os.environ.get("BMS_TODAY")  # 테스트용 기준일 고정
     return date.fromisoformat(override) if override else date.today()
 
 
@@ -118,17 +138,16 @@ def pct(v, digits=1) -> str:
 
 
 # ── HTML 정리 (에디터 저장 내용) ─────────────────────────────────────────
-_DANGEROUS_TAGS = re.compile(r"<\s*(script|iframe|object|embed|style|link|meta)[^>]*>.*?<\s*/\s*\1\s*>|<\s*(script|iframe|object|embed|link|meta)[^>]*/?>",
-                             re.IGNORECASE | re.DOTALL)
-_EVENT_ATTRS = re.compile(r"\s+on[a-z]+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
-_JS_URLS = re.compile(r"(href|src)\s*=\s*([\"'])\s*javascript:[^\"']*\2", re.IGNORECASE)
+_ALLOWED_TAGS = {"p", "br", "b", "strong", "i", "em", "u", "s", "strike", "span", "div", "font", "h1", "h2", "h3",
+                 "h4", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "hr", "sub", "sup", "blockquote"}
+_ALLOWED_ATTRS = {"*": {"class", "style", "align"}, "td": {"colspan", "rowspan"}, "th": {"colspan", "rowspan"},
+                  "font": {"size", "color"}}
 
 
 def sanitize_html(html: str) -> str:
-    html = _DANGEROUS_TAGS.sub("", html or "")
-    html = _EVENT_ATTRS.sub("", html)
-    html = _JS_URLS.sub(r'\1="#"', html)
-    return html
+    """허용목록 기반 HTML 정화(nh3). 스크립트·이벤트 속성·링크·이미지 등은 모두 제거."""
+    return nh3.clean(html or "", tags=_ALLOWED_TAGS, attributes=_ALLOWED_ATTRS, link_rel=None,
+                     strip_comments=True)
 
 
 # ── Jinja 필터 등록 ─────────────────────────────────────────────────────

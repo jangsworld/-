@@ -10,12 +10,12 @@ MODULES = [
         "menus": [
             {"key": "hr.dashboard", "name": "인사 대시보드", "icon": "bi-speedometer2", "url": "/hr/dashboard"},
             {"key": "hr.employees", "name": "임직원 현황", "icon": "bi-person-vcard", "url": "/hr/employees"},
-            {"key": "hr.contracts", "name": "근로계약서", "icon": "bi-file-earmark-text", "url": "/hr/contracts"},
-            {"key": "hr.salaries", "name": "연봉현황", "icon": "bi-graph-up-arrow", "url": "/hr/salaries"},
-            {"key": "hr.rewards", "name": "상벌현황", "icon": "bi-award", "url": "/hr/rewards"},
-            {"key": "hr.specials", "name": "근로특이사항", "icon": "bi-calendar-heart", "url": "/hr/specials"},
-            {"key": "hr.certificates", "name": "증명서 발급", "icon": "bi-patch-check", "url": "/hr/certificates"},
-            {"key": "hr.templates", "name": "문서 템플릿", "icon": "bi-file-earmark-ruled", "url": "/hr/templates"},
+            {"key": "hr.contracts", "restricted": True, "name": "근로계약서", "icon": "bi-file-earmark-text", "url": "/hr/contracts"},
+            {"key": "hr.salaries", "restricted": True, "name": "연봉현황", "icon": "bi-graph-up-arrow", "url": "/hr/salaries"},
+            {"key": "hr.rewards", "restricted": True, "name": "상벌현황", "icon": "bi-award", "url": "/hr/rewards"},
+            {"key": "hr.specials", "restricted": True, "name": "근로특이사항", "icon": "bi-calendar-heart", "url": "/hr/specials"},
+            {"key": "hr.certificates", "restricted": True, "name": "증명서 발급", "icon": "bi-patch-check", "url": "/hr/certificates"},
+            {"key": "hr.templates", "restricted": True, "name": "문서 템플릿", "icon": "bi-file-earmark-ruled", "url": "/hr/templates"},
         ],
     },
     {

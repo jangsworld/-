@@ -29,7 +29,7 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 const CATS = {{ categories|tojson }};
 const grp = document.getElementById('grp'), cat = document.getElementById('cat'), paper = document.getElementById('paper');
 const fillCats = (sel) => { cat.innerHTML = CATS[grp.value].map(c => `<option ${c === sel ? 'selected' : ''}>${c}</option>`).join(''); };

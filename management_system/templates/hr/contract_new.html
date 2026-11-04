@@ -44,7 +44,7 @@
 </form>
 {% endblock %}
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 const SUG = {{ suggest_map|tojson }};
 const empSel = document.getElementById('empSel'), tplSel = document.getElementById('tplSel');
 // 대상자/템플릿 변경 → 해당 조건 기본값으로 새로고침

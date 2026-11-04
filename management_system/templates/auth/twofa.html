@@ -1,0 +1,30 @@
+{% extends "auth/_auth_base.html" %}
+{% block title %}2단계 인증 등록{% endblock %}
+{% block content %}
+{% if enabled %}
+  <div class="alert alert-success small"><i class="bi bi-shield-check me-1"></i>2단계 인증이 등록되어 있습니다.</div>
+  <p class="small">휴대폰을 교체·분실한 경우 시스템관리자에게 <b>2단계 인증 초기화</b>를 요청한 뒤 다시 등록하세요.</p>
+  <a href="/account" class="btn btn-outline-secondary w-100">내 계정으로</a>
+{% else %}
+  {% if forced %}<div class="alert alert-warning py-2 small">외부 접속 보안을 위해 <b>2단계 인증 등록이 필수</b>입니다.</div>{% endif %}
+  <ol class="small ps-3">
+    <li>휴대폰에 <b>Google Authenticator</b> 또는 <b>Microsoft Authenticator</b> 앱을 설치합니다.</li>
+    <li>앱에서 <b>QR 코드 스캔</b>으로 아래 코드를 등록합니다.</li>
+    <li>앱에 표시된 6자리 숫자를 입력합니다.</li>
+  </ol>
+  <div class="text-center mb-2"><div id="qr" class="d-inline-block p-2 bg-white border rounded" data-uri="{{ uri }}"></div></div>
+  <div class="small text-center text-muted mb-3">QR 스캔이 안 되면 키 직접 입력:<br><code class="user-select-all">{{ secret }}</code></div>
+  <form method="post" action="/account/2fa" autocomplete="off">
+    <input class="form-control form-control-lg text-center mb-2" name="code" inputmode="numeric" maxlength="7" placeholder="000000" autocomplete="one-time-code" required style="letter-spacing:.4em">
+    <button class="btn btn-primary w-100">등록 완료</button>
+  </form>
+  <form method="post" action="/logout" class="mt-2"><button class="btn btn-link btn-sm w-100">로그아웃</button></form>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}" src="/static/vendor/qrcode/qrcode.js"></script>
+<script nonce="{{ csp_nonce }}">
+const el = document.getElementById('qr');
+if (el) { const q = qrcode(0, 'M'); q.addData(el.dataset.uri); q.make(); el.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2 }); }
+</script>
+{% endblock %}

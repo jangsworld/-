@@ -2,6 +2,12 @@ fastapi>=0.110
 uvicorn[standard]
 jinja2
 python-multipart
+# 보안
+cryptography>=42      # AES-256-GCM 필드 암호화
+argon2-cffi>=23       # 비밀번호 해시(Argon2id)
+nh3>=0.2              # 에디터 HTML 허용목록 정화
+# PDF 변환(NAS 보관) – Windows 에서는 설치된 Edge 사용
+playwright>=1.40
 # 테스트
 httpx
 pytest

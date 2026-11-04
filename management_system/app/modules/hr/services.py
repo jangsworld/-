@@ -1,4 +1,5 @@
 """인사관리 비즈니스 로직: 문서 자동작성, 연봉 분석, 대시보드 집계, 관리 알림."""
+import html
 import re
 from datetime import timedelta
 from collections import Counter, defaultdict
@@ -109,7 +110,7 @@ def render_template(content: str, ctx: dict) -> str:
     def rep(m):
         key = m.group(1)
         if key in ctx and ctx[key] != "":
-            return str(ctx[key])
+            return html.escape(str(ctx[key]))  # 입력값에 포함된 태그로 인한 XSS 방지
         return f'<span class="ph-missing">[{key}]</span>'
     return _PH.sub(rep, content)
 

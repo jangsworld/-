@@ -11,19 +11,19 @@
       <div class="text-muted">{{ e.emp_no }} · {{ e.department or '-' }} · {{ e.rank or '-' }}{% if e.title %} / {{ e.title }}{% endif %} · {{ e.employment_type }}</div>
       <div class="small text-muted">입사 {{ e.hire_date }} · 근속 {{ e.hire_date|service(e.resign_date) }}{% if e.resign_date %} · 퇴사 {{ e.resign_date }}{% endif %}</div>
     </div>
-    <div class="ms-auto text-end">
+    {% if perms.salary %}<div class="ms-auto text-end">
       <div class="small text-muted">현재 연봉</div><div class="fs-5 fw-bold">{{ e.annual_salary|won }}원</div>
-    </div>
-    <div class="d-flex gap-2">
+    </div>{% endif %}
+    {% if perms.write %}<div class="d-flex gap-2 {{ '' if perms.salary else 'ms-auto' }}">
       <a class="btn btn-sm btn-outline-primary" href="/hr/contracts/new?employee_id={{ e.id }}"><i class="bi bi-file-earmark-plus"></i> 계약서 작성</a>
       <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#certModal"><i class="bi bi-patch-check"></i> 증명서</button>
       <a class="btn btn-sm btn-primary" href="/hr/employees/{{ e.id }}/edit"><i class="bi bi-pencil"></i> 수정</a>
-    </div>
+    </div>{% endif %}
   </div>
   <div class="card-footer bg-white p-0">
     <ul class="nav nav-tabs border-0 px-2">
       {% for key, label, cnt in [('info','기본정보',None), ('history','인사발령',appointments|length), ('contract','근로계약·증명서',contracts|length + certs|length),
-        ('salary','연봉',salaries|length), ('reward','상벌',rewards|length), ('special','근로특이사항',specials|length)] %}
+        ('salary','연봉',salaries|length), ('reward','상벌',rewards|length), ('special','근로특이사항',specials|length)] if perms.salary or key in ('info', 'history') %}
       <li class="nav-item"><a class="nav-link {% if tab == key %}active{% endif %}" href="?tab={{ key }}">{{ label }}{% if cnt %} <span class="badge text-bg-light border">{{ cnt }}</span>{% endif %}</a></li>
       {% endfor %}
     </ul>
@@ -34,9 +34,9 @@
 <div class="row g-3">
   <div class="col-lg-6"><div class="card h-100"><div class="card-header">인적사항</div><div class="card-body">
     <dl class="info-grid">
-      <dt>생년월일</dt><dd>{{ e.birth_date or '-' }}</dd><dt>성별</dt><dd>{{ e.gender or '-' }}</dd>
-      <dt>연락처</dt><dd>{{ e.phone or '-' }}</dd><dt>이메일</dt><dd>{{ e.email or '-' }}</dd>
-      <dt>주소</dt><dd>{{ e.address or '-' }}</dd><dt>비상연락처</dt><dd>{{ e.emergency_contact or '-' }}</dd>
+      <dt>생년월일</dt><dd>{{ (e.birth_date or '-') if perms.pii else '🔒' }}</dd><dt>성별</dt><dd>{{ e.gender or '-' }}</dd>
+      <dt>연락처</dt><dd>{{ (e.phone or '-') if perms.pii else '🔒' }}</dd><dt>이메일</dt><dd>{{ (e.email or '-') if perms.pii else '🔒' }}</dd>
+      <dt>주소</dt><dd>{{ (e.address or '-') if perms.pii else '🔒' }}</dd><dt>비상연락처</dt><dd>{{ (e.emergency_contact or '-') if perms.pii else '🔒' }}</dd>
       <dt>최종학력</dt><dd>{{ e.education or '-' }}</dd><dt>보유자격</dt><dd>{{ e.certificates or '-' }}</dd>
     </dl></div></div></div>
   <div class="col-lg-6"><div class="card h-100"><div class="card-header">고용정보</div><div class="card-body">
@@ -44,36 +44,36 @@
       <dt>부서 / 직급</dt><dd>{{ e.department or '-' }} / {{ e.rank or '-' }}</dd><dt>직책</dt><dd>{{ e.title or '-' }}</dd>
       <dt>담당업무</dt><dd>{{ e.job_duty or '-' }}</dd><dt>고용형태</dt><dd>{{ e.employment_type }}</dd>
       <dt>근무지</dt><dd>{{ e.work_location or '-' }}</dd><dt>수습 종료일</dt><dd>{{ e.probation_end or '-' }}</dd>
-      <dt>급여계좌</dt><dd>{{ e.bank_name or '' }} {{ e.bank_account or '-' }}</dd>
-      {% if e.resign_date %}<dt>퇴사사유</dt><dd>{{ e.resign_reason or '-' }}</dd>{% endif %}
-      <dt>비고</dt><dd style="white-space:pre-wrap">{{ e.memo or '-' }}</dd>
+      <dt>급여계좌</dt><dd>{% if perms.pii %}{{ e.bank_name or '' }} {{ e.bank_account or '-' }}{% else %}🔒{% endif %}</dd>
+      {% if e.resign_date and perms.pii %}<dt>퇴사사유</dt><dd>{{ e.resign_reason or '-' }}</dd>{% endif %}
+      <dt>비고</dt><dd style="white-space:pre-wrap">{{ (e.memo or '-') if perms.pii else '🔒' }}</dd>
     </dl></div></div></div>
-  <div class="col-12 text-end">
+  {% if perms.admin %}<div class="col-12 text-end">
     <form method="post" action="/hr/employees/{{ e.id }}/delete" data-confirm="{{ e.name }}님의 모든 인사기록(계약·연봉·상벌 포함)이 삭제됩니다. 퇴사자는 삭제 대신 퇴사일을 입력해 이력을 보존하세요. 계속할까요?">
       <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> 임직원 삭제</button></form>
-  </div>
+  </div>{% endif %}
 </div>
 
 {% elif tab == 'history' %}
 <div class="card"><div class="card-header d-flex align-items-center">인사발령 이력 <span class="help ms-2">부서·직급·직책·고용형태 변경 시 자동 기록</span>
-  <button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#apptModal"><i class="bi bi-plus"></i> 발령 추가</button></div>
+  {% if perms.write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#apptModal"><i class="bi bi-plus"></i> 발령 추가</button>{% endif %}</div>
   <table class="table table-sm mb-0"><thead><tr><th>발령일</th><th>구분</th><th>변경 전</th><th>변경 후</th><th>비고</th><th></th></tr></thead><tbody>
   {% for a in appointments %}<tr><td>{{ a.appt_date }}</td><td><span class="badge text-bg-light border">{{ a.appt_type }}</span></td>
     <td>{{ a.from_value or '' }}</td><td>{{ a.to_value or '' }}</td><td class="small text-muted">{{ a.note or '' }}</td>
-    <td class="text-end"><form method="post" action="/hr/appointments/{{ a.id }}/delete" data-confirm="삭제할까요?"><input type="hidden" name="next" value="{{ back }}?tab=history"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
+    <td class="text-end">{% if perms.write %}<form method="post" action="/hr/appointments/{{ a.id }}/delete" data-confirm="삭제할까요?"><input type="hidden" name="next" value="{{ back }}?tab=history"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
   {% else %}<tr><td colspan="6" class="text-muted text-center p-3">이력 없음</td></tr>{% endfor %}
   </tbody></table></div>
 
 {% elif tab == 'contract' %}
 <div class="card mb-3"><div class="card-header d-flex">근로계약서 <a class="btn btn-sm btn-primary ms-auto" href="/hr/contracts/new?employee_id={{ e.id }}"><i class="bi bi-plus"></i> 새 계약서</a></div>
   <table class="table table-sm table-hover mb-0"><thead><tr><th>구분</th><th>제목</th><th>계약기간</th><th class="num">연봉</th><th>상태</th><th>체결일</th><th>수정일</th></tr></thead><tbody>
-  {% for d in contracts %}<tr onclick="location.href='/hr/documents/{{ d.id }}'" style="cursor:pointer"><td>{{ d.category }}</td><td>{{ d.title }}</td>
+  {% for d in contracts %}<tr data-href="/hr/documents/{{ d.id }}"><td>{{ d.category }}</td><td>{{ d.title }}</td>
     <td>{{ d.start_date or '' }} ~ {{ d.end_date or '정함없음' }}</td><td class="num">{{ d.annual_salary|won }}</td>
     <td><span class="st st-{{ d.status }}">{{ d.status }}</span></td><td>{{ d.signed_date or '' }}</td><td class="small text-muted">{{ d.updated_at[:10] }}</td></tr>
   {% else %}<tr><td colspan="7" class="text-muted text-center p-3">작성된 계약서가 없습니다</td></tr>{% endfor %}</tbody></table></div>
 <div class="card"><div class="card-header d-flex">증명서 발급 이력 <button class="btn btn-sm btn-outline-primary ms-auto" data-bs-toggle="modal" data-bs-target="#certModal"><i class="bi bi-plus"></i> 발급</button></div>
   <table class="table table-sm table-hover mb-0"><thead><tr><th>발급번호</th><th>종류</th><th>용도</th><th>발급일</th><th>상태</th></tr></thead><tbody>
-  {% for d in certs %}<tr onclick="location.href='/hr/documents/{{ d.id }}'" style="cursor:pointer"><td>{{ d.doc_no }}</td><td>{{ d.category }}</td><td>{{ d.purpose or '' }}</td><td>{{ d.created_at[:10] }}</td><td><span class="st st-{{ d.status }}">{{ d.status }}</span></td></tr>
+  {% for d in certs %}<tr data-href="/hr/documents/{{ d.id }}"><td>{{ d.doc_no }}</td><td>{{ d.category }}</td><td>{{ d.purpose or '' }}</td><td>{{ d.created_at[:10] }}</td><td><span class="st st-{{ d.status }}">{{ d.status }}</span></td></tr>
   {% else %}<tr><td colspan="5" class="text-muted text-center p-3">발급 이력 없음</td></tr>{% endfor %}</tbody></table></div>
 
 {% elif tab == 'salary' %}
@@ -108,6 +108,7 @@
 {% endif %}
 
 {# ── 모달 ─────────────────────────────────────────────── #}
+{% if perms.write %}
 <div class="modal fade" id="apptModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="/hr/employees/{{ e.id }}/appointments">
   <div class="modal-header"><h6 class="modal-title">인사발령 추가</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body row g-2">
@@ -142,12 +143,13 @@
       {% for t in cert_templates %}<option value="{{ t.id }}" {% if e.status == '퇴사' and t.category == '경력증명' %}selected{% endif %}>{{ t.name }}</option>{% endfor %}</select></div>
     <div class="col-6"><label class="form-label small">용도</label><input class="form-control form-control-sm" name="purpose" placeholder="금융기관 제출용" required></div>
   </div><div class="modal-footer"><button class="btn btn-sm btn-primary">발급</button></div></form></div></div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 {% if tab == 'salary' and salaries %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script>
+<script nonce="{{ csp_nonce }}" src="/static/vendor/chartjs/chart.umd.min.js"></script>
+<script nonce="{{ csp_nonce }}">
 const S = {{ salaries|reverse|list|tojson }};
 new Chart(document.getElementById('cSal'), {
   data: { labels: S.map(s => s.year), datasets: [
@@ -157,7 +159,7 @@ new Chart(document.getElementById('cSal'), {
 });
 </script>
 {% endif %}
-<script>
+<script nonce="{{ csp_nonce }}">
 const preEmp = {{ e.id }};
 </script>
 {% endblock %}

@@ -18,11 +18,11 @@
           {% for x in ['재직(전체)', '재직', '휴직', '단축근무', '입사예정', '퇴사', ''] %}<option value="{{ x }}" {% if f.status == x %}selected{% endif %}>{{ x or '전체(퇴사 포함)' }}</option>{% endfor %}</select></div>
       <div class="col-md-auto"><button class="btn btn-sm btn-primary"><i class="bi bi-search"></i> 조회</button></div>
       <div class="col-md text-md-end">
-        <div class="btn-group btn-group-sm">
+        {% if perms.write %}<div class="btn-group btn-group-sm">
           <a class="btn btn-outline-secondary" href="/hr/employees/export.csv"><i class="bi bi-download"></i> 엑셀(CSV)</a>
           <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#importModal"><i class="bi bi-upload"></i> 일괄등록</button>
           <a class="btn btn-primary" href="/hr/employees/new"><i class="bi bi-person-plus"></i> 임직원 등록</a>
-        </div>
+        </div>{% endif %}
       </div>
     </form>
   </div>
@@ -34,19 +34,19 @@
     <table class="table table-hover table-sm align-middle mb-0">
       <thead><tr>
         <th>사번</th><th>성명</th><th>부서</th><th>직급</th><th>직책</th><th>고용형태</th><th>입사일</th><th>근속</th>
-        <th class="num">현재연봉</th><th>계약서</th><th>상태</th><th>연락처</th></tr></thead>
+        {% if perms.salary %}<th class="num">현재연봉</th><th>계약서</th>{% endif %}<th>상태</th>{% if perms.pii %}<th>연락처</th>{% endif %}</tr></thead>
       <tbody>
       {% for e in rows %}
-        <tr onclick="location.href='/hr/employees/{{ e.id }}'" style="cursor:pointer">
+        <tr data-href="/hr/employees/{{ e.id }}">
           <td class="text-muted">{{ e.emp_no }}</td>
           <td class="fw-semibold">{{ e.name }}{% if e.gender %} <span class="text-muted small">({{ e.gender }})</span>{% endif %}</td>
           <td>{{ e.department or '' }}</td><td>{{ e.rank or '' }}</td><td>{{ e.title or '' }}</td>
           <td>{{ e.employment_type }}</td><td>{{ e.hire_date }}</td>
           <td class="small">{{ e.hire_date|service(e.resign_date) }}</td>
-          <td class="num">{{ e.annual_salary|won }}</td>
-          <td>{% if e.status == '퇴사' %}-{% elif e.has_contract %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<span class="badge text-bg-danger">미체결</span>{% endif %}</td>
+          {% if perms.salary %}<td class="num">{{ e.annual_salary|won }}</td>
+          <td>{% if e.status == '퇴사' %}-{% elif e.has_contract %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<span class="badge text-bg-danger">미체결</span>{% endif %}</td>{% endif %}
           <td><span class="st st-{{ e.status }}">{{ e.status }}</span></td>
-          <td class="small text-muted">{{ e.phone or '' }}</td>
+          {% if perms.pii %}<td class="small text-muted">{{ e.phone or '' }}</td>{% endif %}
         </tr>
       {% else %}
         <tr><td colspan="12" class="text-center text-muted p-4">조회된 임직원이 없습니다</td></tr>

@@ -34,10 +34,8 @@
       </div></div>
   </div>
   <div class="col-12">
-    <div class="card"><div class="card-header">변경 이력 (감사 로그, 최근 50건)</div>
-      <div class="table-responsive" style="max-height:320px"><table class="table table-sm mb-0"><thead><tr><th>일시</th><th>모듈</th><th>작업</th><th>대상</th><th>내용</th></tr></thead><tbody>
-      {% for l in logs %}<tr><td class="small text-muted">{{ l.created_at }}</td><td>{{ l.module }}</td><td>{{ l.action }}</td><td>{{ l.target or '' }}</td><td class="small text-muted text-truncate" style="max-width:400px">{{ l.detail or '' }}</td></tr>{% endfor %}
-      </tbody></table></div></div>
+    <div class="card"><div class="card-header">서버 구동 설정 <span class="help">config/bms.toml 에서 변경 (변경 후 서비스 재시작)</span></div>
+      <table class="table table-sm mb-0">{% for k, v in cfg.items() %}<tr><th style="width:200px">{{ k }}</th><td><code>{{ v }}</code></td></tr>{% endfor %}</table></div>
   </div>
 </div>
 {% endblock %}

@@ -47,7 +47,7 @@
 {% include "hr/_special_modal.html" %}
 {% endblock %}
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 const TL = {{ timeline|tojson }}, WS = {{ work_specials|tojson }};
 const T0 = new Date('{{ timeline_start }}'), T1 = new Date('{{ timeline_end }}'), NOW = new Date('{{ today().isoformat() }}');
 const span = T1 - T0, pos = d => Math.max(0, Math.min(100, (d - T0) / span * 100));

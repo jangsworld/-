@@ -16,11 +16,14 @@
   {{ kpi('이번 달 입사 / 퇴사', k.hires_month ~ ' / ' ~ k.resign_month, '올해 입사 ' ~ k.hires_year ~ ' · 퇴사 ' ~ k.resign_year, 'bi-arrow-left-right') }}
   {{ kpi('연간 이직률', '%.1f'|format(k.turnover) ~ '%', '올해 퇴사자 ÷ 평균 인원', 'bi-box-arrow-right') }}
   {{ kpi('평균 근속', '%.1f'|format(k.avg_tenure) ~ '년', '여성 비율 ' ~ '%.0f'|format(k.female_ratio) ~ '%', 'bi-hourglass-split') }}
+  {% if perms.salary %}
   {{ kpi('평균 연봉', k.avg_salary|man_won ~ '원', '연간 인건비 ' ~ (k.payroll / 100000000)|round(2) ~ '억', 'bi-cash-stack', '/hr/salaries') }}
   {{ kpi('계약서 미체결', k.contract_missing ~ '명', '근로기준법 제17조 리스크', 'bi-exclamation-octagon', '/hr/contracts') }}
+  {% endif %}
 </div>
 
 <div class="row g-3">
+  {% if perms.salary %}
   <div class="col-xl-5">
     <div class="card h-100">
       <div class="card-header d-flex align-items-center">
@@ -47,7 +50,8 @@
     </div>
   </div>
 
-  <div class="col-xl-7">
+  {% endif %}
+  <div class="{{ 'col-xl-7' if perms.salary else 'col-12' }}">
     <div class="row g-3">
       <div class="col-md-6"><div class="card"><div class="card-header">부서별 인원</div><div class="card-body"><div class="chart-box"><canvas id="cDept"></canvas></div></div></div></div>
       <div class="col-md-6"><div class="card"><div class="card-header">고용형태 구성</div><div class="card-body"><div class="chart-box"><canvas id="cType"></canvas></div></div></div></div>
@@ -57,7 +61,7 @@
 
   <div class="col-md-4"><div class="card"><div class="card-header">근속기간 분포</div><div class="card-body"><div class="chart-box"><canvas id="cTenure"></canvas></div></div></div></div>
   <div class="col-md-4"><div class="card"><div class="card-header">연령대 분포</div><div class="card-body"><div class="chart-box"><canvas id="cAge"></canvas></div></div></div></div>
-  <div class="col-md-4"><div class="card"><div class="card-header">연도별 인건비·평균인상률</div><div class="card-body"><div class="chart-box"><canvas id="cPay"></canvas></div></div></div></div>
+  {% if perms.salary %}<div class="col-md-4"><div class="card"><div class="card-header">연도별 인건비·평균인상률</div><div class="card-body"><div class="chart-box"><canvas id="cPay"></canvas></div></div></div></div>{% endif %}
 
   <div class="col-lg-4">
     <div class="card h-100"><div class="card-header d-flex">최근 인사발령</div>
@@ -70,6 +74,7 @@
         {% else %}<li class="list-group-item text-muted">이력 없음</li>{% endfor %}
       </ul></div>
   </div>
+  {% if perms.salary %}
   <div class="col-lg-4">
     <div class="card h-100"><div class="card-header d-flex">휴직·단축근무 현황<a class="ms-auto small" href="/hr/specials">전체</a></div>
       <ul class="list-group list-group-flush small">
@@ -90,11 +95,12 @@
         {% else %}<li class="list-group-item text-muted">없음</li>{% endfor %}
       </ul></div>
   </div>
+  {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script>
+<script nonce="{{ csp_nonce }}" src="/static/vendor/chartjs/chart.umd.min.js"></script>
+<script nonce="{{ csp_nonce }}">
 const C = {{ d.charts|tojson }};
 Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
 Chart.defaults.plugins.legend.labels.boxWidth = 12;
@@ -121,7 +127,7 @@ const bar = (id, rows, color) => new Chart(document.getElementById(id), {
 });
 bar('cTenure', C.tenure, '#3fa7a3');
 bar('cAge', C.age, '#6c8ebf');
-new Chart(document.getElementById('cPay'), {
+if (document.getElementById('cPay')) new Chart(document.getElementById('cPay'), {
   data: { labels: C.salary_trend.map(r => r.year), datasets: [
     { type: 'bar', label: '인건비(억)', data: C.salary_trend.map(r => r.total / 1e8), backgroundColor: '#2d5a8c', borderRadius: 4, yAxisID: 'y' },
     { type: 'line', label: '평균인상률(%)', data: C.salary_trend.map(r => r.avg_rate), borderColor: '#f2a541', backgroundColor: '#f2a541', yAxisID: 'y1', tension: .3 } ] },

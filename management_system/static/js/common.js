@@ -24,7 +24,7 @@ function toast(msg) {
 }
 
 async function postJSON(url, body) {
-  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' }, body: JSON.stringify(body) });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -49,3 +49,42 @@ setTimeout(() => { const t = document.getElementById('flashToast'); if (t) t.cla
 if (location.search.includes('msg=')) {
   const u = new URL(location.href); u.searchParams.delete('msg'); history.replaceState(null, '', u);
 }
+
+// ── 보안: CSRF 토큰 자동 첨부 ───────────────────────────────────────────
+const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || '';
+document.addEventListener('submit', (e) => {
+  const f = e.target;
+  if (f.method?.toLowerCase() === 'post' && CSRF && !f.querySelector('input[name="csrf_token"]')) {
+    const i = document.createElement('input'); i.type = 'hidden'; i.name = 'csrf_token'; i.value = CSRF; f.prepend(i);
+  }
+}, true);
+document.querySelectorAll('form[method="post"], form[method="POST"]').forEach(f => {
+  if (CSRF && !f.querySelector('input[name="csrf_token"]')) {
+    const i = document.createElement('input'); i.type = 'hidden'; i.name = 'csrf_token'; i.value = CSRF; f.prepend(i);
+  }
+});
+
+// ── 인라인 이벤트 대체 (CSP: 인라인 스크립트 금지) ─────────────────────
+document.addEventListener('click', (e) => {
+  if (e.target.closest('a, button, input, select, label, textarea')) {
+    if (e.target.closest('[data-print]')) window.print();
+    if (e.target.closest('[data-toggle-sidebar]')) document.getElementById('sidebar').classList.toggle('open');
+    return;
+  }
+  const row = e.target.closest('[data-href]');
+  if (row) location.href = row.dataset.href;
+});
+document.querySelectorAll('[data-autosubmit]').forEach(el => el.addEventListener('change', () => el.form.submit()));
+
+// ── 유휴 시간 표시 및 자동 로그아웃 안내 ─────────────────────────────────
+(() => {
+  const el = document.getElementById('idleTimer');
+  if (!el) return;
+  const limit = Number(el.dataset.idle) * 60; let left = limit;
+  ['click', 'keydown'].forEach(ev => document.addEventListener(ev, () => { left = limit; }));
+  setInterval(() => {
+    left -= 1;
+    if (left <= 0) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    el.textContent = left <= 300 ? `⏱ ${Math.ceil(left / 60)}분 후 자동 로그아웃` : '';
+  }, 1000);
+})();

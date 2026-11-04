@@ -26,7 +26,10 @@
       <input type="date" class="form-control form-control-sm mb-3" id="signed" value="{{ d.signed_date or '' }}">
       <div class="d-grid gap-2">
         <button class="btn btn-primary btn-sm" id="saveBtn"><i class="bi bi-save"></i> 저장 <span class="small opacity-75">(Ctrl+S)</span></button>
-        <button class="btn btn-outline-dark btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> 인쇄 / PDF 저장</button>
+        <button class="btn btn-outline-dark btn-sm" data-print><i class="bi bi-printer"></i> 인쇄 / PDF 저장</button>
+        <form method="post" action="/hr/documents/{{ d.id }}/pdf" class="d-grid">
+          <button class="btn btn-outline-success btn-sm"><i class="bi bi-hdd-network"></i> PDF 변환 · NAS 보관</button></form>
+        {% if d.pdf_path %}<a class="btn btn-success btn-sm" href="/hr/documents/{{ d.id }}/pdf" target="_blank"><i class="bi bi-file-earmark-pdf"></i> 보관본 열기 <span class="small opacity-75">({{ d.pdf_saved_at[:16] }})</span></a>{% endif %}
         <form method="post" action="/hr/documents/{{ d.id }}/regenerate" class="d-grid" data-confirm="편집한 내용이 사라지고 템플릿+최신 임직원 정보로 다시 작성됩니다. 계속할까요?">
           <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-repeat"></i> 최신 정보로 다시 작성</button></form>
         <form method="post" action="/hr/documents/{{ d.id }}/delete" class="d-grid" data-confirm="문서를 삭제할까요?">
@@ -47,7 +50,7 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 const paper = document.getElementById('paper');
 let dirty = false;
 const markDirty = () => { dirty = true; document.getElementById('saveState').textContent = '변경사항 있음 (저장 필요)'; };

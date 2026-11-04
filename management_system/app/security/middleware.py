@@ -1,0 +1,173 @@
+"""보안 미들웨어: 인증 강제, 2단계 인증·비밀번호 변경 강제, 권한(RBAC), CSRF, 보안 헤더."""
+import hmac
+import json
+import re
+import secrets
+from urllib.parse import parse_qs, quote, urlparse
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
+
+from app.config import settings
+from app.db import current_actor
+from app.security import auth
+
+PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/favicon.ico")
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+# 경로별 필요 권한 (위에서부터 첫 일치 규칙 적용)
+ADMIN = {"admin"}
+WRITERS = {"admin", "hr"}
+ALL = {"admin", "hr", "viewer"}
+RULES = [
+    (r"^/admin", ADMIN, ADMIN),
+    (r"^/settings", ADMIN, ADMIN),
+    (r"^/account", ALL, ALL),
+    (r"^/logout", ALL, ALL),
+    # 연봉·계약서·증명서·상벌·근로특이사항(건강·가족정보)·내보내기: 조회자 접근 불가
+    (r"^/hr/(salaries|contracts|documents|templates|certificates|rewards|specials|api)", WRITERS, WRITERS),
+    (r"^/hr/employees/(new|import|export\.csv|template\.csv|\d+/edit)", WRITERS, WRITERS),
+    (r"^/hr", ALL, WRITERS),
+    (r"^/$", ALL, ALL),
+]
+
+
+def required_roles(path: str, method: str) -> set:
+    for pat, read_roles, write_roles in RULES:
+        if re.match(pat, path):
+            return read_roles if method in SAFE_METHODS else write_roles
+    return ADMIN  # 규칙에 없는 경로는 기본 거부(관리자만)
+
+
+def client_ip(request: Request) -> str:
+    peer = request.client.host if request.client else ""
+    if settings.behind_proxy and peer in settings.trusted_proxies:
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff:
+            return xff.split(",")[0].strip()
+    return peer
+
+
+def _is_api(request: Request) -> bool:
+    return "/api/" in request.url.path or request.headers.get("content-type", "").startswith("application/json")
+
+
+def _deny(request: Request, status: int, msg: str) -> Response:
+    if _is_api(request):
+        return JSONResponse({"ok": False, "message": msg}, status_code=status)
+    if status == 401:
+        nxt = request.url.path + (("?" + request.url.query) if request.url.query else "")
+        return RedirectResponse("/login?next=" + quote(nxt), status_code=303)
+    from app.common import templates
+    return templates.TemplateResponse(request, "error.html", {"status": status, "message": msg}, status_code=status)
+
+
+def _origin_ok(request: Request) -> bool:
+    """CSRF 1차 방어: Origin(없으면 Referer)이 같은 호스트인지 확인."""
+    src = request.headers.get("origin") or request.headers.get("referer")
+    if not src:
+        return False
+    host = request.headers.get("x-forwarded-host") if settings.behind_proxy else None
+    host = host or request.headers.get("host", "")
+    return urlparse(src).netloc == host
+
+
+async def _csrf_token_from(request: Request) -> str:
+    hdr = request.headers.get("x-csrf-token")
+    if hdr:
+        return hdr
+    ctype = request.headers.get("content-type", "")
+    body = await request.body()  # Starlette 가 캐시하므로 이후 핸들러에서도 읽을 수 있음
+    if ctype.startswith("application/x-www-form-urlencoded"):
+        return (parse_qs(body.decode("utf-8", "ignore")).get("csrf_token") or [""])[0]
+    if ctype.startswith("multipart/form-data"):
+        m = re.search(rb'name="csrf_token"\r\n\r\n([^\r\n]+)', body)
+        return m.group(1).decode() if m else ""
+    if ctype.startswith("application/json"):
+        try:
+            return json.loads(body or b"{}").get("csrf_token", "")
+        except ValueError:
+            return ""
+    return ""
+
+
+class SecurityMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        request.state.csp_nonce = secrets.token_urlsafe(16)
+        request.state.user = None
+        request.state.session = None
+        ip = client_ip(request)
+        request.state.ip = ip
+        path = request.url.path
+
+        # 업로드 크기 제한
+        cl = request.headers.get("content-length")
+        if cl and cl.isdigit() and int(cl) > settings.max_upload_mb * 1024 * 1024:
+            return PlainTextResponse("요청 크기가 너무 큽니다", status_code=413)
+
+        is_public = path.startswith(PUBLIC_PREFIXES)
+        token = request.cookies.get(auth.COOKIE_NAME)
+        sess, user = auth.load_session(token)
+        request.state.user, request.state.session = user, sess
+        actor = current_actor.set((user["id"], user["username"], ip) if user else (None, "anonymous", ip))
+        try:
+            # CSRF: 상태 변경 요청은 Origin 확인 + (로그인 후) 세션 토큰 확인
+            if request.method not in SAFE_METHODS:
+                if not _origin_ok(request):
+                    return _deny(request, 403, "요청 출처를 확인할 수 없습니다 (CSRF 차단)")
+                if sess and not hmac.compare_digest(await _csrf_token_from(request), sess["csrf_token"]):
+                    return _deny(request, 403, "보안 토큰이 만료되었습니다. 페이지를 새로고침하세요")
+
+            if not is_public:
+                if not user:
+                    return _deny(request, 401, "로그인이 필요합니다")
+                gate = self._gate(user, sess, path)
+                if gate:
+                    return RedirectResponse(gate, status_code=303) if request.method in SAFE_METHODS \
+                        else _deny(request, 403, "추가 인증이 필요합니다")
+                if user["role"] not in required_roles(path, request.method):
+                    return _deny(request, 403, "이 메뉴에 대한 접근 권한이 없습니다")
+
+            response = await call_next(request)
+        finally:
+            current_actor.reset(actor)
+
+        self._headers(request, response, path)
+        return response
+
+    @staticmethod
+    def _gate(user, sess, path) -> str | None:
+        """2단계 인증·비밀번호 변경이 끝나기 전에는 해당 화면만 허용."""
+        if path.startswith("/logout"):
+            return None
+        if not sess["mfa_passed"]:
+            if user["totp_enabled"]:
+                return None if path.startswith("/login/2fa") else "/login/2fa"
+            if settings.require_2fa:
+                return None if path.startswith("/account/2fa") else "/account/2fa"
+        if user["must_change_pw"] or auth.password_expired(user):
+            return None if path.startswith("/account/password") else "/account/password"
+        return None
+
+    @staticmethod
+    def _headers(request: Request, response: Response, path: str):
+        n = request.state.csp_nonce
+        h = response.headers
+        h["Content-Security-Policy"] = (
+            f"default-src 'self'; script-src 'self' 'nonce-{n}'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; "
+            "form-action 'self'; base-uri 'none'; object-src 'none'"
+        )
+        h["X-Frame-Options"] = "DENY"
+        h["X-Content-Type-Options"] = "nosniff"
+        h["Referrer-Policy"] = "same-origin"
+        h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+        h["Cross-Origin-Opener-Policy"] = "same-origin"
+        if settings.https:
+            h["Strict-Transport-Security"] = "max-age=31536000"
+        if not path.startswith("/static/"):
+            h["Cache-Control"] = "no-store"  # 개인정보 화면을 브라우저·프록시 캐시에 남기지 않음
+            h["Pragma"] = "no-cache"
+        if "server" in h:
+            del h["server"]

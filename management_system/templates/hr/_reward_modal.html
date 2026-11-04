@@ -22,7 +22,7 @@
     <div class="col-md-8"><label class="form-label small">비고</label><input class="form-control form-control-sm" name="note"></div>
     <div class="col-12 help rw-disc d-none"><i class="bi bi-exclamation-triangle"></i> 징계는 취업규칙상 사유·절차(소명기회 부여, 징계위원회 의결)를 거쳐야 하며, 감봉은 1회 평균임금 1일분의 1/2, 총액 임금총액의 1/10을 초과할 수 없습니다(근로기준법 제95조).</div>
   </div><div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div></form></div></div>
-<script>
+<script nonce="{{ csp_nonce }}">
 (() => {
   const CATS = {{ reward_categories|tojson }};
   const EXP = {{ expunge_months|tojson }};

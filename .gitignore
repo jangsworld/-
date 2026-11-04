@@ -3,3 +3,8 @@ __pycache__/
 *.pptx
 **/data/proposals.db
 **/data/management.db
+**/data/bms.db
+management_system/secrets/
+management_system/logs/
+management_system/config/bms.toml
+management_system/data/outbox/

@@ -3,6 +3,7 @@ import json
 
 from app.common import today, to_date
 from app.db import query, query_one, execute, tx, audit
+from app.security.crypto import enc
 from app.modules.hr.constants import LEAVE_CATEGORIES, REDUCE_CATEGORIES
 
 EMPLOYEE_FIELDS = [
@@ -12,6 +13,13 @@ EMPLOYEE_FIELDS = [
     "resign_date", "resign_reason", "bank_name", "bank_account",
     "education", "certificates", "memo",
 ]
+
+# AES-256-GCM 으로 암호화 저장되는 개인정보 항목
+ENCRYPTED_EMPLOYEE_FIELDS = {
+    "birth_date", "phone", "email", "address", "emergency_contact",
+    "bank_account", "memo", "resign_reason",
+}
+ENCRYPTED_DOC_FIELDS = {"content", "params", "annual_salary"}
 
 # 변경 시 인사발령 이력이 자동 기록되는 항목
 TRACKED_FIELDS = {
@@ -68,9 +76,6 @@ def employee_status(emp: dict, status_map=None) -> str:
 def list_employees(q="", department="", employment_type="", status="") -> list[dict]:
     sql = "SELECT * FROM employees WHERE 1=1"
     params = []
-    if q:
-        sql += " AND (name LIKE ? OR emp_no LIKE ? OR phone LIKE ? OR email LIKE ?)"
-        params += [f"%{q}%"] * 4
     if department:
         sql += " AND department = ?"
         params.append(department)
@@ -79,6 +84,10 @@ def list_employees(q="", department="", employment_type="", status="") -> list[d
         params.append(employment_type)
     sql += " ORDER BY CASE WHEN resign_date IS NULL OR resign_date='' THEN 0 ELSE 1 END, hire_date, emp_no"
     rows = query(sql, params)
+    if q:  # 연락처·이메일은 암호화되어 있으므로 복호화 후 검색
+        q = q.strip().lower()
+        rows = [r for r in rows if any(q in str(r.get(f) or "").lower()
+                                       for f in ("name", "emp_no", "phone", "email"))]
 
     sm = _status_map()
     cur_sal = current_salary_map()
@@ -126,6 +135,8 @@ def _clean(data: dict) -> dict:
             out[f] = v.strip() if isinstance(v, str) else v
             if out[f] == "":
                 out[f] = None
+            if f in ENCRYPTED_EMPLOYEE_FIELDS:
+                out[f] = enc(out[f])
     return out
 
 
@@ -245,7 +256,7 @@ def upsert_salary(emp_id, year, annual_salary, effective_date=None, reason="정�
         "VALUES (?,?,?,?,?,?) ON CONFLICT(employee_id, year) DO UPDATE SET "
         "effective_date=excluded.effective_date, annual_salary=excluded.annual_salary, "
         "reason=excluded.reason, note=excluded.note",
-        (emp_id, int(year), effective_date or f"{int(year)}-01-01", int(annual_salary), reason, note),
+        (emp_id, int(year), effective_date or f"{int(year)}-01-01", enc(int(annual_salary)), reason, enc(note or None)),
     )
 
 
@@ -319,7 +330,12 @@ def get_document(doc_id: int) -> dict | None:
     )
 
 
+def _enc_doc(kw: dict) -> dict:
+    return {k: (enc(v) if k in ENCRYPTED_DOC_FIELDS else v) for k, v in kw.items()}
+
+
 def create_document(**kw) -> int:
+    kw = _enc_doc(kw)
     cols = ", ".join(kw.keys())
     ph = ", ".join("?" * len(kw))
     doc_id = execute(f"INSERT INTO hr_documents ({cols}) VALUES ({ph})", list(kw.values()))
@@ -330,6 +346,7 @@ def create_document(**kw) -> int:
 def update_document(doc_id: int, **kw):
     if not kw:
         return
+    kw = _enc_doc(kw)
     sets = ", ".join(f"{k}=?" for k in kw) + ", updated_at=datetime('now','localtime')"
     execute(f"UPDATE hr_documents SET {sets} WHERE id=?", list(kw.values()) + [doc_id])
 
@@ -384,7 +401,9 @@ def list_rewards(kind="", year=None, employee_id=None) -> list[dict]:
 
 def save_reward(rid, data: dict) -> int:
     d = {k: (data.get(k) or None) for k in REWARD_FIELDS}
-    d["amount"] = int(d["amount"] or 0)
+    d["amount"] = enc(int(str(d["amount"] or 0).replace(",", "")))
+    for k in ("reason", "note"):
+        d[k] = enc(d[k])
     if rid:
         sets = ", ".join(f"{k}=?" for k in d)
         execute(f"UPDATE rewards SET {sets} WHERE id=?", list(d.values()) + [rid])
@@ -427,6 +446,9 @@ def list_specials(category="", status="", employee_id=None) -> list[dict]:
 def save_special(sid, data: dict) -> int:
     d = {k: (data.get(k) or None) for k in SPECIAL_FIELDS}
     d["reduced_hours"] = float(d["reduced_hours"]) if d["reduced_hours"] else None
+    category, emp_id, start = d["category"], d["employee_id"], d["start_date"]
+    for k in ("child_name", "child_birth", "note"):
+        d[k] = enc(d[k])
     if sid:
         sets = ", ".join(f"{k}=?" for k in d)
         execute(f"UPDATE work_specials SET {sets} WHERE id=?", list(d.values()) + [sid])
@@ -434,8 +456,8 @@ def save_special(sid, data: dict) -> int:
     cols = ", ".join(d.keys())
     new_id = execute(f"INSERT INTO work_specials ({cols}) VALUES ({', '.join('?' * len(d))})",
                      list(d.values()))
-    if d["category"] in LEAVE_CATEGORIES and d["category"] not in ("배우자 출산휴가", "난임치료휴가"):
-        add_appointment(d["employee_id"], d["start_date"], "휴직", None, d["category"], "근로특이사항 등록")
+    if category in LEAVE_CATEGORIES and category not in ("배우자 출산휴가", "난임치료휴가"):
+        add_appointment(emp_id, start, "휴직", None, category, "근로특이사항 등록")
     return new_id
 
 
@@ -462,5 +484,16 @@ def delete_code(cid: int):
     execute("DELETE FROM codes WHERE id=?", (cid,))
 
 
-def recent_audit(limit=30) -> list[dict]:
-    return query("SELECT * FROM audit_logs ORDER BY id DESC LIMIT ?", (limit,))
+def recent_audit(limit=30, q="", date_from="", date_to="") -> list[dict]:
+    sql = "SELECT * FROM audit_logs WHERE 1=1"
+    params = []
+    if q:
+        sql += " AND (username LIKE ? OR action LIKE ? OR target LIKE ? OR ip LIKE ?)"
+        params += [f"%{q}%"] * 4
+    if date_from:
+        sql += " AND created_at >= ?"
+        params.append(date_from)
+    if date_to:
+        sql += " AND created_at < date(?, '+1 day')"
+        params.append(date_to)
+    return query(sql + " ORDER BY id DESC LIMIT ?", params + [limit])

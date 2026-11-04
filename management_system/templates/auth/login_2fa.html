@@ -1,0 +1,11 @@
+{% extends "auth/_auth_base.html" %}
+{% block title %}2단계 인증{% endblock %}
+{% block content %}
+<form method="post" action="/login/2fa" autocomplete="off">
+  <input type="hidden" name="next" value="{{ next }}">
+  <p class="small">휴대폰 인증 앱(Google/Microsoft Authenticator)에 표시된 <b>6자리 코드</b>를 입력하세요.</p>
+  <input class="form-control form-control-lg text-center mb-3" name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" autocomplete="one-time-code" required autofocus style="letter-spacing:.4em">
+  <button class="btn btn-primary w-100">확인</button>
+</form>
+<form method="post" action="/logout" class="mt-2"><button class="btn btn-link btn-sm w-100">다른 계정으로 로그인</button></form>
+{% endblock %}

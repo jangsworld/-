@@ -5,7 +5,7 @@ import json
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse, Response
 
 from app.common import templates, today, sanitize_html, add_months, to_date
 from app.db import get_codes, get_settings, audit
@@ -17,6 +17,23 @@ from app.modules.hr.constants import (
 )
 
 router = APIRouter(prefix="/hr")
+
+
+def _cell(v) -> str:
+    """CSV 수식 주입(=, +, -, @) 방지: 엑셀에서 수식으로 실행되지 않도록 작은따옴표 접두."""
+    if isinstance(v, (int, float)):
+        return str(v)
+    v = "" if v is None else str(v)
+    return "'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r") else v
+
+
+def _csv_response(rows: list[list], filename: str) -> StreamingResponse:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    for r in rows:
+        w.writerow([_cell(x) for x in r])
+    return StreamingResponse(iter(["\ufeff" + buf.getvalue()]), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
 
 
 def _redirect(url: str, msg: str = "") -> RedirectResponse:
@@ -56,7 +73,13 @@ def hr_root():
 # ════════════════════════════════════════════════════════════════════════
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request):
-    return _render(request, "hr/dashboard.html", {"d": services.dashboard()}, "hr.dashboard")
+    d = services.dashboard()
+    if request.state.user["role"] == "viewer":  # 조회자: 연봉·알림·상벌·휴직 정보는 응답에서 제거
+        d["alerts"], d["recent_rewards"], d["active_specials"] = [], [], []
+        d["charts"]["salary_trend"] = []
+        for k in ("avg_salary", "payroll", "contract_missing"):
+            d["kpi"][k] = 0
+    return _render(request, "hr/dashboard.html", {"d": d}, "hr.dashboard")
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -87,15 +110,11 @@ CSV_COLUMNS = [
 @router.get("/employees/export.csv")
 def employees_export():
     rows = repo.list_employees(status="")
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow([k for _, k in CSV_COLUMNS] + ["상태", "현재연봉"])
+    out = [[k for _, k in CSV_COLUMNS] + ["상태", "현재연봉"]]
     for r in rows:
-        w.writerow([r.get(f) or "" for f, _ in CSV_COLUMNS] + [r["status"], r.get("annual_salary") or ""])
-    data = "﻿" + buf.getvalue()  # Excel 한글 깨짐 방지(BOM)
-    fname = quote(f"임직원현황_{today().isoformat()}.csv")
-    return StreamingResponse(iter([data]), media_type="text/csv; charset=utf-8",
-                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{fname}"})
+        out.append([r.get(f) or "" for f, _ in CSV_COLUMNS] + [r["status"], r.get("annual_salary") or ""])
+    audit("hr", "개인정보 내보내기", "임직원현황 CSV", f"{len(rows)}명")
+    return _csv_response(out, f"임직원현황_{today().isoformat()}.csv")
 
 
 @router.get("/employees/template.csv")
@@ -108,7 +127,9 @@ def employees_csv_template():
 
 @router.post("/employees/import")
 async def employees_import(file: UploadFile = File(...)):
-    raw = await file.read()
+    raw = await file.read(5 * 1024 * 1024 + 1)
+    if len(raw) > 5 * 1024 * 1024:
+        return _redirect("/hr/employees", "파일이 너무 큽니다 (최대 5MB)")
     for enc in ("utf-8-sig", "cp949"):
         try:
             text = raw.decode(enc)
@@ -137,6 +158,7 @@ async def employees_import(file: UploadFile = File(...)):
         else:
             repo.create_employee(data)
             added += 1
+    audit("hr", "임직원 일괄등록", file.filename or "", f"신규 {added} / 수정 {updated}")
     return _redirect("/hr/employees", f"일괄등록 완료: 신규 {added}명 / 수정 {updated}명 / 제외 {skipped}건")
 
 
@@ -166,6 +188,9 @@ async def employee_create(request: Request):
 @router.get("/employees/{emp_id}", response_class=HTMLResponse)
 def employee_detail(request: Request, emp_id: int, tab: str = "info"):
     e = _emp_or_404(emp_id)
+    if request.state.user["role"] == "viewer" and tab in ("salary", "contract", "reward", "special"):
+        tab = "info"
+    audit("hr", "인사기록 열람", f"{e['emp_no']} {e['name']}", tab)  # 개인정보 접속기록
     return _render(request, "hr/employee_detail.html", {
         "e": e, "tab": tab,
         "appointments": repo.list_appointments(emp_id),
@@ -308,6 +333,7 @@ def document_editor(request: Request, doc_id: int):
     d = repo.get_document(doc_id)
     if not d:
         raise HTTPException(404, "문서를 찾을 수 없습니다")
+    audit("hr", "문서 열람", f"doc#{doc_id}", d["title"])
     statuses = CONTRACT_STATUSES if d["doc_group"] == "contract" else ["발급완료", "발급취소"]
     return _render(request, "hr/document_editor.html", {
         "d": d, "statuses": statuses, "params": json.loads(d["params"] or "{}"),
@@ -327,8 +353,50 @@ async def document_save(doc_id: int, request: Request):
     if kw.get("status") == "체결완료" and not kw.get("signed_date"):
         kw["signed_date"] = today().isoformat()
     repo.update_document(doc_id, **kw)
-    audit("hr", "문서 저장", str(doc_id), kw.get("status", ""))
-    return {"ok": True, "message": "저장되었습니다"}
+    audit("hr", "문서 저장", f"doc#{doc_id}", kw.get("status", ""))
+    msg = "저장되었습니다"
+    from app.config import settings as cfg
+    if kw.get("status") in ("체결완료", "발급완료") and cfg.pdf_on_signed:
+        ok, m = _store_pdf(doc_id)
+        msg += " · " + m
+    return {"ok": True, "message": msg}
+
+
+def _store_pdf(doc_id: int) -> tuple[bool, str]:
+    from app import storage
+    d = repo.get_document(doc_id)
+    try:
+        path, sha = storage.save_document_pdf(d)
+    except storage.StorageError as ex:
+        audit("hr", "PDF 보관 실패", f"doc#{doc_id}", str(ex)[:120])
+        return False, str(ex)
+    from app.db import execute
+    execute("UPDATE hr_documents SET pdf_path=?, pdf_sha256=?, pdf_saved_at=datetime('now','localtime') WHERE id=?",
+            (path, sha, doc_id))
+    audit("hr", "PDF NAS 보관", f"doc#{doc_id}", path)
+    return True, "PDF가 NAS에 보관되었습니다"
+
+
+@router.post("/documents/{doc_id}/pdf")
+def document_pdf_store(doc_id: int):
+    ok, m = _store_pdf(doc_id)
+    return _redirect(f"/hr/documents/{doc_id}", m)
+
+
+@router.get("/documents/{doc_id}/pdf")
+def document_pdf_download(doc_id: int):
+    from app import storage
+    d = repo.get_document(doc_id)
+    if not d or not d.get("pdf_path"):
+        raise HTTPException(404, "보관된 PDF가 없습니다")
+    try:
+        data = storage.read_verified(d["pdf_path"], d["pdf_sha256"])
+    except storage.StorageError as ex:
+        raise HTTPException(409, str(ex))
+    audit("hr", "PDF 열람", f"doc#{doc_id}", "")
+    name = quote(f"{d['name']}_{d['category']}.pdf")
+    return Response(data, media_type="application/pdf",
+                    headers={"Content-Disposition": f"inline; filename*=UTF-8''{name}"})
 
 
 @router.post("/documents/{doc_id}/regenerate")
@@ -416,6 +484,7 @@ async def certificate_create(request: Request):
 # ════════════════════════════════════════════════════════════════════════
 @router.get("/salaries", response_class=HTMLResponse)
 def salaries(request: Request, year: int | None = None, department: str = ""):
+    audit("hr", "연봉현황 열람", f"{year or today().year}년", department)
     years = repo.salary_years()
     year = year or today().year
     ov = services.salary_overview(year)
@@ -434,7 +503,7 @@ async def salary_save(request: Request):
     amount = int(str(f["annual_salary"]).replace(",", ""))
     repo.upsert_salary(int(f["employee_id"]), int(f["year"]), amount, f.get("effective_date") or None,
                        f.get("reason") or "정기인상", f.get("note") or "")
-    audit("hr", "연봉 저장", f["employee_id"], f"{f['year']}:{amount}")
+    audit("hr", "연봉 저장", f"emp#{f['employee_id']}", f"{f['year']}년")  # 금액은 기록하지 않음
     return _redirect(f.get("next") or f"/hr/salaries?year={f['year']}", "연봉이 저장되었습니다")
 
 
@@ -466,12 +535,10 @@ async def salary_bulk_apply(request: Request):
 @router.get("/salaries/export.csv")
 def salary_export(year: int):
     ov = services.salary_overview(year)
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["사번", "성명", "부서", "직급", "고용형태", "전년연봉", f"{year}년 연봉", "인상액", "인상률(%)", "사유"])
+    out = [["사번", "성명", "부서", "직급", "고용형태", "전년연봉", f"{year}년 연봉", "인상액", "인상률(%)", "사유"]]
     for r in ov["rows"]:
         e = r["employee"]
-        w.writerow([e["emp_no"], e["name"], e["department"], e["rank"], e["employment_type"],
+        out.append([e["emp_no"], e["name"], e["department"], e["rank"], e["employment_type"],
                     r["prev"]["annual_salary"] if r["prev"] else "", r["cur"]["annual_salary"] if r["cur"] else "",
                     r["raise_amount"] if r["raise_amount"] is not None else "",
                     f"{r['raise_rate']:.2f}" if r["raise_rate"] is not None else "",

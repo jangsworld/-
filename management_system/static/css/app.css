@@ -123,3 +123,8 @@ body { background: var(--bg); font-family: "Pretendard", "Malgun Gothic", "Apple
 
 /* 테이블 내 이름·구분·부서 줄바꿈 방지 */
 .table td a.fw-semibold, .table td:nth-child(-n+4) { white-space: nowrap; }
+[data-href] { cursor: pointer; }
+
+/* 로그인 화면 */
+.auth-body { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #1f3a5f, #2d5a8c); padding: 16px; }
+.auth-card { width: 100%; max-width: 400px; }

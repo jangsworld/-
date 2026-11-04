@@ -1,0 +1,36 @@
+# ─────────────────────────────────────────────────────────────────────
+#  BMS(경영관리업무시스템) 운영 설정 예시
+#  이 파일을 config/bms.toml 로 복사한 뒤 값을 수정하세요. (bms.toml 은 git 에 올리지 않음)
+#  같은 서버의 다른 엔진과 겹치지 않도록 포트·폴더·서비스명에 'BMS' 를 사용합니다.
+# ─────────────────────────────────────────────────────────────────────
+
+[server]
+host = "127.0.0.1"          # 리버스 프록시 사용 시 127.0.0.1 (외부 직접 노출 금지)
+port = 8100                 # 다른 엔진과 겹치지 않는 포트
+allowed_hosts = ["bms.example.co.kr", "192.168.0.20", "localhost"]
+behind_proxy = true         # Caddy/IIS/Nginx 등이 HTTPS 를 처리하는 경우 true
+trusted_proxies = ["127.0.0.1"]
+# 프록시 없이 직접 HTTPS 할 경우 (behind_proxy=false)
+# ssl_certfile = "D:\\BMS\\secrets\\cert.pem"
+# ssl_keyfile  = "D:\\BMS\\secrets\\key.pem"
+
+[paths]
+data_dir    = "D:\\BMS\\data"            # DB 위치 (BitLocker 적용 드라이브 권장)
+secrets_dir = "D:\\BMS\\secrets"         # 암호화 마스터키 (서비스 계정만 읽기 권한)
+log_dir     = "D:\\BMS\\logs"
+nas_root    = "\\\\192.168.0.10\\BMS"     # NAS 공유 폴더 (BMS 전용 계정·권한)
+backup_dir  = "\\\\192.168.0.10\\BMS\\BMS_백업"
+
+[security]
+require_2fa = true
+session_idle_minutes = 30
+session_max_hours = 10
+max_failed_logins = 5
+lockout_minutes = 15
+password_min_length = 10
+password_max_age_days = 90
+cookie_secure = "auto"
+
+[pdf]
+pdf_browser_channel = "msedge"   # Windows 기본 Edge 로 PDF 변환
+pdf_on_signed = true             # 체결완료·발급완료 시 NAS 자동 보관
