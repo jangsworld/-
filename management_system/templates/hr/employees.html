@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}임직원 현황{% endblock %}
+{% block page_title %}<i class="bi bi-person-vcard me-2"></i>임직원 현황{% endblock %}
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body">
+    <form class="row g-2 align-items-end" method="get">
+      <div class="col-md-3"><label class="form-label small">검색</label>
+        <input class="form-control form-control-sm" name="q" value="{{ f.q }}" placeholder="성명·사번·연락처·이메일"></div>
+      <div class="col-md-2"><label class="form-label small">부서</label>
+        <select class="form-select form-select-sm" name="department"><option value="">전체</option>
+          {% for x in depts %}<option {% if f.department == x %}selected{% endif %}>{{ x }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><label class="form-label small">고용형태</label>
+        <select class="form-select form-select-sm" name="employment_type"><option value="">전체</option>
+          {% for x in employment_types %}<option {% if f.employment_type == x %}selected{% endif %}>{{ x }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><label class="form-label small">상태</label>
+        <select class="form-select form-select-sm" name="status">
+          {% for x in ['재직(전체)', '재직', '휴직', '단축근무', '입사예정', '퇴사', ''] %}<option value="{{ x }}" {% if f.status == x %}selected{% endif %}>{{ x or '전체(퇴사 포함)' }}</option>{% endfor %}</select></div>
+      <div class="col-md-auto"><button class="btn btn-sm btn-primary"><i class="bi bi-search"></i> 조회</button></div>
+      <div class="col-md text-md-end">
+        <div class="btn-group btn-group-sm">
+          <a class="btn btn-outline-secondary" href="/hr/employees/export.csv"><i class="bi bi-download"></i> 엑셀(CSV)</a>
+          <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#importModal"><i class="bi bi-upload"></i> 일괄등록</button>
+          <a class="btn btn-primary" href="/hr/employees/new"><i class="bi bi-person-plus"></i> 임직원 등록</a>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex">조회 결과 <span class="badge text-bg-secondary ms-2">{{ rows|length }}명</span></div>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0">
+      <thead><tr>
+        <th>사번</th><th>성명</th><th>부서</th><th>직급</th><th>직책</th><th>고용형태</th><th>입사일</th><th>근속</th>
+        <th class="num">현재연봉</th><th>계약서</th><th>상태</th><th>연락처</th></tr></thead>
+      <tbody>
+      {% for e in rows %}
+        <tr onclick="location.href='/hr/employees/{{ e.id }}'" style="cursor:pointer">
+          <td class="text-muted">{{ e.emp_no }}</td>
+          <td class="fw-semibold">{{ e.name }}{% if e.gender %} <span class="text-muted small">({{ e.gender }})</span>{% endif %}</td>
+          <td>{{ e.department or '' }}</td><td>{{ e.rank or '' }}</td><td>{{ e.title or '' }}</td>
+          <td>{{ e.employment_type }}</td><td>{{ e.hire_date }}</td>
+          <td class="small">{{ e.hire_date|service(e.resign_date) }}</td>
+          <td class="num">{{ e.annual_salary|won }}</td>
+          <td>{% if e.status == '퇴사' %}-{% elif e.has_contract %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<span class="badge text-bg-danger">미체결</span>{% endif %}</td>
+          <td><span class="st st-{{ e.status }}">{{ e.status }}</span></td>
+          <td class="small text-muted">{{ e.phone or '' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="12" class="text-center text-muted p-4">조회된 임직원이 없습니다</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="importModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="/hr/employees/import" enctype="multipart/form-data">
+  <div class="modal-header"><h6 class="modal-title">임직원 일괄등록 (CSV)</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <p class="small">1) <a href="/hr/employees/template.csv">등록 양식(CSV)</a>을 내려받아 엑셀에서 작성 후 CSV로 저장합니다.<br>
+      2) <b>성명·입사일</b>은 필수이며, 기존 <b>사번</b>과 일치하면 정보가 수정됩니다.</p>
+    <input type="file" class="form-control" name="file" accept=".csv" required>
+  </div>
+  <div class="modal-footer"><button class="btn btn-primary">업로드</button></div>
+</form></div></div>
+{% endblock %}

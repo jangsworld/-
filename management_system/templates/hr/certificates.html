@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}증명서 발급{% endblock %}
+{% block page_title %}<i class="bi bi-patch-check me-2"></i>증명서 발급 대장{% endblock %}
+{% block content %}
+<div class="card mb-3"><div class="card-body">
+  <form class="row g-2 align-items-end" method="post" action="/hr/certificates/new">
+    <div class="col-md-4"><label class="form-label small">대상자</label><select class="form-select form-select-sm" name="employee_id" required>
+      {% for e in emps %}<option value="{{ e.id }}">{{ e.name }} · {{ e.department or '' }} ({{ e.status }})</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label small">종류</label><select class="form-select form-select-sm" name="template_id">
+      {% for t in tpls %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label small">용도</label><input class="form-control form-control-sm" name="purpose" placeholder="금융기관 제출용" required></div>
+    <div class="col-md-2"><button class="btn btn-sm btn-primary w-100"><i class="bi bi-patch-check"></i> 발급</button></div>
+  </form>
+  <div class="help mt-2">발급번호는 연도별로 자동 채번되며(제YYYY-0001호), 모든 발급 내역이 대장으로 보존됩니다.</div>
+</div></div>
+<div class="card">
+  <div class="card-header"><form class="d-flex gap-2" method="get"><input class="form-control form-control-sm" style="max-width:240px" name="q" value="{{ q }}" placeholder="성명 검색"><button class="btn btn-sm btn-outline-secondary">조회</button></form></div>
+  <table class="table table-sm table-hover mb-0"><thead><tr><th>발급번호</th><th>종류</th><th>성명</th><th>부서</th><th>용도</th><th>발급일</th><th>상태</th></tr></thead><tbody>
+  {% for d in docs %}<tr onclick="location.href='/hr/documents/{{ d.id }}'" style="cursor:pointer"><td>{{ d.doc_no }}</td><td>{{ d.category }}</td><td class="fw-semibold">{{ d.name }}</td><td>{{ d.department or '' }}</td>
+    <td>{{ d.purpose or '' }}</td><td>{{ d.signed_date or d.created_at[:10] }}</td><td><span class="st st-{{ d.status }}">{{ d.status }}</span></td></tr>
+  {% else %}<tr><td colspan="7" class="text-center text-muted p-4">발급 내역이 없습니다</td></tr>{% endfor %}</tbody></table>
+</div>
+{% endblock %}

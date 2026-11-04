@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}설정{% endblock %}
+{% block page_title %}<i class="bi bi-sliders me-2"></i>회사정보 · 코드 설정{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-6">
+    <form class="card" method="post" action="/settings">
+      <div class="card-header">회사 정보 · 기준값 <span class="help">근로계약서·증명서 자동작성에 사용됩니다</span></div>
+      <div class="card-body row g-2">
+        {% for k, label in labels.items() %}
+        <div class="{{ 'col-12' if k == 'company_address' else 'col-md-6' }}"><label class="form-label small">{{ label }}</label>
+          <input class="form-control form-control-sm" name="{{ k }}" value="{{ s[k] or '' }}"></div>
+        {% endfor %}
+        <div class="col-12 help">최저임금은 매년 8월 고용노동부 고시 후 1월 1일부터 적용됩니다. 연도 변경 시 갱신하세요.</div>
+      </div>
+      <div class="card-footer text-end"><button class="btn btn-sm btn-primary"><i class="bi bi-save"></i> 저장</button></div>
+    </form>
+  </div>
+  <div class="col-lg-6" id="codes">
+    <div class="card"><div class="card-header">기준 코드 (부서·직급·직책·근무지)</div>
+      <div class="card-body">
+        {% for g, gname in groups.items() %}
+        <div class="mb-3"><div class="small fw-semibold mb-1">{{ gname }}</div>
+          <div class="d-flex flex-wrap gap-1 align-items-center">
+            {% for c in codes if c.group_code == g %}
+            <form method="post" action="/settings/codes/{{ c.id }}/delete" class="d-inline" data-confirm="'{{ c.name }}' 코드를 삭제할까요? (기존 임직원 정보는 유지)">
+              <span class="badge text-bg-light border">{{ c.name }} <button class="btn btn-link p-0 text-danger" style="font-size:.7rem"><i class="bi bi-x"></i></button></span></form>
+            {% endfor %}
+            <form method="post" action="/settings/codes" class="d-inline-flex gap-1"><input type="hidden" name="group_code" value="{{ g }}">
+              <input class="form-control form-control-sm" style="width:120px" name="name" placeholder="추가"><button class="btn btn-sm btn-outline-primary"><i class="bi bi-plus"></i></button></form>
+          </div></div>
+        {% endfor %}
+        <div class="help">직급 코드 순서는 연봉현황의 직급별 차트 정렬에 사용됩니다.</div>
+      </div></div>
+  </div>
+  <div class="col-12">
+    <div class="card"><div class="card-header">변경 이력 (감사 로그, 최근 50건)</div>
+      <div class="table-responsive" style="max-height:320px"><table class="table table-sm mb-0"><thead><tr><th>일시</th><th>모듈</th><th>작업</th><th>대상</th><th>내용</th></tr></thead><tbody>
+      {% for l in logs %}<tr><td class="small text-muted">{{ l.created_at }}</td><td>{{ l.module }}</td><td>{{ l.action }}</td><td>{{ l.target or '' }}</td><td class="small text-muted text-truncate" style="max-width:400px">{{ l.detail or '' }}</td></tr>{% endfor %}
+      </tbody></table></div></div>
+  </div>
+</div>
+{% endblock %}

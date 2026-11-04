@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ d.title }}{% endblock %}
+{% block page_title %}<a href="{{ '/hr/contracts' if d.doc_group == 'contract' else '/hr/certificates' }}" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> {{ d.title }}{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-xl-9 print-col">
+    {% include "hr/_editor_toolbar.html" %}
+    <div class="paper-wrap"><div class="paper" id="paper" contenteditable="true" spellcheck="false">{{ d.content|safe }}</div></div>
+    <div class="help mt-2 no-print"><span class="ph-missing">[항목]</span> 표시는 값이 비어 있는 치환자입니다. 직접 입력하거나, 인사기록 보완 후 [최신 정보로 다시 작성]을 누르세요.</div>
+  </div>
+  <div class="col-xl-3 no-print">
+    <div class="card mb-3"><div class="card-body">
+      <div class="small text-muted">대상자</div>
+      <div class="fw-semibold mb-2"><a href="/hr/employees/{{ d.employee_id }}?tab=contract">{{ d.name }}</a> <span class="text-muted small">{{ d.emp_no }} · {{ d.department or '' }}</span></div>
+      <div class="row g-2">
+        <div class="col-6"><div class="small text-muted">구분</div><div>{{ d.category }}</div></div>
+        <div class="col-6"><div class="small text-muted">{{ '발급번호' if d.doc_group == 'certificate' else '연봉' }}</div><div>{{ d.doc_no if d.doc_group == 'certificate' else d.annual_salary|won }}</div></div>
+        {% if d.doc_group == 'contract' %}
+        <div class="col-12"><div class="small text-muted">계약기간</div><div>{{ d.start_date or '' }} ~ {{ d.end_date or '정함없음' }}</div></div>
+        {% endif %}
+      </div>
+      <hr>
+      <label class="form-label small">상태</label>
+      <select class="form-select form-select-sm mb-2" id="status">{% for s in statuses %}<option {% if d.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <label class="form-label small">{{ '체결일' if d.doc_group == 'contract' else '발급일' }}</label>
+      <input type="date" class="form-control form-control-sm mb-3" id="signed" value="{{ d.signed_date or '' }}">
+      <div class="d-grid gap-2">
+        <button class="btn btn-primary btn-sm" id="saveBtn"><i class="bi bi-save"></i> 저장 <span class="small opacity-75">(Ctrl+S)</span></button>
+        <button class="btn btn-outline-dark btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> 인쇄 / PDF 저장</button>
+        <form method="post" action="/hr/documents/{{ d.id }}/regenerate" class="d-grid" data-confirm="편집한 내용이 사라지고 템플릿+최신 임직원 정보로 다시 작성됩니다. 계속할까요?">
+          <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-repeat"></i> 최신 정보로 다시 작성</button></form>
+        <form method="post" action="/hr/documents/{{ d.id }}/delete" class="d-grid" data-confirm="문서를 삭제할까요?">
+          <button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> 삭제</button></form>
+      </div>
+      <div class="help mt-2" id="saveState">마지막 저장 {{ d.updated_at }}</div>
+      {% if d.doc_group == 'contract' %}
+      <div class="help mt-2"><i class="bi bi-info-circle"></i> 서명 완료본은 스캔하여 보관하고 상태를 <b>체결완료</b>로 변경하세요. 체결완료 계약서가 있어야 대시보드의 '미체결' 알림이 해소됩니다.</div>
+      {% endif %}
+    </div></div>
+    <div class="card"><div class="card-header small">{{ d.name }}님의 문서 이력</div>
+      <ul class="list-group list-group-flush small">
+      {% for h in history %}<li class="list-group-item d-flex gap-2 {% if h.id == d.id %}bg-light{% endif %}">
+        <a href="/hr/documents/{{ h.id }}" class="text-truncate">{{ h.category }} · {{ h.start_date or h.created_at[:10] }}</a>
+        <span class="st st-{{ h.status }} ms-auto">{{ h.status }}</span></li>{% endfor %}
+      </ul></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const paper = document.getElementById('paper');
+let dirty = false;
+const markDirty = () => { dirty = true; document.getElementById('saveState').textContent = '변경사항 있음 (저장 필요)'; };
+initEditor(paper, markDirty);
+async function save() {
+  try {
+    const r = await postJSON('/hr/api/documents/{{ d.id }}', {
+      content: paper.innerHTML, status: document.getElementById('status').value, signed_date: document.getElementById('signed').value });
+    dirty = false; toast(r.message);
+    document.getElementById('saveState').textContent = '저장됨 ' + new Date().toLocaleTimeString('ko-KR');
+  } catch (e) { alert('저장 실패: ' + e.message); }
+}
+document.getElementById('saveBtn').addEventListener('click', save);
+document.getElementById('status').addEventListener('change', markDirty);
+document.getElementById('signed').addEventListener('change', markDirty);
+document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); } });
+window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+</script>
+{% endblock %}

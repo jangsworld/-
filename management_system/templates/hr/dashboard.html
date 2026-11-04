@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}인사 대시보드{% endblock %}
+{% block page_title %}<i class="bi bi-speedometer2 me-2"></i>인사 대시보드{% endblock %}
+{% block content %}
+{% set k = d.kpi %}
+<div class="row g-3 mb-3">
+  {% macro kpi(label, value, sub, icon, href='') %}
+  <div class="col-6 col-md-4 col-xl-2">
+    <a class="card kpi h-100 text-decoration-none" {% if href %}href="{{ href }}"{% endif %}>
+      <div class="d-flex justify-content-between"><div class="kpi-label">{{ label }}</div><i class="bi {{ icon }} kpi-icon"></i></div>
+      <div class="kpi-value">{{ value }}</div><div class="kpi-sub">{{ sub }}</div>
+    </a>
+  </div>
+  {% endmacro %}
+  {{ kpi('재직 인원', k.active ~ '명', '휴직 ' ~ k.on_leave ~ ' · 단축 ' ~ k.reduced, 'bi-people', '/hr/employees') }}
+  {{ kpi('이번 달 입사 / 퇴사', k.hires_month ~ ' / ' ~ k.resign_month, '올해 입사 ' ~ k.hires_year ~ ' · 퇴사 ' ~ k.resign_year, 'bi-arrow-left-right') }}
+  {{ kpi('연간 이직률', '%.1f'|format(k.turnover) ~ '%', '올해 퇴사자 ÷ 평균 인원', 'bi-box-arrow-right') }}
+  {{ kpi('평균 근속', '%.1f'|format(k.avg_tenure) ~ '년', '여성 비율 ' ~ '%.0f'|format(k.female_ratio) ~ '%', 'bi-hourglass-split') }}
+  {{ kpi('평균 연봉', k.avg_salary|man_won ~ '원', '연간 인건비 ' ~ (k.payroll / 100000000)|round(2) ~ '억', 'bi-cash-stack', '/hr/salaries') }}
+  {{ kpi('계약서 미체결', k.contract_missing ~ '명', '근로기준법 제17조 리스크', 'bi-exclamation-octagon', '/hr/contracts') }}
+</div>
+
+<div class="row g-3">
+  <div class="col-xl-5">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center">
+        <i class="bi bi-bell me-2"></i>관리 알림 <span class="badge text-bg-danger ms-2">{{ d.alerts|length }}</span>
+        <span class="help ms-auto">법적 리스크 · 기한 임박 · 참고</span>
+      </div>
+      <div style="max-height: 520px; overflow-y:auto">
+        {% for a in d.alerts %}
+        <div class="alert-item lv-{{ a.level }}">
+          <span class="alert-dot"></span>
+          <div class="flex-grow-1">
+            <div><span class="alert-cat">{{ a.category }}</span>
+              {% if a.emp_id %}<a href="/hr/employees/{{ a.emp_id }}" class="fw-semibold ms-1">{{ a.name }}</a>{% else %}<b class="ms-1">{{ a.name }}</b>{% endif %}
+              {% if a.dday is not none %}<span class="badge {{ 'text-bg-danger' if a.dday < 0 else 'text-bg-light border' }} ms-1">D{{ '%+d'|format(-a.dday) if a.dday != 0 else '-Day' }}</span>{% endif %}
+            </div>
+            <div class="small text-secondary">{{ a.message }}</div>
+          </div>
+          {% if a.link %}<a href="{{ a.link }}" class="btn btn-sm btn-outline-secondary text-nowrap">처리</a>{% endif %}
+        </div>
+        {% else %}
+        <div class="p-4 text-center text-muted">처리할 알림이 없습니다 👍</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xl-7">
+    <div class="row g-3">
+      <div class="col-md-6"><div class="card"><div class="card-header">부서별 인원</div><div class="card-body"><div class="chart-box"><canvas id="cDept"></canvas></div></div></div></div>
+      <div class="col-md-6"><div class="card"><div class="card-header">고용형태 구성</div><div class="card-body"><div class="chart-box"><canvas id="cType"></canvas></div></div></div></div>
+      <div class="col-12"><div class="card"><div class="card-header">월별 입사·퇴사 추이 (최근 12개월)</div><div class="card-body"><div class="chart-box"><canvas id="cFlow"></canvas></div></div></div></div>
+    </div>
+  </div>
+
+  <div class="col-md-4"><div class="card"><div class="card-header">근속기간 분포</div><div class="card-body"><div class="chart-box"><canvas id="cTenure"></canvas></div></div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-header">연령대 분포</div><div class="card-body"><div class="chart-box"><canvas id="cAge"></canvas></div></div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-header">연도별 인건비·평균인상률</div><div class="card-body"><div class="chart-box"><canvas id="cPay"></canvas></div></div></div></div>
+
+  <div class="col-lg-4">
+    <div class="card h-100"><div class="card-header d-flex">최근 인사발령</div>
+      <ul class="list-group list-group-flush small">
+        {% for a in d.recent_appointments %}
+        <li class="list-group-item d-flex gap-2"><span class="text-muted">{{ a.appt_date }}</span>
+          <span class="badge text-bg-light border">{{ a.appt_type }}</span>
+          <a href="/hr/employees/{{ a.employee_id }}">{{ a.name }}</a>
+          <span class="text-truncate text-secondary">{{ (a.from_value ~ ' → ') if a.from_value }}{{ a.to_value or '' }}</span></li>
+        {% else %}<li class="list-group-item text-muted">이력 없음</li>{% endfor %}
+      </ul></div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card h-100"><div class="card-header d-flex">휴직·단축근무 현황<a class="ms-auto small" href="/hr/specials">전체</a></div>
+      <ul class="list-group list-group-flush small">
+        {% for s in d.active_specials %}
+        <li class="list-group-item d-flex gap-2 align-items-center"><span class="st st-{{ s.status }}">{{ s.status }}</span>
+          <a href="/hr/employees/{{ s.employee_id }}">{{ s.name }}</a><span>{{ s.category }}</span>
+          <span class="ms-auto text-muted">~{{ s.end_date or '' }}</span></li>
+        {% else %}<li class="list-group-item text-muted">없음</li>{% endfor %}
+      </ul></div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card h-100"><div class="card-header d-flex">최근 상벌<a class="ms-auto small" href="/hr/rewards">전체</a></div>
+      <ul class="list-group list-group-flush small">
+        {% for r in d.recent_rewards %}
+        <li class="list-group-item d-flex gap-2 align-items-center"><span class="st kind-{{ r.kind }}">{{ r.kind }}</span>
+          <a href="/hr/employees/{{ r.employee_id }}">{{ r.name }}</a><span>{{ r.category }}</span>
+          <span class="ms-auto text-muted">{{ r.action_date }}</span></li>
+        {% else %}<li class="list-group-item text-muted">없음</li>{% endfor %}
+      </ul></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const C = {{ d.charts|tojson }};
+Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+Chart.defaults.plugins.legend.labels.boxWidth = 12;
+const doughnut = (id, rows) => new Chart(document.getElementById(id), {
+  type: 'doughnut',
+  data: { labels: rows.map(r => r.label), datasets: [{ data: rows.map(r => r.count), backgroundColor: PALETTE, borderWidth: 2 }] },
+  options: { maintainAspectRatio: false, cutout: '62%', plugins: { legend: { position: 'right' },
+    tooltip: { callbacks: { label: c => ` ${c.label}: ${c.raw}명` } } } }
+});
+doughnut('cDept', C.dept);
+doughnut('cType', C.type);
+new Chart(document.getElementById('cFlow'), {
+  type: 'bar',
+  data: { labels: C.flow.map(r => r.label), datasets: [
+    { label: '입사', data: C.flow.map(r => r.hire), backgroundColor: '#2d5a8c', borderRadius: 3 },
+    { label: '퇴사', data: C.flow.map(r => -r.resign), backgroundColor: '#e06c75', borderRadius: 3 } ] },
+  options: { maintainAspectRatio: false, scales: { x: { stacked: true, grid: { display: false } },
+    y: { stacked: true, ticks: { stepSize: 1, callback: v => Math.abs(v) } } },
+    plugins: { tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${Math.abs(c.raw)}명` } } } }
+});
+const bar = (id, rows, color) => new Chart(document.getElementById(id), {
+  type: 'bar', data: { labels: rows.map(r => r.label), datasets: [{ data: rows.map(r => r.count), backgroundColor: color, borderRadius: 4 }] },
+  options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { ticks: { stepSize: 1 } } } }
+});
+bar('cTenure', C.tenure, '#3fa7a3');
+bar('cAge', C.age, '#6c8ebf');
+new Chart(document.getElementById('cPay'), {
+  data: { labels: C.salary_trend.map(r => r.year), datasets: [
+    { type: 'bar', label: '인건비(억)', data: C.salary_trend.map(r => r.total / 1e8), backgroundColor: '#2d5a8c', borderRadius: 4, yAxisID: 'y' },
+    { type: 'line', label: '평균인상률(%)', data: C.salary_trend.map(r => r.avg_rate), borderColor: '#f2a541', backgroundColor: '#f2a541', yAxisID: 'y1', tension: .3 } ] },
+  options: { maintainAspectRatio: false, scales: { x: { grid: { display: false } }, y: { position: 'left', title: { display: true, text: '억원' } },
+    y1: { position: 'right', grid: { display: false }, title: { display: true, text: '%' } } } }
+});
+</script>
+{% endblock %}

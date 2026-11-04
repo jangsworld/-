@@ -1,0 +1,42 @@
+<div class="editor-toolbar no-print mb-2" id="toolbar">
+  <button type="button" class="btn btn-sm btn-light" data-cmd="undo" title="실행취소"><i class="bi bi-arrow-counterclockwise"></i></button>
+  <button type="button" class="btn btn-sm btn-light" data-cmd="redo" title="다시실행"><i class="bi bi-arrow-clockwise"></i></button>
+  <span class="vr mx-1"></span>
+  <select class="form-select form-select-sm" style="width:auto" id="blockSel" title="문단 서식">
+    <option value="p">본문</option><option value="h1">제목</option><option value="h3">소제목</option></select>
+  <select class="form-select form-select-sm" style="width:auto" id="sizeSel" title="글자 크기">
+    <option value="">크기</option><option value="2">작게</option><option value="3">보통</option><option value="4">크게</option><option value="5">아주 크게</option></select>
+  <button type="button" class="btn btn-sm btn-light" data-cmd="bold" title="굵게"><i class="bi bi-type-bold"></i></button>
+  <button type="button" class="btn btn-sm btn-light" data-cmd="italic" title="기울임"><i class="bi bi-type-italic"></i></button>
+  <button type="button" class="btn btn-sm btn-light" data-cmd="underline" title="밑줄"><i class="bi bi-type-underline"></i></button>
+  <button type="button" class="btn btn-sm btn-light" data-cmd="strikeThrough" title="취소선"><i class="bi bi-type-strikethrough"></i></button>
+  <input type="color" class="form-control form-control-color form-control-sm" id="colorSel" value="#c00000" title="글자색" style="width:2rem">
+  <span class="vr mx-1"></span>
+  <button type="button" class="btn btn-sm btn-light" data-cmd="justifyLeft" title="왼쪽 정렬"><i class="bi bi-text-left"></i></button>
+  <button type="button" class="btn btn-sm btn-light" data-cmd="justifyCenter" title="가운데 정렬"><i class="bi bi-text-center"></i></button>
+  <button type="button" class="btn btn-sm btn-light" data-cmd="justifyRight" title="오른쪽 정렬"><i class="bi bi-text-right"></i></button>
+  <button type="button" class="btn btn-sm btn-light" data-cmd="insertUnorderedList" title="글머리 기호"><i class="bi bi-list-ul"></i></button>
+  <button type="button" class="btn btn-sm btn-light" data-cmd="insertOrderedList" title="번호 목록"><i class="bi bi-list-ol"></i></button>
+  <span class="vr mx-1"></span>
+  <button type="button" class="btn btn-sm btn-light" id="tblBtn" title="표 삽입"><i class="bi bi-table"></i></button>
+  <button type="button" class="btn btn-sm btn-light" data-cmd="insertHorizontalRule" title="구분선"><i class="bi bi-hr"></i></button>
+  <button type="button" class="btn btn-sm btn-light" data-cmd="removeFormat" title="서식 지우기"><i class="bi bi-eraser"></i></button>
+</div>
+<script>
+function initEditor(paper, onDirty) {
+  document.querySelectorAll('#toolbar [data-cmd]').forEach(b => b.addEventListener('click', () => {
+    paper.focus(); document.execCommand(b.dataset.cmd, false, null); onDirty();
+  }));
+  document.getElementById('blockSel').addEventListener('change', e => { paper.focus(); document.execCommand('formatBlock', false, e.target.value); onDirty(); });
+  document.getElementById('sizeSel').addEventListener('change', e => { if (!e.target.value) return; paper.focus(); document.execCommand('fontSize', false, e.target.value); e.target.value = ''; onDirty(); });
+  document.getElementById('colorSel').addEventListener('input', e => { paper.focus(); document.execCommand('foreColor', false, e.target.value); onDirty(); });
+  document.getElementById('tblBtn').addEventListener('click', () => {
+    const spec = prompt('표 크기 (행 x 열)', '3x2'); if (!spec) return;
+    const [r, c] = spec.toLowerCase().split('x').map(n => Math.max(1, Math.min(20, parseInt(n) || 1)));
+    let html = '<table class="doc-table">';
+    for (let i = 0; i < r; i++) { html += '<tr>' + Array(c).fill(i === 0 ? '<th>&nbsp;</th>' : '<td>&nbsp;</td>').join('') + '</tr>'; }
+    paper.focus(); document.execCommand('insertHTML', false, html + '</table><p><br></p>'); onDirty();
+  });
+  paper.addEventListener('input', onDirty);
+}
+</script>

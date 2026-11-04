@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}근로계약서 관리{% endblock %}
+{% block page_title %}<i class="bi bi-file-earmark-text me-2"></i>근로계약서 관리{% endblock %}
+{% block content %}
+<div class="row g-3 mb-3">
+  <div class="col-md-3"><div class="card kpi h-100"><div class="kpi-label">재직자 계약 체결률</div>
+    <div class="kpi-value {{ 'text-danger' if coverage < 100 }}">{{ '%.0f'|format(coverage) }}%</div>
+    <div class="progress mt-1" style="height:6px"><div class="progress-bar {{ 'bg-danger' if coverage < 100 else 'bg-success' }}" style="width: {{ coverage }}%"></div></div></div></div>
+  {% for s in statuses %}
+  <div class="col"><a class="card kpi h-100 text-decoration-none" href="?status={{ s }}"><div class="kpi-label">{{ s }}</div><div class="kpi-value">{{ stat[s] }}</div></a></div>
+  {% endfor %}
+</div>
+
+{% if missing %}
+<div class="card mb-3 border-danger-subtle">
+  <form method="post" action="/hr/contracts/bulk">
+  <div class="card-header d-flex align-items-center text-danger"><i class="bi bi-exclamation-octagon me-2"></i>유효한 근로계약서가 없는 재직자 {{ missing|length }}명
+    <span class="help ms-2">고용형태에 맞는 템플릿으로 초안을 일괄 자동작성할 수 있습니다</span>
+    <button class="btn btn-sm btn-danger ms-auto"><i class="bi bi-magic"></i> 선택 인원 일괄 자동작성</button></div>
+  <div class="card-body py-2 d-flex flex-wrap gap-3">
+    {% for e in missing %}
+    <label class="form-check-label small"><input class="form-check-input me-1" type="checkbox" name="employee_ids" value="{{ e.id }}" checked>
+      {{ e.name }} <span class="text-muted">({{ e.employment_type }} → {{ e.suggest }})</span></label>
+    {% endfor %}
+  </div>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">
+    <form class="row g-2 align-items-center" method="get">
+      <div class="col-auto"><select class="form-select form-select-sm" name="category"><option value="">구분 전체</option>
+        {% for c in categories %}<option {% if f.category == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+      <div class="col-auto"><select class="form-select form-select-sm" name="status"><option value="">상태 전체</option>
+        {% for s in statuses %}<option {% if f.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+      <div class="col-auto"><input class="form-control form-control-sm" name="q" value="{{ f.q }}" placeholder="성명·제목"></div>
+      <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">조회</button></div>
+      <div class="col text-end">
+        <a class="btn btn-sm btn-outline-secondary" href="/hr/templates"><i class="bi bi-file-earmark-ruled"></i> 템플릿 관리</a>
+        <a class="btn btn-sm btn-primary" href="/hr/contracts/new"><i class="bi bi-file-earmark-plus"></i> 계약서 작성</a></div>
+    </form>
+  </div>
+  <div class="table-responsive">
+  <table class="table table-sm table-hover align-middle mb-0">
+    <thead><tr><th>구분</th><th>성명</th><th>부서</th><th>고용형태</th><th>제목</th><th>계약기간</th><th>만료</th><th class="num">연봉</th><th>상태</th><th>체결일</th><th>수정일</th></tr></thead>
+    <tbody>
+    {% for d in docs %}
+      <tr onclick="location.href='/hr/documents/{{ d.id }}'" style="cursor:pointer">
+        <td><span class="badge text-bg-light border">{{ d.category }}</span></td>
+        <td class="fw-semibold">{{ d.name }}{% if d.resign_date %} <span class="text-muted small">(퇴사)</span>{% endif %}</td>
+        <td>{{ d.department or '' }}</td><td class="small">{{ d.employment_type }}</td><td>{{ d.title }}</td>
+        <td class="small">{{ d.start_date or '' }} ~ {{ d.end_date or '정함없음' }}</td>
+        <td>{% if d.dday is not none and d.status == '체결완료' %}
+          {% if d.dday < 0 %}<span class="badge text-bg-secondary">만료</span>{% elif d.dday <= 60 %}<span class="badge text-bg-warning">D-{{ d.dday }}</span>{% else %}<span class="small text-muted">D-{{ d.dday }}</span>{% endif %}{% endif %}</td>
+        <td class="num">{{ d.annual_salary|won }}</td>
+        <td><span class="st st-{{ d.status }}">{{ d.status }}</span></td>
+        <td class="small">{{ d.signed_date or '' }}</td><td class="small text-muted">{{ d.updated_at[:10] }}</td>
+      </tr>
+    {% else %}<tr><td colspan="11" class="text-center text-muted p-4">계약서가 없습니다</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endblock %}

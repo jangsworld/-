@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}문서 템플릿{% endblock %}
+{% block page_title %}<i class="bi bi-file-earmark-ruled me-2"></i>문서 템플릿 관리{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header d-flex align-items-center">근로계약서 · 증명서 템플릿
+    <span class="help ms-2">고용형태(구분)별로 템플릿을 두면 계약서 작성 시 자동 선택됩니다</span>
+    <a class="btn btn-sm btn-primary ms-auto" href="/hr/templates/0"><i class="bi bi-plus"></i> 새 템플릿</a></div>
+  <table class="table table-sm table-hover align-middle mb-0">
+    <thead><tr><th>분류</th><th>구분</th><th>템플릿명</th><th>사용</th><th>수정일</th><th></th></tr></thead>
+    <tbody>
+    {% for t in tpls %}
+      <tr><td>{{ '근로계약서' if t.doc_group == 'contract' else '증명서' }}</td><td><span class="badge text-bg-light border">{{ t.category }}</span></td>
+        <td><a href="/hr/templates/{{ t.id }}" class="fw-semibold">{{ t.name }}</a></td>
+        <td>{% if t.is_active %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<span class="text-muted">미사용</span>{% endif %}</td>
+        <td class="small text-muted">{{ t.updated_at }}</td>
+        <td class="text-end"><form method="post" action="/hr/templates/{{ t.id }}/delete" data-confirm="템플릿을 삭제할까요? (작성된 문서는 유지됩니다)"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-trash"></i></button></form></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

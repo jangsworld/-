@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}연봉현황{% endblock %}
+{% block page_title %}<i class="bi bi-graph-up-arrow me-2"></i>연봉현황{% endblock %}
+{% block content %}
+{% set k = ov.kpi %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <ul class="nav nav-pills">
+    {% for y in years %}<li class="nav-item"><a class="nav-link py-1 {% if y == year %}active{% endif %}" href="?year={{ y }}">{{ y }}년</a></li>{% endfor %}
+  </ul>
+  <form method="get" class="ms-2"><input type="hidden" name="year" value="{{ year }}">
+    <select class="form-select form-select-sm" name="department" onchange="this.form.submit()"><option value="">전체 부서</option>
+      {% for x in depts %}<option {% if department == x %}selected{% endif %}>{{ x }}</option>{% endfor %}</select></form>
+  <div class="ms-auto btn-group btn-group-sm">
+    <a class="btn btn-outline-secondary" href="/hr/salaries/export.csv?year={{ year }}"><i class="bi bi-download"></i> 엑셀(CSV)</a>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#bulkModal"><i class="bi bi-calculator"></i> 일괄 인상 시뮬레이션</button>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  {% macro kpi(label, value, sub='', cls='') %}
+  <div class="col-6 col-md-4 col-xl-2"><div class="card kpi h-100"><div class="kpi-label">{{ label }}</div><div class="kpi-value {{ cls }}">{{ value }}</div><div class="kpi-sub">{{ sub }}</div></div></div>
+  {% endmacro %}
+  {{ kpi('연봉 총액 (' ~ k.headcount ~ '명)', (k.total / 100000000)|round(2) ~ '억', k.total|won ~ '원') }}
+  {{ kpi('평균 연봉', k.avg|man_won ~ '원', '월 ' ~ (k.avg / 12)|man_won ~ '원') }}
+  {{ kpi('평균 인상률', k.avg_rate|pct, '중위값 ' ~ k.median_rate|pct, 'up' if (k.avg_rate or 0) > 0) }}
+  {{ kpi('총액 기준 인상률', k.total_rate|pct, '인건비 증가 ' ~ k.raise_total|man_won ~ '원') }}
+  {{ kpi('인상률 범위', (k.min_rate|pct) ~ ' ~ ' ~ (k.max_rate|pct), '최저 ~ 최고') }}
+  {{ kpi('최저임금 점검', k.below_min_wage ~ '명', '시급 ' ~ settings.min_wage_hourly|won ~ '원 기준', 'text-danger' if k.below_min_wage else 'text-success') }}
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-6"><div class="card h-100"><div class="card-header">연도별 인건비 · 평균연봉 · 평균인상률</div><div class="card-body"><div class="chart-box tall"><canvas id="cTrend"></canvas></div></div></div></div>
+  <div class="col-lg-3"><div class="card h-100"><div class="card-header">{{ year }}년 인상률 분포</div><div class="card-body"><div class="chart-box tall"><canvas id="cDist"></canvas></div></div></div></div>
+  <div class="col-lg-3"><div class="card h-100"><div class="card-header">직급별 평균연봉</div><div class="card-body"><div class="chart-box tall"><canvas id="cRank"></canvas></div></div></div></div>
+  <div class="col-12"><div class="card"><div class="card-header">부서별 평균연봉 ({{ year }}년)</div><div class="card-body"><div class="chart-box"><canvas id="cDept"></canvas></div></div></div></div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex align-items-center">{{ year }}년 개인별 연봉 · 인상 현황
+    {% if ov.missing %}<span class="badge text-bg-warning ms-2">미책정 {{ ov.missing|length }}명</span>{% endif %}
+    <span class="help ms-auto">행 클릭 → 연봉 등록/수정 · 인상률은 직전 등록연도 대비</span></div>
+  <div class="table-responsive">
+  <table class="table table-sm table-hover align-middle mb-0" id="salTable">
+    <thead><tr><th>사번</th><th>성명</th><th>부서</th><th>직급</th><th>고용형태</th><th class="num">직전 연봉</th><th class="num">{{ year }}년 연봉</th><th class="num">월 환산</th>
+      <th class="num">인상액</th><th class="num">인상률</th><th style="width:120px"></th><th>사유</th><th>점검</th></tr></thead>
+    <tbody>
+    {% for r in ov.rows %}{% set e = r.employee %}
+      <tr style="cursor:pointer" data-emp="{{ e.id }}" data-name="{{ e.name }}" data-cur="{{ r.cur.annual_salary if r.cur else '' }}" data-prev="{{ r.prev.annual_salary if r.prev else '' }}" data-reason="{{ r.cur.reason if r.cur else '정기인상' }}" data-note="{{ r.cur.note if r.cur and r.cur.note else '' }}">
+        <td class="text-muted">{{ e.emp_no }}</td><td class="fw-semibold">{{ e.name }}{% if e.resign_date %} <span class="small text-muted">(퇴사)</span>{% endif %}</td>
+        <td>{{ e.department or '' }}</td><td>{{ e.rank or '' }}</td><td class="small">{{ e.employment_type }}</td>
+        <td class="num text-muted">{{ r.prev.annual_salary|won if r.prev else '-' }}{% if r.prev %}<div class="small">{{ r.prev.year }}</div>{% endif %}</td>
+        <td class="num fw-semibold">{{ r.cur.annual_salary|won if r.cur else '' }}{% if not r.cur and not e.resign_date %}<span class="badge text-bg-warning">미책정</span>{% endif %}</td>
+        <td class="num text-muted">{{ (r.cur.annual_salary / 12)|won if r.cur else '' }}</td>
+        <td class="num {{ 'up' if (r.raise_amount or 0) > 0 else 'down' if (r.raise_amount or 0) < 0 }}">{{ r.raise_amount|won if r.raise_amount is not none else '' }}</td>
+        <td class="num {{ 'up' if (r.raise_rate or 0) > 0 else 'down' if (r.raise_rate or 0) < 0 }}">{{ r.raise_rate|pct if r.raise_rate is not none else '' }}</td>
+        <td>{% if r.raise_rate is not none %}<div class="progress" style="height:6px" title="{{ r.raise_rate|pct }}"><div class="progress-bar {{ 'bg-danger' if r.raise_rate >= 10 else 'bg-primary' }}" style="width: {{ [[r.raise_rate * 6.6, 0]|max, 100]|min }}%"></div></div>{% endif %}</td>
+        <td class="small">{{ r.cur.reason if r.cur else '' }}</td>
+        <td>{% if r.below_min_wage %}<span class="badge text-bg-danger" title="환산시급 {{ r.hourly|won }}원">최저임금</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr class="table-light fw-semibold"><td colspan="5">합계 / 평균</td><td class="num"></td><td class="num">{{ k.total|won }}</td><td class="num">{{ (k.total / 12)|won }}</td><td class="num">{{ k.raise_total|won }}</td><td class="num">{{ k.avg_rate|pct }}</td><td colspan="3"></td></tr></tfoot>
+  </table></div>
+  <div class="card-footer help">※ 최저임금 점검은 연봉÷12÷월 소정근로시간({{ settings.monthly_std_hours }}h)으로 환산한 참고치입니다. 실제 판단 시 최저임금 산입범위(정기상여·복리후생비)와 수당 구성을 확인하세요. 단시간·일용직은 제외.</div>
+</div>
+
+<div class="modal fade" id="salModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="/hr/salaries">
+  <input type="hidden" name="employee_id" id="mEmp"><input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="next" value="/hr/salaries?year={{ year }}">
+  <div class="modal-header"><h6 class="modal-title"><span id="mName"></span> · {{ year }}년 연봉</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body row g-2">
+    <div class="col-12 small text-muted" id="mPrev"></div>
+    <div class="col-5"><label class="form-label small">인상률(%)</label><input type="number" step="0.1" class="form-control form-control-sm" id="mRate"></div>
+    <div class="col-7"><label class="form-label small">연봉(원)</label><input type="number" step="10000" class="form-control form-control-sm" name="annual_salary" id="mAmt" required data-money="mHint"><div class="help" id="mHint"></div></div>
+    <div class="col-5"><label class="form-label small">사유</label><select class="form-select form-select-sm" name="reason" id="mReason">{% for x in reasons %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-7"><label class="form-label small">적용일</label><input type="date" class="form-control form-control-sm" name="effective_date" value="{{ year }}-01-01"></div>
+    <div class="col-12"><label class="form-label small">비고</label><input class="form-control form-control-sm" name="note" id="mNote"></div>
+  </div><div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div></form></div></div>
+
+<div class="modal fade" id="bulkModal" tabindex="-1"><div class="modal-dialog modal-xl"><div class="modal-content">
+  <div class="modal-header"><h6 class="modal-title">일괄 인상 시뮬레이션 ({{ year }}년)</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div class="row g-2 align-items-end mb-3">
+      <div class="col-md-2"><label class="form-label small">기본 인상률(%)</label><input type="number" step="0.1" class="form-control form-control-sm" id="bRate" value="3.5"></div>
+      <div class="col-md-2"><label class="form-label small">반올림 단위</label><select class="form-select form-select-sm" id="bRound"><option value="10000">만원</option><option value="100000" selected>10만원</option><option value="1000000">100만원</option><option value="0">없음</option></select></div>
+      <div class="col-md-2"><label class="form-label small">부서</label><select class="form-select form-select-sm" id="bDept"><option value="">전체</option>{% for x in depts %}<option>{{ x }}</option>{% endfor %}</select></div>
+      <div class="col-md-3"><label class="form-check-label small"><input type="checkbox" class="form-check-input me-1" id="bMissing" checked>{{ year }}년 미책정자만 대상</label></div>
+      <div class="col-md-3 text-end"><button class="btn btn-sm btn-outline-primary" id="bRun"><i class="bi bi-calculator"></i> 계산</button></div>
+    </div>
+    <div class="row g-2 mb-2" id="bSummary"></div>
+    <div class="table-responsive" style="max-height:380px"><table class="table table-sm mb-0"><thead class="sticky-top"><tr><th>성명</th><th>부서</th><th>직급</th><th class="num">기준 연봉</th><th class="num" style="width:110px">개별 인상률(%)</th><th class="num">적용 연봉</th><th class="num">인상액</th></tr></thead><tbody id="bBody"></tbody></table></div>
+    <div class="help mt-2">개별 인상률을 수정하면 합계가 즉시 재계산됩니다. [적용]을 누르기 전까지는 저장되지 않습니다.</div>
+  </div>
+  <div class="modal-footer"><select class="form-select form-select-sm w-auto" id="bReason">{% for x in reasons %}<option>{{ x }}</option>{% endfor %}</select>
+    <button class="btn btn-sm btn-primary" id="bApply" disabled><i class="bi bi-check2-all"></i> {{ year }}년 연봉으로 적용</button></div>
+</div></div></div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const TREND = {{ trend|tojson }}, DEPT = {{ ov.dept_avg|tojson }}, RANK = {{ ov.rank_avg|tojson }}, DIST = {{ ov.distribution|tojson }};
+const YEAR = {{ year }};
+new Chart(document.getElementById('cTrend'), {
+  data: { labels: TREND.map(r => r.year), datasets: [
+    { type: 'bar', label: '인건비 총액(억)', data: TREND.map(r => r.total / 1e8), backgroundColor: TREND.map(r => r.year === YEAR ? '#2d5a8c' : '#9db4d0'), borderRadius: 4, yAxisID: 'y' },
+    { type: 'line', label: '평균연봉(백만)', data: TREND.map(r => r.avg / 1e6), borderColor: '#3fa7a3', backgroundColor: '#3fa7a3', yAxisID: 'y1', tension: .3 },
+    { type: 'line', label: '평균인상률(%)', data: TREND.map(r => r.avg_rate), borderColor: '#f2a541', backgroundColor: '#f2a541', borderDash: [4, 3], yAxisID: 'y2', tension: .3 } ] },
+  options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+    scales: { x: { grid: { display: false } }, y: { title: { display: true, text: '억원' } }, y1: { position: 'right', grid: { display: false }, title: { display: true, text: '백만원' } },
+      y2: { display: false } } }
+});
+new Chart(document.getElementById('cDist'), {
+  type: 'bar', data: { labels: DIST.map(r => r.label), datasets: [{ data: DIST.map(r => r.count), backgroundColor: '#2d5a8c', borderRadius: 4 }] },
+  options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${c.raw}명` } } }, scales: { x: { grid: { display: false } }, y: { ticks: { stepSize: 1 } } } }
+});
+const hbar = (id, rows, color) => new Chart(document.getElementById(id), {
+  type: 'bar', data: { labels: rows.map(r => r.name), datasets: [{ data: rows.map(r => r.avg / 1e4), backgroundColor: color, borderRadius: 4 }] },
+  options: { indexAxis: id === 'cRank' ? 'y' : 'x', maintainAspectRatio: false, plugins: { legend: { display: false },
+    tooltip: { callbacks: { label: c => ` 평균 ${fmt.won(c.raw)}만원 (${rows[c.dataIndex].count}명)` } } }, scales: { x: { grid: { display: false } } } }
+});
+hbar('cDept', DEPT, '#3fa7a3');
+hbar('cRank', RANK, '#6c8ebf');
+
+// 개별 연봉 모달
+const modal = new bootstrap.Modal(document.getElementById('salModal'));
+const mAmt = document.getElementById('mAmt'), mRate = document.getElementById('mRate');
+let mPrev = 0;
+document.querySelectorAll('#salTable tbody tr').forEach(tr => tr.addEventListener('click', () => {
+  const d = tr.dataset; mPrev = Number(d.prev) || 0;
+  document.getElementById('mEmp').value = d.emp; document.getElementById('mName').textContent = d.name;
+  document.getElementById('mPrev').textContent = mPrev ? `직전 연봉 ${fmt.won(mPrev)}원` : '직전 연봉 없음 (신규)';
+  mAmt.value = d.cur || ''; document.getElementById('mReason').value = d.reason || '정기인상'; document.getElementById('mNote').value = d.note || '';
+  mRate.value = (mPrev && d.cur) ? ((d.cur - mPrev) / mPrev * 100).toFixed(1) : '';
+  mRate.disabled = !mPrev; mAmt.dispatchEvent(new Event('input', { bubbles: true })); modal.show();
+}));
+mRate.addEventListener('input', () => { if (mPrev) { mAmt.value = Math.round(mPrev * (1 + mRate.value / 100) / 10000) * 10000; mAmt.dispatchEvent(new Event('input', { bubbles: true })); } });
+mAmt.addEventListener('input', () => { if (mPrev && mAmt.value) mRate.value = ((mAmt.value - mPrev) / mPrev * 100).toFixed(1); });
+
+// 일괄 인상 시뮬레이션
+let bRows = [];
+const bBody = document.getElementById('bBody');
+function renderBulk() {
+  const round = Number(document.getElementById('bRound').value);
+  let base = 0, total = 0;
+  bBody.innerHTML = bRows.map((r, i) => {
+    base += r.base; total += r.new;
+    return `<tr><td>${r.name}</td><td>${r.department || ''}</td><td>${r.rank || ''}</td><td class="num">${fmt.won(r.base)}</td>
+      <td class="num"><input type="number" step="0.1" class="form-control form-control-sm text-end" data-i="${i}" value="${r.rate.toFixed(1)}"></td>
+      <td class="num fw-semibold">${fmt.won(r.new)}</td><td class="num up">${fmt.won(r.new - r.base)}</td></tr>`;
+  }).join('') || '<tr><td colspan="7" class="text-center text-muted p-3">대상자가 없습니다</td></tr>';
+  const card = (l, v) => `<div class="col"><div class="border rounded p-2"><div class="small text-muted">${l}</div><div class="fw-bold">${v}</div></div></div>`;
+  document.getElementById('bSummary').innerHTML = card('대상 인원', bRows.length + '명') + card('기준 총액', fmt.won(base) + '원') +
+    card('적용 후 총액', fmt.won(total) + '원') + card('인건비 증가', fmt.won(total - base) + '원') + card('총액 인상률', base ? fmt.pct((total - base) / base * 100, 2) : '-');
+  bBody.querySelectorAll('input').forEach(inp => inp.addEventListener('change', () => {
+    const r = bRows[inp.dataset.i], rate = Number(inp.value);
+    r.new = round ? Math.round(r.base * (1 + rate / 100) / round) * round : Math.round(r.base * (1 + rate / 100));
+    r.rate = (r.new - r.base) / r.base * 100; renderBulk();
+  }));
+  document.getElementById('bApply').disabled = !bRows.length;
+}
+document.getElementById('bRun').addEventListener('click', async () => {
+  const q = new URLSearchParams({ year: YEAR, rate: document.getElementById('bRate').value, round_unit: document.getElementById('bRound').value,
+    only_missing: document.getElementById('bMissing').checked, department: document.getElementById('bDept').value });
+  const r = await (await fetch('/hr/api/salaries/bulk-preview?' + q)).json();
+  bRows = r.rows; renderBulk();
+});
+document.getElementById('bApply').addEventListener('click', async () => {
+  if (!confirm(`${bRows.length}명의 ${YEAR}년 연봉을 저장합니다. 기존 ${YEAR}년 값이 있으면 덮어씁니다.`)) return;
+  const r = await postJSON('/hr/salaries/bulk', { year: YEAR, rate: document.getElementById('bRate').value, reason: document.getElementById('bReason').value, rows: bRows });
+  location.href = `/hr/salaries?year=${YEAR}&msg=` + encodeURIComponent(r.message);
+});
+</script>
+{% endblock %}

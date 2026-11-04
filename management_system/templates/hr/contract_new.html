@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}근로계약서 자동작성{% endblock %}
+{% block page_title %}<a href="/hr/contracts" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> 근로계약서 자동작성{% endblock %}
+{% block content %}
+<form method="post" class="row g-3">
+  <div class="col-lg-4">
+    <div class="card"><div class="card-header">① 대상자 · 구분</div><div class="card-body row g-2">
+      <div class="col-12"><label class="form-label small">임직원</label>
+        <select class="form-select form-select-sm" name="employee_id" id="empSel" required>
+          <option value="">선택</option>
+          {% for x in emps %}<option value="{{ x.id }}" {% if emp and emp.id == x.id %}selected{% endif %}>{{ x.name }} · {{ x.department or '' }} · {{ x.employment_type }}</option>{% endfor %}
+        </select></div>
+      <div class="col-12"><label class="form-label small">계약서 템플릿</label>
+        <select class="form-select form-select-sm" name="template_id" id="tplSel" required>
+          {% for t in templates_ %}<option value="{{ t.id }}" data-cat="{{ t.category }}" {% if t.category == category %}selected{% endif %}>[{{ t.category }}] {{ t.name }}</option>{% endfor %}
+        </select>
+        <div class="help mt-1" id="suggestHint">{% if emp %}고용형태({{ emp.employment_type }})에 맞는 <b>{{ category }}</b> 템플릿이 자동 선택되었습니다.{% endif %}</div></div>
+      <div class="col-12 help"><i class="bi bi-lightbulb"></i> 회사정보(회사명·대표자·주소)는 <a href="/settings">설정</a>, 임직원 정보는 인사기록카드에서 자동으로 채워집니다.</div>
+    </div></div>
+  </div>
+  <div class="col-lg-8">
+    <div class="card"><div class="card-header">② 근로조건 <span class="help">— 근로기준법 제17조 필수 명시사항(임금·소정근로시간·휴일·연차휴가·근무장소·업무)</span></div>
+      <div class="card-body row g-2">
+        <div class="col-md-4"><label class="form-label small">계약 시작일</label><input type="date" class="form-control form-control-sm" name="start_date" value="{{ p.start_date }}" required></div>
+        <div class="col-md-4"><label class="form-label small">계약 종료일 <span class="help">(정규직은 비움)</span></label><input type="date" class="form-control form-control-sm" name="end_date" value="{{ p.end_date }}"></div>
+        <div class="col-md-4"><label class="form-label small">수습기간</label><input class="form-control form-control-sm" name="probation" value="{{ p.probation }}"></div>
+        <div class="col-md-4"><label class="form-label small">근무장소</label><input class="form-control form-control-sm" name="work_location" value="{{ p.work_location }}"></div>
+        <div class="col-md-8"><label class="form-label small">업무내용</label><input class="form-control form-control-sm" name="job_duty" value="{{ p.job_duty }}"></div>
+        <div class="col-md-4"><label class="form-label small">근무요일</label><input class="form-control form-control-sm" name="work_days" value="{{ p.work_days }}"></div>
+        <div class="col-md-2"><label class="form-label small">시업</label><input type="time" class="form-control form-control-sm" name="start_time" value="{{ p.start_time }}"></div>
+        <div class="col-md-2"><label class="form-label small">종업</label><input type="time" class="form-control form-control-sm" name="end_time" value="{{ p.end_time }}"></div>
+        <div class="col-md-2"><label class="form-label small">휴게시간</label><input class="form-control form-control-sm" name="break_time" value="{{ p.break_time }}"></div>
+        <div class="col-md-2"><label class="form-label small">주 소정시간</label><input type="number" step="0.5" class="form-control form-control-sm" name="weekly_hours" value="{{ p.weekly_hours }}"></div>
+        <div class="col-md-4"><label class="form-label small">연봉(원)</label><input type="number" step="10000" class="form-control form-control-sm" name="annual_salary" value="{{ p.annual_salary }}" data-money="salHint"><div class="help" id="salHint"></div></div>
+        <div class="col-md-4"><label class="form-label small">시급(원) <span class="help">단시간</span></label><input type="number" class="form-control form-control-sm" name="hourly_wage" value="{{ p.hourly_wage }}"></div>
+        <div class="col-md-4"><label class="form-label small">일급(원) <span class="help">일용직</span></label><input type="number" class="form-control form-control-sm" name="daily_wage" value="{{ p.daily_wage }}"></div>
+        <div class="col-md-4"><label class="form-label small">작성일</label><input type="date" class="form-control form-control-sm" name="doc_date" value="{{ today().isoformat() }}"></div>
+        <div class="col-md-8 d-flex align-items-end"><label class="form-check-label small"><input class="form-check-input me-1" type="checkbox" name="sync_salary" value="1" checked>
+          연봉계약서인 경우 연봉현황에 자동 반영</label></div>
+      </div>
+      <div class="card-footer text-end"><button class="btn btn-primary btn-sm"><i class="bi bi-magic"></i> 자동작성 후 에디터로 열기</button></div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+const SUG = {{ suggest_map|tojson }};
+const empSel = document.getElementById('empSel'), tplSel = document.getElementById('tplSel');
+// 대상자/템플릿 변경 → 해당 조건 기본값으로 새로고침
+empSel.addEventListener('change', () => { if (empSel.value) location.href = `/hr/contracts/new?employee_id=${empSel.value}`; });
+tplSel.addEventListener('change', () => {
+  const cat = tplSel.selectedOptions[0].dataset.cat;
+  if (empSel.value) location.href = `/hr/contracts/new?employee_id=${empSel.value}&category=${encodeURIComponent(cat)}`;
+});
+document.querySelector('[data-money]').dispatchEvent(new Event('input', { bubbles: true }));
+</script>
+{% endblock %}

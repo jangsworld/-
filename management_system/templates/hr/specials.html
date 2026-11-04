@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}근로특이사항{% endblock %}
+{% block page_title %}<i class="bi bi-calendar-heart me-2"></i>근로특이사항 (휴직 · 단축근무 · 모성보호){% endblock %}
+{% block content %}
+{% set ongoing = rows|selectattr('status', 'equalto', '진행중')|list %}
+<div class="row g-3 mb-3">
+  {% for cat, s in summary.items() %}
+  <div class="col-6 col-md-4 col-xl-2"><a class="card kpi h-100 text-decoration-none" href="?category={{ cat|urlencode }}">
+    <div class="kpi-label">{{ cat }}</div><div class="kpi-value">{{ s['진행중'] }}<span class="fs-6 text-muted"> 명</span></div>
+    <div class="kpi-sub">예정 {{ s['예정'] }} · 종료 {{ s['종료'] }}</div></a></div>
+  {% endfor %}
+</div>
+
+<div class="card mb-3">
+  <div class="card-header d-flex">일정 타임라인 <span class="help ms-2">최근 3개월 ~ 향후 12개월 · 빨간 선 = 오늘</span></div>
+  <div class="card-body p-2">
+    <div class="gantt" id="gantt"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><form class="row g-2 align-items-center" method="get">
+    <div class="col-auto"><select class="form-select form-select-sm" name="category"><option value="">구분 전체</option>{% for k in work_specials %}<option {% if f.category == k %}selected{% endif %}>{{ k }}</option>{% endfor %}</select></div>
+    <div class="col-auto"><select class="form-select form-select-sm" name="status"><option value="">상태 전체</option>{% for s in ['진행중', '예정', '종료'] %}<option {% if f.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+    <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">조회</button></div>
+    <div class="col text-end"><button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#specialModal"><i class="bi bi-plus"></i> 등록</button></div>
+  </form></div>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+    <thead><tr><th>구분</th><th>상태</th><th>성명</th><th>부서</th><th>기간</th><th class="num">일수</th><th>남은기간</th><th>단축 후</th><th>대상 자녀</th><th>대체인력</th><th>정부지원금</th><th>법적근거</th><th></th></tr></thead>
+    <tbody>{% for s in rows %}{% set left = (s.actual_end or s.end_date)|dday %}
+      <tr><td>{{ s.category }}</td><td><span class="st st-{{ s.status }}">{{ s.status }}</span></td>
+        <td><a href="/hr/employees/{{ s.employee_id }}?tab=special" class="fw-semibold">{{ s.name }}</a></td><td>{{ s.department or '' }}</td>
+        <td class="small">{{ s.start_date }} ~ {{ s.end_date or '' }}{% if s.actual_end %}<div class="text-muted">실제 {{ s.actual_end }}</div>{% endif %}</td>
+        <td class="num">{{ s.days or '' }}</td>
+        <td>{% if s.status == '진행중' and left is not none %}<span class="badge {{ 'text-bg-warning' if left <= 30 else 'text-bg-light border' }}">D-{{ left }}</span>{% endif %}</td>
+        <td>{{ (s.reduced_hours ~ 'h/주') if s.reduced_hours else '' }}</td><td class="small">{{ s.child_name or '' }} {{ s.child_birth or '' }}</td>
+        <td class="small">{{ s.replacement or '' }}</td><td class="small">{{ s.subsidy or '' }}</td>
+        <td class="small text-muted">{{ work_specials[s.category].law if s.category in work_specials else '' }}</td>
+        <td><form method="post" action="/hr/specials/{{ s.id }}/delete" data-confirm="삭제할까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
+    {% else %}<tr><td colspan="13" class="text-center text-muted p-4">등록된 사항이 없습니다</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <div class="card-footer help">
+    <b>관리 포인트</b> · 육아휴직·출산휴가 기간 중 및 이후 30일간 해고 금지(근로기준법 제23조) · 휴직 종료 후 동일/동등 직무 복귀 보장 · 육아휴직 기간은 근속기간에 포함 ·
+    단축근무자는 단축 비율만큼 임금 조정 및 연장근로 제한 · 근로시간 단축 시 근로계약서(변경) 재작성 권장
+  </div>
+</div>
+{% include "hr/_special_modal.html" %}
+{% endblock %}
+{% block scripts %}
+<script>
+const TL = {{ timeline|tojson }}, WS = {{ work_specials|tojson }};
+const T0 = new Date('{{ timeline_start }}'), T1 = new Date('{{ timeline_end }}'), NOW = new Date('{{ today().isoformat() }}');
+const span = T1 - T0, pos = d => Math.max(0, Math.min(100, (d - T0) / span * 100));
+const COLORS = { leave: '#2d5a8c', reduce: '#3fa7a3', other: '#9aa5b1' };
+const g = document.getElementById('gantt');
+let head = '<div class="gantt-head"><div class="gantt-label"></div><div class="d-flex flex-grow-1" style="min-width:600px">';
+for (let d = new Date(T0); d < T1; d.setMonth(d.getMonth() + 1)) head += `<div class="gantt-month">${String(d.getFullYear()).slice(2)}.${String(d.getMonth() + 1).padStart(2, '0')}</div>`;
+g.innerHTML = head + '</div></div>' + (TL.map(s => {
+  const st = new Date(s.start_date), en = new Date(s.actual_end || s.end_date || s.start_date);
+  const l = pos(st), w = Math.max(1, pos(en) - l), kind = (WS[s.category] || {}).kind || 'other';
+  return `<div class="gantt-row"><div class="gantt-label text-truncate"><a href="/hr/employees/${s.employee_id}?tab=special">${s.name}</a> · ${s.category}</div>
+    <div class="gantt-track"><div class="gantt-today" style="left:${pos(NOW)}%"></div>
+    <div class="gantt-bar" style="left:${l}%;width:${w}%;background:${COLORS[kind]}" title="${s.start_date} ~ ${s.end_date || ''}">${s.start_date.slice(5)} ~ ${(s.actual_end || s.end_date || '').slice(5)}</div></div></div>`;
+}).join('') || '<div class="p-3 text-muted text-center small">표시할 일정이 없습니다</div>');
+</script>
+{% endblock %}

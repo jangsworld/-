@@ -1,0 +1,36 @@
+<div class="modal fade" id="specialModal" tabindex="-1"><div class="modal-dialog modal-lg"><form class="modal-content" method="post" action="/hr/specials/save">
+  <input type="hidden" name="id" value="">
+  <input type="hidden" name="next" value="{{ ('/hr/employees/' ~ e.id ~ '?tab=special') if e is defined and e.id else '/hr/specials' }}">
+  <div class="modal-header"><h6 class="modal-title">근로특이사항 등록</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body row g-2">
+    {% if e is defined and e.id %}<input type="hidden" name="employee_id" value="{{ e.id }}">
+    {% else %}
+    <div class="col-md-4"><label class="form-label small">대상자</label><select class="form-select form-select-sm" name="employee_id" required>
+      {% for x in emps %}<option value="{{ x.id }}">{{ x.name }} ({{ x.department or '' }})</option>{% endfor %}</select></div>
+    {% endif %}
+    <div class="col-md-4"><label class="form-label small">구분</label><select class="form-select form-select-sm" name="category" id="spCat">
+      {% for k in work_specials %}<option>{{ k }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label small">단축 후 주 소정근로시간</label><input type="number" step="0.5" class="form-control form-control-sm" name="reduced_hours" id="spHours" placeholder="예: 30"></div>
+    <div class="col-12"><div class="alert alert-light border small py-2 mb-0" id="spInfo"></div></div>
+    <div class="col-md-4"><label class="form-label small">시작일</label><input type="date" class="form-control form-control-sm" name="start_date" required></div>
+    <div class="col-md-4"><label class="form-label small">종료(예정)일</label><input type="date" class="form-control form-control-sm" name="end_date"></div>
+    <div class="col-md-4"><label class="form-label small">실제 종료·복직일</label><input type="date" class="form-control form-control-sm" name="actual_end"><div class="help">조기복귀 시 입력</div></div>
+    <div class="col-md-4 sp-child"><label class="form-label small">대상 자녀</label><input class="form-control form-control-sm" name="child_name" placeholder="첫째 / 둘째"></div>
+    <div class="col-md-4 sp-child"><label class="form-label small">자녀 생년월일(출산예정일)</label><input type="date" class="form-control form-control-sm" name="child_birth"></div>
+    <div class="col-md-4"><label class="form-label small">대체인력</label><input class="form-control form-control-sm" name="replacement"></div>
+    <div class="col-md-6"><label class="form-label small">정부지원금</label><input class="form-control form-control-sm" name="subsidy" placeholder="육아휴직 지원금, 대체인력 지원금 등"></div>
+    <div class="col-md-6"><label class="form-label small">비고</label><input class="form-control form-control-sm" name="note"></div>
+  </div><div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div></form></div></div>
+<script>
+(() => {
+  const WS = {{ work_specials|tojson }};
+  const cat = document.getElementById('spCat');
+  const sync = () => {
+    const w = WS[cat.value];
+    document.getElementById('spInfo').innerHTML = `<b>${w.law}</b> · 한도: ${w.limit} <span class="text-muted">(참고값, 최신 법령 확인)</span>`;
+    document.getElementById('spHours').disabled = w.kind !== 'reduce';
+    document.querySelectorAll('.sp-child').forEach(el => el.classList.toggle('d-none', !w.need_child));
+  };
+  cat.addEventListener('change', sync); sync();
+})();
+</script>

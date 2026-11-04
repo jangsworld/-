@@ -1,0 +1,39 @@
+<div class="modal fade" id="rewardModal" tabindex="-1"><div class="modal-dialog modal-lg"><form class="modal-content" method="post" action="/hr/rewards/save">
+  <input type="hidden" name="id" value="">
+  <input type="hidden" name="next" value="{{ ('/hr/employees/' ~ e.id ~ '?tab=reward') if e is defined and e.id else '/hr/rewards' }}">
+  <div class="modal-header"><h6 class="modal-title">상벌 등록</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body row g-2">
+    {% if e is defined and e.id %}<input type="hidden" name="employee_id" value="{{ e.id }}">
+    {% else %}
+    <div class="col-md-4"><label class="form-label small">대상자</label><select class="form-select form-select-sm" name="employee_id" required>
+      {% for x in emps %}<option value="{{ x.id }}">{{ x.name }} ({{ x.department or '' }} {{ x.rank or '' }})</option>{% endfor %}</select></div>
+    {% endif %}
+    <div class="col-md-2"><label class="form-label small">구분</label><select class="form-select form-select-sm" name="kind" id="rwKind">
+      <option>포상</option><option>징계</option></select></div>
+    <div class="col-md-3"><label class="form-label small">종류</label><select class="form-select form-select-sm" name="category" id="rwCat"></select></div>
+    <div class="col-md-3"><label class="form-label small">일자</label><input type="date" class="form-control form-control-sm" name="action_date" value="{{ today().isoformat() }}" required></div>
+    <div class="col-md-8"><label class="form-label small">사유</label><input class="form-control form-control-sm" name="reason" required></div>
+    <div class="col-md-4 rw-reward"><label class="form-label small">포상금(원)</label><input type="number" class="form-control form-control-sm" name="amount" step="10000"></div>
+    <div class="col-md-4 rw-disc d-none"><label class="form-label small">징계기간 시작</label><input type="date" class="form-control form-control-sm" name="period_start"></div>
+    <div class="col-md-4 rw-disc d-none"><label class="form-label small">징계기간 종료</label><input type="date" class="form-control form-control-sm" name="period_end"></div>
+    <div class="col-md-4 rw-disc d-none"><label class="form-label small">말소예정일</label><input type="date" class="form-control form-control-sm" name="expunge_date">
+      <div class="help" id="rwExpHint">비우면 종류별 기본 말소기간으로 자동 계산</div></div>
+    <div class="col-md-4"><label class="form-label small">시행권자</label><input class="form-control form-control-sm" name="issuer" value="대표이사"></div>
+    <div class="col-md-8"><label class="form-label small">비고</label><input class="form-control form-control-sm" name="note"></div>
+    <div class="col-12 help rw-disc d-none"><i class="bi bi-exclamation-triangle"></i> 징계는 취업규칙상 사유·절차(소명기회 부여, 징계위원회 의결)를 거쳐야 하며, 감봉은 1회 평균임금 1일분의 1/2, 총액 임금총액의 1/10을 초과할 수 없습니다(근로기준법 제95조).</div>
+  </div><div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div></form></div></div>
+<script>
+(() => {
+  const CATS = {{ reward_categories|tojson }};
+  const EXP = {{ expunge_months|tojson }};
+  const kind = document.getElementById('rwKind'), cat = document.getElementById('rwCat');
+  const sync = () => {
+    cat.innerHTML = CATS[kind.value].map(c => `<option>${c}</option>`).join('');
+    document.querySelectorAll('.rw-disc').forEach(el => el.classList.toggle('d-none', kind.value !== '징계'));
+    document.querySelectorAll('.rw-reward').forEach(el => el.classList.toggle('d-none', kind.value !== '포상'));
+    hint();
+  };
+  const hint = () => { const m = EXP[cat.value]; document.getElementById('rwExpHint').textContent = m ? `비우면 ${m}개월 후로 자동 계산` : ''; };
+  kind.addEventListener('change', sync); cat.addEventListener('change', hint); sync();
+})();
+</script>

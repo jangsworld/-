@@ -1,0 +1,125 @@
+/* 경영관리업무시스템 – 공통 스타일 */
+:root {
+  --sidebar-w: 236px;
+  --brand: #1f3a5f;
+  --brand-2: #2d5a8c;
+  --surface: #ffffff;
+  --bg: #f3f5f8;
+  --line: #e3e7ed;
+}
+body { background: var(--bg); font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; font-size: .92rem; }
+.app-shell { display: flex; min-height: 100vh; }
+
+/* Sidebar */
+.sidebar { width: var(--sidebar-w); background: var(--brand); color: #cfd9e6; flex-shrink: 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.brand { display: flex; gap: .6rem; align-items: center; padding: 1.1rem 1rem; color: #fff; text-decoration: none; border-bottom: 1px solid rgba(255,255,255,.08); }
+.brand i { font-size: 1.6rem; }
+.brand-title { font-weight: 700; font-size: 1.02rem; }
+.brand-sub { font-size: .72rem; opacity: .7; }
+.side-group { padding: .6rem 0 .3rem; }
+.side-group-title { display: flex; align-items: center; gap: .45rem; font-size: .74rem; letter-spacing: .04em; text-transform: uppercase; padding: .3rem 1rem; color: #8fa6c2; font-weight: 600; }
+.side-group.disabled { opacity: .55; }
+.side-link { display: flex; align-items: center; gap: .55rem; padding: .45rem 1rem .45rem 1.4rem; color: #d8e2ee; text-decoration: none; font-size: .88rem; border-left: 3px solid transparent; }
+.side-link:hover { background: rgba(255,255,255,.06); color: #fff; }
+.side-link.active { background: rgba(255,255,255,.12); color: #fff; border-left-color: #6fb1ff; font-weight: 600; }
+.side-link.muted { color: #8ea2bb; font-size: .8rem; padding-top: .2rem; padding-bottom: .2rem; cursor: default; }
+
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.topbar { display: flex; align-items: center; gap: .75rem; background: var(--surface); border-bottom: 1px solid var(--line); padding: .7rem 1.4rem; position: sticky; top: 0; z-index: 10; }
+.topbar-title { font-weight: 700; font-size: 1.08rem; color: #1d2b3a; }
+.content { padding: 1.3rem 1.4rem 3rem; }
+
+@media (max-width: 991px) {
+  .sidebar { position: fixed; left: -260px; z-index: 50; transition: left .2s; }
+  .sidebar.open { left: 0; }
+  .content { padding: 1rem; }
+}
+
+/* Cards & KPI */
+.card { border: 1px solid var(--line); border-radius: .6rem; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+.card-header { background: transparent; border-bottom: 1px solid var(--line); font-weight: 600; }
+.kpi { padding: .9rem 1rem; }
+.kpi .kpi-label { font-size: .78rem; color: #6b7785; }
+.kpi .kpi-value { font-size: 1.55rem; font-weight: 700; color: #1d2b3a; line-height: 1.25; }
+.kpi .kpi-sub { font-size: .76rem; color: #8a96a3; }
+.kpi .kpi-icon { font-size: 1.5rem; opacity: .25; }
+.section-title { font-weight: 700; font-size: 1rem; margin: 0; }
+.help { font-size: .78rem; color: #7a8693; }
+.chart-box { position: relative; height: 240px; }
+.chart-box.tall { height: 300px; }
+
+/* Tables */
+.table { --bs-table-bg: transparent; }
+.table > :not(caption) > * > * { padding: .5rem .6rem; }
+.table thead th { font-size: .78rem; color: #5b6774; font-weight: 600; background: #f7f9fb; white-space: nowrap; }
+.table-hover tbody tr { cursor: default; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.up { color: #d63939; }
+.down { color: #1f6feb; }
+
+/* Status badges */
+.st { font-size: .74rem; padding: .25em .55em; border-radius: 1rem; font-weight: 600; white-space: nowrap; }
+.st-재직, .st-체결완료, .st-발급완료, .st-진행중 { background: #e6f4ea; color: #1e7b34; }
+.st-휴직, .st-서명대기, .st-예정 { background: #fff4e0; color: #9a6400; }
+.st-단축근무 { background: #e8f0fe; color: #1a56c2; }
+.st-퇴사, .st-만료, .st-해지, .st-종료, .st-발급취소 { background: #eef0f2; color: #6b7280; }
+.st-작성중, .st-입사예정 { background: #f1e8fd; color: #6b35c4; }
+.kind-포상 { background: #e6f4ea; color: #1e7b34; }
+.kind-징계 { background: #fde8e8; color: #b42318; }
+
+/* Alerts list */
+.alert-item { display: flex; gap: .7rem; padding: .6rem .9rem; border-bottom: 1px solid var(--line); align-items: flex-start; }
+.alert-item:last-child { border-bottom: 0; }
+.alert-dot { width: .55rem; height: .55rem; border-radius: 50%; margin-top: .45rem; flex-shrink: 0; }
+.lv-danger .alert-dot { background: #d92d20; }
+.lv-warning .alert-dot { background: #f79009; }
+.lv-info .alert-dot { background: #2e90fa; }
+.alert-cat { font-size: .72rem; font-weight: 700; color: #475467; background: #f2f4f7; border-radius: .3rem; padding: .05rem .4rem; }
+
+/* Profile */
+.avatar { width: 64px; height: 64px; border-radius: 50%; background: var(--brand-2); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 700; }
+.info-grid { display: grid; grid-template-columns: 120px 1fr; gap: .45rem .9rem; font-size: .88rem; }
+.info-grid dt { color: #6b7785; font-weight: 500; }
+.info-grid dd { margin: 0; }
+
+/* Timeline (Gantt) */
+.gantt { position: relative; border: 1px solid var(--line); border-radius: .5rem; background: #fff; overflow-x: auto; }
+.gantt-row { display: flex; align-items: center; border-bottom: 1px solid #f0f2f5; min-height: 32px; }
+.gantt-label { width: 190px; flex-shrink: 0; padding: .25rem .6rem; font-size: .8rem; border-right: 1px solid var(--line); background: #fbfcfd; }
+.gantt-track { position: relative; flex: 1; height: 32px; min-width: 600px; }
+.gantt-bar { position: absolute; top: 7px; height: 18px; border-radius: 4px; font-size: .7rem; color: #fff; padding: 0 .35rem; white-space: nowrap; overflow: hidden; line-height: 18px; }
+.gantt-today { position: absolute; top: 0; bottom: 0; width: 2px; background: #d92d20; z-index: 2; }
+.gantt-head { display: flex; border-bottom: 1px solid var(--line); background: #f7f9fb; }
+.gantt-month { flex: 1; font-size: .7rem; color: #6b7785; text-align: center; border-left: 1px solid #eef0f3; padding: .2rem 0; }
+
+/* Document editor (A4) */
+.editor-toolbar { position: sticky; top: 58px; z-index: 5; background: #fff; border: 1px solid var(--line); border-radius: .5rem; padding: .35rem; display: flex; flex-wrap: wrap; gap: .2rem; }
+.editor-toolbar .btn { padding: .2rem .5rem; }
+.paper-wrap { background: #e9ecef; padding: 1.5rem; border-radius: .5rem; overflow-x: auto; }
+.paper { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 22mm 20mm; box-shadow: 0 2px 12px rgba(0,0,0,.12); font-family: "Batang", "바탕", "Nanum Myeongjo", serif; font-size: 10.5pt; line-height: 1.75; color: #111; outline: none; }
+.paper:focus { box-shadow: 0 0 0 3px rgba(45,90,140,.25), 0 2px 12px rgba(0,0,0,.12); }
+.paper .doc-title { text-align: center; font-size: 18pt; font-weight: 700; margin: 0 0 18px; }
+.paper h3 { font-size: 11pt; font-weight: 700; margin: 14px 0 4px; }
+.paper p { margin: 0 0 4px; }
+.paper ul { margin: 0 0 4px; padding-left: 20px; }
+.paper .doc-note { font-size: 9pt; color: #555; }
+.doc-table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+.doc-table th, .doc-table td { border: 1px solid #333; padding: 6px 8px; font-size: 10pt; vertical-align: middle; }
+.doc-table th { background: #f2f2f2; width: 15%; text-align: center; }
+.sign-table { margin-top: 18px; }
+.ph-missing { background: #fff3bf; color: #b54708; border-radius: 3px; padding: 0 2px; font-family: sans-serif; font-size: 9pt; }
+.ph-chip { cursor: pointer; font-size: .75rem; }
+
+@media print {
+  @page { size: A4; margin: 0; }
+  body { background: #fff; }
+  .no-print, .sidebar, .topbar, .editor-toolbar, .toast-container { display: none !important; }
+  .content, .main { padding: 0 !important; margin: 0 !important; }
+  .paper-wrap { padding: 0; background: #fff; }
+  .paper { box-shadow: none; margin: 0; width: auto; min-height: auto; }
+  .ph-missing { background: none; color: #111; }
+  .print-col { width: 100% !important; max-width: 100% !important; flex: 0 0 100% !important; }
+}
+
+/* 테이블 내 이름·구분·부서 줄바꿈 방지 */
+.table td a.fw-semibold, .table td:nth-child(-n+4) { white-space: nowrap; }

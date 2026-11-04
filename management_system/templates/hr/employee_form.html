@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ '임직원 등록' if is_new else '정보 수정' }}{% endblock %}
+{% block page_title %}<i class="bi bi-person-plus me-2"></i>{{ '임직원 등록' if is_new else e.name ~ ' 정보 수정' }}{% endblock %}
+{% block content %}
+{% macro inp(name, label, type='text', col='col-md-3', req=False, ph='') %}
+<div class="{{ col }}"><label class="form-label small">{{ label }}{% if req %} <span class="text-danger">*</span>{% endif %}</label>
+  <input class="form-control form-control-sm" type="{{ type }}" name="{{ name }}" value="{{ e[name] or '' }}" placeholder="{{ ph }}" {% if req %}required{% endif %}></div>
+{% endmacro %}
+{% macro sel(name, label, opts, col='col-md-3', blank=True) %}
+<div class="{{ col }}"><label class="form-label small">{{ label }}</label>
+  <select class="form-select form-select-sm" name="{{ name }}">{% if blank %}<option value=""></option>{% endif %}
+    {% for o in opts %}<option {% if e[name] == o %}selected{% endif %}>{{ o }}</option>{% endfor %}
+    {% if e[name] and e[name] not in opts %}<option selected>{{ e[name] }}</option>{% endif %}</select></div>
+{% endmacro %}
+
+<form method="post" class="card">
+  <div class="card-body">
+    <h6 class="section-title mb-2">기본 인적사항</h6>
+    <div class="row g-2 mb-3">
+      {{ inp('emp_no', '사번', ph='비우면 자동부여') }}
+      {{ inp('name', '성명', req=True) }}
+      {{ inp('birth_date', '생년월일', 'date') }}
+      {{ sel('gender', '성별', ['남', '여']) }}
+      {{ inp('phone', '연락처', ph='010-0000-0000') }}
+      {{ inp('email', '이메일', 'email') }}
+      {{ inp('address', '주소', col='col-md-6') }}
+      {{ inp('emergency_contact', '비상연락처', ph='관계 연락처') }}
+      {{ inp('education', '최종학력') }}
+      {{ inp('certificates', '보유자격', col='col-md-6', ph='정보처리기사, 노무사 등') }}
+    </div>
+    <h6 class="section-title mb-2">인사·고용 정보</h6>
+    <div class="row g-2 mb-3">
+      {{ sel('department', '부서', depts) }}
+      {{ sel('rank', '직급', ranks) }}
+      {{ sel('title', '직책', titles) }}
+      {{ inp('job_duty', '담당업무') }}
+      {{ sel('employment_type', '고용형태', employment_types, blank=False) }}
+      {{ sel('work_location', '근무지', locations) }}
+      {{ inp('hire_date', '입사일', 'date', req=True) }}
+      {{ inp('probation_end', '수습 종료일', 'date') }}
+      {% if not is_new %}
+      {{ inp('resign_date', '퇴사일', 'date') }}
+      {{ inp('resign_reason', '퇴사사유', col='col-md-3') }}
+      <div class="col-md-3"><label class="form-label small">발령 기준일 <i class="bi bi-info-circle" title="부서·직급·직책·고용형태 변경 시 인사발령 이력에 이 날짜로 자동 기록됩니다"></i></label>
+        <input class="form-control form-control-sm" type="date" name="appt_date" value="{{ today().isoformat() }}"></div>
+      {% else %}
+      <div class="col-md-3"><label class="form-label small">입사 연봉(원)</label>
+        <input class="form-control form-control-sm" type="number" name="initial_salary" data-money="salHint" step="10000">
+        <div class="help" id="salHint"></div></div>
+      {% endif %}
+    </div>
+    <h6 class="section-title mb-2">급여계좌·기타</h6>
+    <div class="row g-2">
+      {{ inp('bank_name', '은행') }}
+      {{ inp('bank_account', '계좌번호') }}
+      <div class="col-md-6"><label class="form-label small">비고</label>
+        <textarea class="form-control form-control-sm" name="memo" rows="2">{{ e.memo or '' }}</textarea></div>
+    </div>
+    <p class="help mt-3 mb-0"><i class="bi bi-shield-lock"></i> 주민등록번호는 개인정보보호법상 처리 제한 정보로, 본 시스템에서는 저장하지 않고 생년월일만 관리합니다.</p>
+  </div>
+  <div class="card-footer d-flex gap-2">
+    <a class="btn btn-sm btn-outline-secondary" href="{{ '/hr/employees' if is_new else '/hr/employees/' ~ e.id }}">취소</a>
+    <button class="btn btn-sm btn-primary ms-auto"><i class="bi bi-save"></i> 저장</button>
+  </div>
+</form>
+{% endblock %}
