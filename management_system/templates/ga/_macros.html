@@ -1,0 +1,31 @@
+{% macro field(name, label, type='text', col='col-md-4', opts=None, req=False, step=None, value='', ph='', blank=True) -%}
+<div class="{{ col }}"><label class="form-label small">{{ label }}{% if req %} <span class="text-danger">*</span>{% endif %}</label>
+{%- if opts is not none %}
+  <select class="form-select form-select-sm" name="{{ name }}" {% if req %}required{% endif %}>{% if blank %}<option value=""></option>{% endif %}
+  {%- for o in opts %}{% if o is mapping %}<option value="{{ o.v }}" {% if value|string == o.v|string %}selected{% endif %}>{{ o.t }}</option>{% else %}<option {% if value == o %}selected{% endif %}>{{ o }}</option>{% endif %}{% endfor %}</select>
+{%- elif type == 'textarea' %}
+  <textarea class="form-control form-control-sm" name="{{ name }}" rows="2" placeholder="{{ ph }}">{{ value }}</textarea>
+{%- elif type == 'checkbox' %}
+  <div><label class="small"><input type="checkbox" class="form-check-input me-1" name="{{ name }}" value="1" {% if value %}checked{% endif %}>{{ ph or '예' }}</label></div>
+{%- else %}
+  <input class="form-control form-control-sm" type="{{ type }}" name="{{ name }}" value="{{ value }}" placeholder="{{ ph }}" {% if step %}step="{{ step }}"{% endif %} {% if req %}required{% endif %}>
+{%- endif %}</div>
+{%- endmacro %}
+
+{% macro modal(id, title, action, size='modal-lg') -%}
+<div class="modal fade" id="{{ id }}" tabindex="-1"><div class="modal-dialog {{ size }}"><form class="modal-content" method="post" action="{{ action }}">
+  <input type="hidden" name="id" value="">
+  <div class="modal-header"><h6 class="modal-title">{{ title }} <span data-mode-title>등록</span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body row g-2">{{ caller() }}</div>
+  <div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div>
+</form></div></div>
+{%- endmacro %}
+
+{% macro del_btn(kind, id, next, label='') -%}
+<form method="post" action="/ga/{{ kind }}/{{ id }}/delete" class="d-inline" data-confirm="삭제할까요? {{ label }}">
+  <input type="hidden" name="next" value="{{ next }}"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>
+{%- endmacro %}
+
+{% macro dday(d, warn=30) -%}
+{%- if d is not none -%}{%- if d < 0 -%}<span class="badge text-bg-danger">D+{{ -d }}</span>{%- elif d <= warn -%}<span class="badge text-bg-warning">D-{{ d }}</span>{%- else -%}<span class="small text-muted">D-{{ d }}</span>{%- endif -%}{%- endif -%}
+{%- endmacro %}

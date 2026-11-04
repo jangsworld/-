@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}총무 대시보드{% endblock %}
+{% block page_title %}<i class="bi bi-grid-1x2 me-2"></i>총무 대시보드{% endblock %}
+{% block content %}
+{% set k = d.kpi %}
+{% macro kpi(label, value, sub, icon, href='') %}
+<div class="col-6 col-md-4 col-xl-2"><a class="card kpi h-100 text-decoration-none" {% if href %}href="{{ href }}"{% endif %}>
+  <div class="d-flex justify-content-between"><div class="kpi-label">{{ label }}</div><i class="bi {{ icon }} kpi-icon"></i></div>
+  <div class="kpi-value">{{ value }}</div><div class="kpi-sub">{{ sub }}</div></a></div>
+{% endmacro %}
+<div class="row g-3 mb-3">
+  {{ kpi('보유 자산', k.assets ~ '건', '장부가 ' ~ k.asset_book|man_won ~ '원', 'bi-pc-display', '/ga/assets') }}
+  {{ kpi('법인차량', k.vehicles ~ '대', '올해 ' ~ k.km_year|won ~ 'km', 'bi-car-front', '/ga/vehicles') }}
+  {{ kpi('업무사용비율', ('%.1f'|format(k.biz_ratio) ~ '%') if k.biz_ratio is not none else '-', '운행기록부 기준', 'bi-speedometer', '/ga/vehicles') }}
+  {{ kpi('월 고정비', k.fixed_monthly|man_won ~ '원', '유효 계약 ' ~ k.contracts ~ '건', 'bi-file-earmark-check', '/ga/contracts') }}
+  {{ kpi('이번 달 수발 문서', k.docs_month ~ '건', '보증금 ' ~ k.deposits|man_won ~ '원 예치', 'bi-envelope-paper', '/ga/docs') }}
+  {% if perms.ga_events %}{{ kpi('올해 경조금', k.events_year|man_won ~ '원', k.events_count ~ '건 지원', 'bi-flower1', '/ga/events') }}{% endif %}
+</div>
+<div class="row g-3">
+  <div class="col-xl-5"><div class="card h-100">
+    <div class="card-header d-flex align-items-center"><i class="bi bi-bell me-2"></i>총무 관리 알림 <span class="badge text-bg-danger ms-2">{{ d.alerts|length }}</span>
+      <span class="help ms-auto">만기·통보기한·미반납</span></div>
+    <div style="max-height:520px;overflow-y:auto">
+    {% for a in d.alerts if perms.ga_events or a.category != '경조금' %}
+      <div class="alert-item lv-{{ a.level }}"><span class="alert-dot"></span>
+        <div class="flex-grow-1"><div><span class="alert-cat">{{ a.category }}</span> <b class="ms-1">{{ a.name }}</b>
+          {% if a.dday is not none %}<span class="badge {{ 'text-bg-danger' if a.dday < 0 else 'text-bg-light border' }} ms-1">{{ 'D+' ~ (-a.dday) if a.dday < 0 else ('D-' ~ a.dday if a.dday else 'D-Day') }}</span>{% endif %}</div>
+          <div class="small text-secondary">{{ a.message }}</div></div>
+        {% if a.link %}<a href="{{ a.link }}" class="btn btn-sm btn-outline-secondary text-nowrap">처리</a>{% endif %}
+      </div>
+    {% else %}<div class="p-4 text-center text-muted">처리할 알림이 없습니다 👍</div>{% endfor %}
+    </div></div></div>
+  <div class="col-xl-7"><div class="row g-3">
+    <div class="col-md-6"><div class="card"><div class="card-header">분류별 자산 장부가</div><div class="card-body"><div class="chart-box"><canvas id="cAsset"></canvas></div></div></div></div>
+    <div class="col-md-6"><div class="card"><div class="card-header">계약 구분별 월 고정비</div><div class="card-body"><div class="chart-box"><canvas id="cFixed"></canvas></div></div></div></div>
+    <div class="col-12"><div class="card"><div class="card-header">월별 차량 운행거리 · 유류비 ({{ d.vstat.year }}년)</div><div class="card-body"><div class="chart-box"><canvas id="cVeh"></canvas></div></div></div></div>
+  </div></div>
+  <div class="col-lg-4"><div class="card h-100"><div class="card-header d-flex">관인 사용 승인 대기<a class="ms-auto small" href="/ga/docs?tab=seal">전체</a></div>
+    <ul class="list-group list-group-flush small">{% for s in d.pending_seals %}
+      <li class="list-group-item d-flex gap-2"><span class="text-muted">{{ s.use_date }}</span><span class="badge text-bg-light border">{{ s.seal_type }}</span><span class="text-truncate">{{ s.purpose }}</span><span class="ms-auto">{{ s.requester_name or '' }}</span></li>
+    {% else %}<li class="list-group-item text-muted">대기 없음</li>{% endfor %}</ul></div></div>
+  <div class="col-lg-4"><div class="card h-100"><div class="card-header d-flex">최근 문서 수발<a class="ms-auto small" href="/ga/docs">전체</a></div>
+    <ul class="list-group list-group-flush small">{% for x in d.recent_docs %}
+      <li class="list-group-item d-flex gap-2"><span class="st {{ 'st-진행중' if x.direction == '발신' else 'st-예정' }}">{{ x.direction }}</span><span class="text-truncate">{{ x.title }}</span><span class="ms-auto text-muted text-nowrap">{{ x.doc_date }}</span></li>
+    {% else %}<li class="list-group-item text-muted">없음</li>{% endfor %}</ul></div></div>
+  {% if perms.ga_events %}
+  <div class="col-lg-4"><div class="card h-100"><div class="card-header">월별 경조금 지급 ({{ today().year }}년)</div><div class="card-body"><div class="chart-box"><canvas id="cEv"></canvas></div></div></div></div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}" src="/static/vendor/chartjs/chart.umd.min.js"></script>
+<script nonce="{{ csp_nonce }}">
+const C = {{ d.charts|tojson }};
+Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+Chart.defaults.plugins.legend.labels.boxWidth = 12;
+new Chart(document.getElementById('cAsset'), { type: 'doughnut',
+  data: { labels: C.asset_cat.map(r => r.label), datasets: [{ data: C.asset_cat.map(r => r.book), backgroundColor: PALETTE, borderWidth: 2 }] },
+  options: { maintainAspectRatio: false, cutout: '62%', plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: c => ` ${c.label}: ${fmt.won(c.raw)}원 (${C.asset_cat[c.dataIndex].count}건)` } } } } });
+new Chart(document.getElementById('cFixed'), { type: 'bar',
+  data: { labels: C.fixed.map(r => r.label), datasets: [{ data: C.fixed.map(r => r.value / 1e4), backgroundColor: '#3fa7a3', borderRadius: 4 }] },
+  options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` 월 ${fmt.won(c.raw)}만원` } } }, scales: { y: { grid: { display: false } } } } });
+new Chart(document.getElementById('cVeh'), {
+  data: { labels: C.vehicle.map(r => r.label), datasets: [
+    { type: 'bar', label: '운행거리(km)', data: C.vehicle.map(r => r.km), backgroundColor: '#2d5a8c', borderRadius: 3, yAxisID: 'y' },
+    { type: 'line', label: '유류·통행료(만원)', data: C.vehicle.map(r => r.fuel / 1e4), borderColor: '#f2a541', backgroundColor: '#f2a541', yAxisID: 'y1', tension: .3 } ] },
+  options: { maintainAspectRatio: false, scales: { x: { grid: { display: false } }, y: { title: { display: true, text: 'km' } }, y1: { position: 'right', grid: { display: false }, title: { display: true, text: '만원' } } } } });
+const ev = document.getElementById('cEv');
+if (ev) new Chart(ev, { type: 'bar', data: { labels: C.events.map(r => r.label), datasets: [{ data: C.events.map(r => r.value / 1e4), backgroundColor: '#8e6cc4', borderRadius: 3 }] },
+  options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${fmt.won(c.raw)}만원` } } }, scales: { x: { grid: { display: false } } } } });
+</script>
+{% endblock %}

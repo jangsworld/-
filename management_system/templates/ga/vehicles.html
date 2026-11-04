@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "ga/_macros.html" import dday %}
+{% block title %}법인차량{% endblock %}
+{% block page_title %}<i class="bi bi-car-front me-2"></i>법인차량 관리{% endblock %}
+{% block content %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">운행 차량</div><div class="kpi-value">{{ rows|selectattr('status', 'ne', '매각')|list|length }}대</div><div class="kpi-sub">올해 운행 {{ total.trips }}회</div></div></div>
+  <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">올해 주행거리</div><div class="kpi-value">{{ total.total_km|won }}km</div><div class="kpi-sub">업무용 {{ total.biz_km|won }}km</div></div></div>
+  <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">업무사용비율</div><div class="kpi-value">{{ ('%.1f'|format(total.biz_ratio) ~ '%') if total.biz_ratio is not none else '-' }}</div><div class="kpi-sub">비용 손금 인정 비율 기준</div></div></div>
+  <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">올해 차량 운영비</div><div class="kpi-value">{{ total.cost_total|man_won }}원</div><div class="kpi-sub">유류 {{ total.fuel|man_won }} · 정비 {{ total.maint|man_won }}</div></div></div>
+</div>
+<div class="card">
+  <div class="card-header d-flex align-items-center">차량 대장
+    {% if can_write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#vehicleModal" data-fill="{}"><i class="bi bi-plus"></i> 차량 등록</button>{% endif %}</div>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+    <thead><tr><th>차량번호</th><th>차종</th><th>소유형태</th><th>관리자</th><th class="num">현재 km</th><th class="num">올해 km</th><th>업무비율</th><th>보험 만기</th><th>정기검사</th><th>리스 만기</th><th>상태</th></tr></thead>
+    <tbody>{% for v in rows %}
+      <tr data-href="/ga/vehicles/{{ v.id }}">
+        <td class="fw-semibold">{{ v.plate_no }}</td><td>{{ v.model }} <span class="small text-muted">{{ v.model_year or '' }} {{ v.fuel or '' }}</span></td>
+        <td>{{ v.ownership }}{% if v.monthly_cost %}<div class="small text-muted">월 {{ v.monthly_cost|man_won }}원</div>{% endif %}</td>
+        <td>{{ v.manager_name or '' }}</td><td class="num">{{ v.odometer|won }}</td><td class="num">{{ v.stat.total_km|won }}</td>
+        <td>{{ ('%.0f'|format(v.stat.biz_ratio) ~ '%') if v.stat.biz_ratio is not none else '-' }}</td>
+        <td class="small">{{ v.insurance_end or '' }} {{ dday(v.insurance_end_dday) }}</td>
+        <td class="small">{{ v.inspection_due or '' }} {{ dday(v.inspection_due_dday) }}</td>
+        <td class="small">{{ v.lease_end or '' }} {{ dday(v.lease_end_dday, 90) }}</td>
+        <td><span class="st st-{{ {'운행':'재직','정비중':'휴직','매각':'퇴사'}[v.status] }}">{{ v.status }}</span></td>
+      </tr>{% else %}<tr><td colspan="11" class="text-center text-muted p-4">등록된 차량이 없습니다</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <div class="card-footer help">
+    <b>관리 포인트</b> · 법인 업무용승용차는 <b>운행기록부</b>를 작성해야 업무사용비율만큼 비용이 인정됩니다(작성하지 않으면 연 1,500만원 한도) · 임직원 전용 자동차보험 가입 확인 ·
+    정기검사 기한 경과 시 과태료 · 운행일지는 차량 상세에서 입력하고 연도별 운행기록부(CSV)로 내려받을 수 있습니다.
+  </div>
+</div>
+{% if can_write %}{% include "ga/_vehicle_modal.html" %}{% endif %}
+{% endblock %}

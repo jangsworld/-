@@ -74,7 +74,7 @@ def hr_root():
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request):
     d = services.dashboard()
-    if request.state.user["role"] == "viewer":  # 조회자: 연봉·알림·상벌·휴직 정보는 응답에서 제거
+    if request.state.user["role"] not in ("admin", "hr"):  # 조회자·총무담당: 연봉·알림·상벌·휴직 정보는 응답에서 제거
         d["alerts"], d["recent_rewards"], d["active_specials"] = [], [], []
         d["charts"]["salary_trend"] = []
         for k in ("avg_salary", "payroll", "contract_missing"):
@@ -188,7 +188,7 @@ async def employee_create(request: Request):
 @router.get("/employees/{emp_id}", response_class=HTMLResponse)
 def employee_detail(request: Request, emp_id: int, tab: str = "info"):
     e = _emp_or_404(emp_id)
-    if request.state.user["role"] == "viewer" and tab in ("salary", "contract", "reward", "special"):
+    if request.state.user["role"] not in ("admin", "hr") and tab in ("salary", "contract", "reward", "special"):
         tab = "info"
     audit("hr", "인사기록 열람", f"{e['emp_no']} {e['name']}", tab)  # 개인정보 접속기록
     return _render(request, "hr/employee_detail.html", {
@@ -205,6 +205,7 @@ def employee_detail(request: Request, emp_id: int, tab: str = "info"):
         "work_specials": WORK_SPECIALS,
         "expunge_months": DISCIPLINE_EXPUNGE_MONTHS,
         "cert_templates": repo.list_templates("certificate", active_only=True),
+        "assets": __import__("app.modules.ga.repo", fromlist=["x"]).list_assets(holder_id=emp_id),
     }, "hr.employees")
 
 

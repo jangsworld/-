@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% from "ga/_macros.html" import field, modal, del_btn, dday %}
+{% block title %}문서수발·관인{% endblock %}
+{% block page_title %}<i class="bi bi-envelope-paper me-2"></i>문서 수발 · 관인 대장{% endblock %}
+{% block content %}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><a class="nav-link {% if tab != 'seal' %}active{% endif %}" href="?tab=docs&year={{ f.year }}">문서 수발 대장 <span class="badge text-bg-light border">{{ rows|length }}</span></a></li>
+  <li class="nav-item"><a class="nav-link {% if tab == 'seal' %}active{% endif %}" href="?tab=seal&year={{ f.year }}">관인(인감) 사용 대장 {% if seal_stat['신청'] %}<span class="badge text-bg-danger">{{ seal_stat['신청'] }}</span>{% endif %}</a></li>
+</ul>
+{% if tab != 'seal' %}
+<div class="card">
+  <div class="card-header"><form class="row g-2 align-items-center" method="get"><input type="hidden" name="tab" value="docs">
+    <div class="col-auto"><select class="form-select form-select-sm" name="year" data-autosubmit>{% for y in years %}<option {% if f.year == y %}selected{% endif %}>{{ y }}</option>{% endfor %}</select></div>
+    <div class="col-auto"><select class="form-select form-select-sm" name="direction" data-autosubmit><option value="">수신·발신</option><option {% if f.direction == '수신' %}selected{% endif %}>수신</option><option {% if f.direction == '발신' %}selected{% endif %}>발신</option></select></div>
+    <div class="col-auto"><select class="form-select form-select-sm" name="status" data-autosubmit><option value="">상태 전체</option>{% for s in statuses %}<option {% if f.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+    <div class="col-auto"><input class="form-control form-control-sm" name="q" value="{{ f.q }}" placeholder="문서번호·제목·기관"></div>
+    <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">조회</button></div>
+    {% if can_write %}<div class="col text-end">
+      <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#docModal" data-fill='{"direction":"수신","status":"접수"}'><i class="bi bi-inbox"></i> 수신 등록 <span class="small opacity-75">{{ next_in }}</span></button>
+      <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#docModal" data-fill='{"direction":"발신","status":"완료"}'><i class="bi bi-send"></i> 발신 등록 <span class="small opacity-75">{{ next_out }}</span></button></div>{% endif %}
+  </form></div>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+    <thead><tr><th>구분</th><th>문서번호</th><th>일자</th><th>{{ '발신처 / 수신처' }}</th><th>제목</th><th>담당</th><th>방법</th><th>상태</th><th>회신기한</th><th>보존</th><th></th></tr></thead>
+    <tbody>{% for d in rows %}<tr>
+      <td><span class="st {{ 'st-진행중' if d.direction == '발신' else 'st-예정' }}">{{ d.direction }}</span></td>
+      <td class="fw-semibold text-nowrap">{{ d.doc_no }}</td><td class="small text-nowrap">{{ d.doc_date }}</td><td>{{ d.counterpart }}</td><td>{{ d.title }}</td>
+      <td class="small">{{ d.department or '' }} {{ d.handler_name or '' }}</td><td class="small">{{ d.method or '' }}</td>
+      <td><span class="badge {{ 'text-bg-danger' if d.status == '회신필요' else ('text-bg-success' if d.status == '완료' else 'text-bg-light border') }}">{{ d.status }}</span></td>
+      <td class="small">{{ d.due_date or '' }} {% if d.status != '완료' %}{{ dday(d.due_dday, 7) }}{% endif %}</td><td class="small">{{ d.retention or '' }}</td>
+      <td class="text-nowrap">{% if can_write %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#docModal" data-fill='{{ d|tojson }}'><i class="bi bi-pencil"></i></button>{{ del_btn('docs', d.id, '/ga/docs') }}{% endif %}</td></tr>
+    {% else %}<tr><td colspan="11" class="text-center text-muted p-4">등록된 문서가 없습니다</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <div class="card-footer help">문서번호는 연도별 자동 채번(발신 <code>{{ next_out.rsplit('-', 2)[0] }}-연도-0001</code>, 수신 <code>수신-연도-0001</code>)되어 결번·중복을 막습니다. 접두어는 설정에서 변경할 수 있습니다.</div>
+</div>
+{% if can_write %}
+{% call modal('docModal', '문서', '/ga/docs/save') %}
+  {{ field('direction', '구분', opts=['수신', '발신'], blank=False, col='col-md-3') }}
+  {{ field('doc_date', '일자', 'date', value=today().isoformat(), req=True, col='col-md-3') }}
+  {{ field('counterpart', '발신처 / 수신처', req=True, col='col-md-6', ph='서울특별시청 회계과') }}
+  {{ field('title', '제목', req=True, col='col-12') }}
+  {{ field('department', '담당부서', opts=depts, col='col-md-3') }}{{ field('handler_id', '담당자', opts=emp_opts, col='col-md-3') }}
+  {{ field('method', '접수·발송 방법', opts=methods, col='col-md-3') }}{{ field('status', '상태', opts=statuses, blank=False, col='col-md-3') }}
+  {{ field('due_date', '회신·처리 기한', 'date', col='col-md-3') }}{{ field('retention', '보존기간', opts=retention, blank=False, col='col-md-3', value='5년') }}
+  {{ field('note', '비고', col='col-md-6') }}
+{% endcall %}
+{% endif %}
+{% else %}
+<div class="row g-3 mb-3">{% for s, n in seal_stat.items() %}<div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">{{ s }}</div><div class="kpi-value">{{ n }}건</div></div></div>{% endfor %}</div>
+<div class="card">
+  <div class="card-header d-flex align-items-center">관인(인감) 사용 대장 · {{ f.year }}년
+    {% if can_write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#sealModal" data-fill="{}"><i class="bi bi-plus"></i> 사용 신청</button>{% endif %}</div>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th>사용일</th><th>인장</th><th>용도</th><th>제출처</th><th class="num">매수</th><th>신청자</th><th>상태</th><th>승인</th><th></th></tr></thead>
+    <tbody>{% for s in seals %}<tr>
+      <td class="small">{{ s.use_date }}</td><td><span class="badge text-bg-light border">{{ s.seal_type }}</span></td><td>{{ s.purpose }}</td><td class="small">{{ s.submit_to or '' }}</td>
+      <td class="num">{{ s.copies }}</td><td class="small">{{ s.requester_dept or '' }} {{ s.requester_name or '' }}</td>
+      <td><span class="badge {{ {'신청':'text-bg-warning','승인':'text-bg-primary','반려':'text-bg-secondary','사용완료':'text-bg-success'}[s.status] }}">{{ s.status }}</span></td>
+      <td class="small">{{ s.approver or '' }}<div class="text-muted">{{ s.approved_at or '' }}</div></td>
+      <td class="text-nowrap">{% if perms.admin and s.status == '신청' %}
+          <form method="post" action="/ga/seals/{{ s.id }}/decide" class="d-inline"><input type="hidden" name="decision" value="승인"><button class="btn btn-sm btn-outline-primary">승인</button></form>
+          <form method="post" action="/ga/seals/{{ s.id }}/decide" class="d-inline"><input type="hidden" name="decision" value="반려"><button class="btn btn-sm btn-outline-secondary">반려</button></form>
+        {% elif perms.admin and s.status == '승인' %}<form method="post" action="/ga/seals/{{ s.id }}/decide" class="d-inline"><input type="hidden" name="decision" value="사용완료"><button class="btn btn-sm btn-outline-success">사용완료</button></form>{% endif %}
+        {% if can_write and s.status == '신청' %}{{ del_btn('seals', s.id, '/ga/docs?tab=seal') }}{% endif %}</td></tr>
+    {% else %}<tr><td colspan="9" class="text-center text-muted p-4">사용 기록이 없습니다</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <div class="card-footer help"><b>관리 포인트</b> · 법인인감은 대출·부동산·주요 계약에 쓰이므로 <b>사전 승인(시스템관리자)</b> 후 사용 · 인감증명서 발급 내역도 함께 기록 · 승인된 건만 '사용완료' 처리되어 사후 추적이 가능합니다.</div>
+</div>
+{% if can_write %}
+{% call modal('sealModal', '관인 사용 신청', '/ga/seals/save') %}
+  {{ field('use_date', '사용(예정)일', 'date', value=today().isoformat(), req=True) }}{{ field('seal_type', '인장 종류', opts=seal_types, blank=False) }}
+  {{ field('copies', '매수', 'number', value=1) }}{{ field('purpose', '용도', req=True, col='col-md-8', ph='○○ 용역 계약서 날인') }}
+  {{ field('submit_to', '제출처') }}{{ field('requester_id', '신청자', opts=emp_opts, req=True) }}{{ field('note', '비고', col='col-md-8') }}
+{% endcall %}
+{% endif %}
+{% endif %}
+{% endblock %}

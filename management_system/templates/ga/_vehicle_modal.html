@@ -1,0 +1,11 @@
+{% from "ga/_macros.html" import field, modal %}
+{% call modal('vehicleModal', '차량', '/ga/vehicles/save') %}
+  {{ field('plate_no', '차량번호', req=True, ph='12가 3456') }}{{ field('model', '차종', req=True, ph='쏘나타 2.0') }}
+  {{ field('model_year', '연식', 'number') }}{{ field('fuel', '연료', opts=fuels) }}
+  {{ field('ownership', '소유형태', opts=ownership, blank=False) }}{{ field('acquired_date', '취득(계약)일', 'date') }}
+  {{ field('lease_end', '리스·렌트 만기', 'date') }}{{ field('monthly_cost', '월 납입액(원)', 'number') }}
+  {{ field('insurer', '보험사') }}{{ field('insurance_end', '보험 만기', 'date') }}{{ field('inspection_due', '정기검사 기한', 'date') }}
+  {{ field('manager_id', '관리 담당자', opts=emp_opts) }}{{ field('status', '상태', opts=statuses, blank=False) }}
+  {{ field('odometer_start', '등록 시 계기판(km)', 'number') }}
+  {{ field('memo', '비고', 'textarea', col='col-12') }}
+{% endcall %}

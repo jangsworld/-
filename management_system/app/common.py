@@ -23,6 +23,8 @@ def _security_context(request) -> dict:
             "write": role in ("admin", "hr"),
             "salary": role in ("admin", "hr"),   # 연봉·계약서 열람
             "pii": role in ("admin", "hr"),      # 연락처·주소·계좌 등 개인정보 열람
+            "ga_write": role in ("admin", "hr", "ga"),
+            "ga_events": role in ("admin", "hr", "ga"),
         },
     }
 

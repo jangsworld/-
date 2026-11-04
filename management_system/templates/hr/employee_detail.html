@@ -48,6 +48,11 @@
       {% if e.resign_date and perms.pii %}<dt>퇴사사유</dt><dd>{{ e.resign_reason or '-' }}</dd>{% endif %}
       <dt>비고</dt><dd style="white-space:pre-wrap">{{ (e.memo or '-') if perms.pii else '🔒' }}</dd>
     </dl></div></div></div>
+  <div class="col-12"><div class="card"><div class="card-header d-flex">지급 자산 · 비품 <span class="badge text-bg-light border ms-2">{{ assets|length }}</span>
+    {% if e.status == '퇴사' and assets %}<span class="badge text-bg-danger ms-2">퇴사자 미반납 — 회수 필요</span>{% endif %}<a class="ms-auto small" href="/ga/assets?q={{ e.name|urlencode }}">자산관리</a></div>
+    <table class="table table-sm mb-0"><thead><tr><th>자산번호</th><th>분류</th><th>품명</th><th>모델</th><th>상태</th></tr></thead><tbody>
+    {% for a in assets %}<tr data-href="/ga/assets/{{ a.id }}"><td class="fw-semibold">{{ a.asset_no }}</td><td class="small">{{ a.category }}</td><td>{{ a.name }}</td><td class="small">{{ a.model or '' }}</td><td>{{ a.status }}</td></tr>
+    {% else %}<tr><td colspan="5" class="text-muted text-center p-2 small">지급된 자산 없음</td></tr>{% endfor %}</tbody></table></div></div>
   {% if perms.admin %}<div class="col-12 text-end">
     <form method="post" action="/hr/employees/{{ e.id }}/delete" data-confirm="{{ e.name }}님의 모든 인사기록(계약·연봉·상벌 포함)이 삭제됩니다. 퇴사자는 삭제 대신 퇴사일을 입력해 이력을 보존하세요. 계속할까요?">
       <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> 임직원 삭제</button></form>

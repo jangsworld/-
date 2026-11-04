@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "ga/_macros.html" import field, modal, del_btn %}
+{% block title %}경조사{% endblock %}
+{% block page_title %}<i class="bi bi-flower1 me-2"></i>경조사 관리{% endblock %}
+{% block content %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">{{ f.year }}년 경조 지원</div><div class="kpi-value">{{ sum.count }}건</div><div class="kpi-sub">미지급 {{ sum.pending }}건</div></div></div>
+  <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">경조금 합계</div><div class="kpi-value">{{ sum.amount|man_won }}원</div><div class="kpi-sub">{{ sum.amount|won }}원</div></div></div>
+  <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">경조휴가</div><div class="kpi-value">{{ sum.leave }}일</div><div class="kpi-sub">규정 기준 부여</div></div></div>
+  <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">구분별</div><div class="small mt-1">{% for k, v in by_cat.items() %}<div class="d-flex"><span>{{ k }}</span><span class="ms-auto">{{ v.count }}건 · {{ v.amount|man_won }}</span></div>{% else %}-{% endfor %}</div></div></div>
+</div>
+<div class="row g-3">
+  <div class="col-xl-8"><div class="card">
+    <div class="card-header"><form class="row g-2 align-items-center" method="get">
+      <div class="col-auto"><select class="form-select form-select-sm" name="year" data-autosubmit>{% for y in years %}<option {% if f.year == y %}selected{% endif %}>{{ y }}</option>{% endfor %}</select></div>
+      <div class="col-auto"><select class="form-select form-select-sm" name="status" data-autosubmit><option value="">상태 전체</option>{% for s in statuses %}<option {% if f.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+      <div class="col text-end"><button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#eventModal" data-fill='{"status":"신청"}'><i class="bi bi-plus"></i> 경조사 등록</button></div>
+    </form></div>
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead><tr><th>일자</th><th>임직원</th><th>구분</th><th>대상</th><th class="num">경조금</th><th class="num">휴가</th><th>화환</th><th>상태</th><th>지급일</th><th>비고</th><th></th></tr></thead>
+      <tbody>{% for e in rows %}<tr>
+        <td class="small">{{ e.event_date }}</td><td class="fw-semibold">{{ e.name }}<div class="small text-muted">{{ e.department or '' }}</div></td>
+        <td>{{ e.category }}</td><td>{{ e.relation }}</td><td class="num">{{ e.amount|won }}</td><td class="num">{{ e.leave_days or '' }}{% if e.leave_days %}일{% endif %}</td>
+        <td>{% if e.flower %}<i class="bi bi-check-lg text-success"></i>{% endif %}</td>
+        <td><span class="badge {{ {'신청':'text-bg-warning','지급완료':'text-bg-success','취소':'text-bg-secondary'}[e.status] }}">{{ e.status }}</span></td>
+        <td class="small">{{ e.paid_date or '' }}</td><td class="small text-muted">{{ e.detail or '' }}</td>
+        <td class="text-nowrap"><button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#eventModal" data-fill='{{ e|tojson }}'><i class="bi bi-pencil"></i></button>{{ del_btn('events', e.id, '/ga/events') }}</td></tr>
+      {% else %}<tr><td colspan="11" class="text-center text-muted p-4">등록된 경조사가 없습니다</td></tr>{% endfor %}</tbody>
+    </table></div></div></div>
+  <div class="col-xl-4"><div class="card">
+    <div class="card-header d-flex align-items-center">경조 규정 <span class="help ms-2">등록 시 금액·휴가 자동 입력</span>
+      <button class="btn btn-sm btn-outline-primary ms-auto" data-bs-toggle="modal" data-bs-target="#ruleModal" data-fill="{}"><i class="bi bi-plus"></i></button></div>
+    <table class="table table-sm mb-0"><thead><tr><th>구분</th><th>대상</th><th class="num">금액</th><th class="num">휴가</th><th>화환</th><th></th></tr></thead><tbody>
+    {% for r in rules %}<tr><td>{{ r.category }}</td><td>{{ r.relation }}</td><td class="num">{{ r.amount|man_won }}</td><td class="num">{{ r.leave_days }}일</td><td>{% if r.flower %}○{% endif %}</td>
+      <td class="text-nowrap"><button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#ruleModal" data-fill='{{ r|tojson }}'><i class="bi bi-pencil"></i></button>{{ del_btn('rules', r.id, '/ga/events') }}</td></tr>{% endfor %}
+    </tbody></table>
+    <div class="card-footer help">경조휴가는 법정휴가가 아닌 회사 규정(취업규칙)에 따릅니다. 배우자 출산휴가(20일, 법정)는 인사 &gt; 근로특이사항에서 관리하세요. 경조금은 사회통념상 범위 내 금액이면 근로소득 비과세 대상입니다.</div>
+  </div></div>
+</div>
+{% call modal('eventModal', '경조사', '/ga/events/save') %}
+  {{ field('employee_id', '임직원', opts=emp_opts, req=True) }}{{ field('category', '구분', opts=categories, blank=False) }}{{ field('relation', '대상(관계)', opts=relations, blank=False) }}
+  {{ field('event_date', '경조일', 'date', value=today().isoformat(), req=True) }}{{ field('amount', '경조금(원)', 'number', ph='비우면 규정 적용') }}{{ field('leave_days', '경조휴가(일)', 'number', ph='비우면 규정 적용') }}
+  {{ field('flower', '화환·조화', 'checkbox', ph='지원') }}{{ field('status', '상태', opts=statuses, blank=False) }}{{ field('paid_date', '지급일', 'date') }}
+  {{ field('detail', '비고(장소 등, 암호화 저장)', col='col-12') }}
+  <div class="col-12"><div class="alert alert-light border small py-2 mb-0" id="ruleHint">구분과 대상을 고르면 규정이 표시됩니다.</div></div>
+{% endcall %}
+{% call modal('ruleModal', '경조 규정', '/ga/rules/save', 'modal-md') %}
+  {{ field('category', '구분', opts=categories, blank=False, col='col-6') }}{{ field('relation', '대상', opts=relations, blank=False, col='col-6') }}
+  {{ field('amount', '경조금(원)', 'number', col='col-6') }}{{ field('leave_days', '휴가(일)', 'number', col='col-6') }}{{ field('flower', '화환·조화', 'checkbox', ph='지원', col='col-12') }}
+{% endcall %}
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+const RULES = {{ rules|tojson }};
+const ef = document.querySelector('#eventModal form');
+const hint = () => { const r = RULES.find(x => x.category === ef.category.value && x.relation === ef.relation.value);
+  document.getElementById('ruleHint').textContent = r ? `규정: 경조금 ${fmt.won(r.amount)}원 · 휴가 ${r.leave_days}일${r.flower ? ' · 화환 지원' : ''}` : '이 구분·대상에 대한 규정이 없습니다 (금액 직접 입력)';
+  if (r && !ef.id.value) { ef.amount.value = r.amount; ef.leave_days.value = r.leave_days; ef.flower.checked = !!r.flower; } };
+['change'].forEach(ev => { ef.category.addEventListener(ev, hint); ef.relation.addEventListener(ev, hint); });
+ef.addEventListener('bms:filled', hint);
+</script>
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% from "ga/_macros.html" import field, dday %}
+{% block title %}{{ a.asset_no }}{% endblock %}
+{% block page_title %}<a href="/ga/assets" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> 자산 상세 · {{ a.asset_no }}{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-5"><div class="card h-100">
+    <div class="card-header d-flex align-items-center">{{ a.name }} <span class="badge text-bg-light border ms-2">{{ a.category }}</span>
+      {% if can_write %}<button class="btn btn-sm btn-outline-primary ms-auto" data-bs-toggle="modal" data-bs-target="#assetModal" data-fill='{{ a|tojson }}'><i class="bi bi-pencil"></i> 수정</button>{% endif %}</div>
+    <div class="card-body">
+      <div class="d-flex gap-3 align-items-start">
+        <div id="qr" class="border rounded p-1 bg-white" data-text="{{ a.asset_no }}"></div>
+        <dl class="info-grid flex-grow-1">
+          <dt>모델</dt><dd>{{ a.model or '-' }}</dd><dt>시리얼</dt><dd>{{ a.serial_no or '-' }}</dd>
+          <dt>상태</dt><dd>{{ a.status }}</dd><dt>사용자</dt><dd>{{ a.holder_name or '-' }} {% if a.holder_resign %}<span class="badge text-bg-danger">퇴사 · 회수 필요</span>{% endif %}</dd>
+          <dt>위치</dt><dd>{{ a.location or '-' }}</dd><dt>구입처</dt><dd>{{ a.vendor or '-' }}</dd>
+        </dl>
+      </div>
+      <hr>
+      <dl class="info-grid">
+        <dt>취득일 · 취득가</dt><dd>{{ a.acquired_date or '-' }} · {{ a.cost|won }}원</dd>
+        <dt>내용연수</dt><dd>{{ a.useful_years }}년 ({{ a.months }}/{{ a.useful_years * 12 }}개월 경과)</dd>
+        <dt>감가상각누계</dt><dd>{{ a.accumulated|won }}원</dd>
+        <dt>현재 장부가</dt><dd class="fw-bold">{{ a.book|won }}원 {% if a.done %}<span class="badge text-bg-secondary">상각완료 · 교체 검토</span>{% endif %}</dd>
+        <dt>보증·라이선스</dt><dd>{{ a.warranty_end or '-' }} {{ dday(a.warranty_dday) }}</dd>
+        <dt>비고</dt><dd style="white-space:pre-wrap">{{ a.memo or '-' }}</dd>
+      </dl>
+    </div>
+    {% if can_write %}<div class="card-footer text-end"><form method="post" action="/ga/assets/{{ a.id }}/delete" data-confirm="자산과 이력을 모두 삭제합니다. 폐기 처리는 이력에서 '폐기'를 선택하세요."><input type="hidden" name="next" value="/ga/assets"><button class="btn btn-sm btn-outline-danger">삭제</button></form></div>{% endif %}
+  </div></div>
+  <div class="col-lg-7">
+    {% if can_write %}<form class="card mb-3" method="post" action="/ga/assets/{{ a.id }}/event">
+      <div class="card-header">지급 · 반납 · 수리 등 처리</div>
+      <div class="card-body row g-2">
+        {{ field('event_type', '구분', opts=events, blank=False, col='col-md-3', value='반납' if a.holder_id else '지급') }}
+        {{ field('event_date', '일자', 'date', col='col-md-3', value=today().isoformat()) }}
+        {{ field('holder_id', '대상자(지급 시)', opts=emp_opts, col='col-md-6') }}
+        {{ field('cost', '비용(수리 등)', 'number', col='col-md-3') }}
+        {{ field('note', '내용', col='col-md-9', ph='예: 신규입사자 지급, 배터리 교체') }}
+      </div>
+      <div class="card-footer text-end"><button class="btn btn-sm btn-primary">처리</button></div>
+    </form>{% endif %}
+    <div class="card"><div class="card-header">자산 이력</div>
+      <table class="table table-sm mb-0"><thead><tr><th>일자</th><th>구분</th><th>대상자</th><th class="num">비용</th><th>내용</th></tr></thead><tbody>
+      {% for h in history %}<tr><td>{{ h.event_date }}</td><td><span class="badge text-bg-light border">{{ h.event_type }}</span></td><td>{{ h.holder_name or '' }}</td><td class="num">{{ h.cost|won if h.cost else '' }}</td><td class="small">{{ h.note or '' }}</td></tr>
+      {% else %}<tr><td colspan="5" class="text-muted text-center p-3">이력 없음</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+</div>
+{% if can_write %}{% include "ga/_asset_modal.html" %}{% endif %}
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}" src="/static/vendor/qrcode/qrcode.js"></script>
+<script nonce="{{ csp_nonce }}">
+document.querySelectorAll('#qr').forEach(el => { const q = qrcode(0, 'M'); q.addData(el.dataset.text); q.make(); el.innerHTML = q.createSvgTag({ cellSize: 3, margin: 1 }); });
+</script>
+{% endblock %}

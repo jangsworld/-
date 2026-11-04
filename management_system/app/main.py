@@ -17,6 +17,8 @@ from app.db import init_db, get_settings, set_setting, DEFAULT_SETTINGS
 from app.modules import MODULES
 from app.modules.hr import repo as hr_repo
 from app.modules.hr.routes import router as hr_router
+from app.modules.ga.routes import router as ga_router
+from app.modules.ga import repo as ga_repo
 from app.security import auth
 from app.security.middleware import SecurityMiddleware
 from app.security.routes import router as auth_router
@@ -50,12 +52,14 @@ def _bootstrap_admin():
 
 @asynccontextmanager
 async def lifespan(_app):
-    from app.seed import ensure_templates, seed_sample
+    from app.seed import ensure_templates, seed_sample, seed_ga_sample
     _setup_logging()
     is_new = init_db()
     ensure_templates()
+    ga_repo.ensure_event_rules()
     if is_new and settings.seed_sample:
         seed_sample()
+        seed_ga_sample()
     _bootstrap_admin()
     auth.purge_expired()
     log.info("BMS started on port %s", settings.port)
@@ -68,6 +72,7 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 app.mount("/static", StaticFiles(directory=os.path.join(APP_DIR, "static")), name="static")
 app.include_router(auth_router)
 app.include_router(hr_router)
+app.include_router(ga_router)
 
 templates.env.globals["MODULES"] = MODULES
 templates.env.globals["SYSTEM_CODE"] = SYSTEM_CODE
@@ -101,7 +106,7 @@ SETTING_LABELS = {
     "company_name": "회사명", "ceo_name": "대표자", "company_address": "회사 주소",
     "business_no": "사업자등록번호", "company_phone": "대표 전화", "pay_day": "임금지급일(매월)",
     "min_wage_hourly": "최저임금(시간급, 원)", "monthly_std_hours": "월 소정근로시간(시간)",
-    "alert_days": "만료·복직 사전알림(일)",
+    "alert_days": "만료·복직 사전알림(일)", "doc_prefix": "발신 문서번호 접두어",
 }
 
 
@@ -110,7 +115,7 @@ def settings_page(request: Request):
     return templates.TemplateResponse(request, "settings.html", {
         "s": get_settings(), "labels": SETTING_LABELS, "codes": hr_repo.list_codes_all(),
         "active_menu": "settings", "msg": request.query_params.get("msg", ""),
-        "groups": {"DEPT": "부서", "RANK": "직급", "TITLE": "직책", "LOCATION": "근무지"},
+        "groups": {"DEPT": "부서", "RANK": "직급", "TITLE": "직책", "LOCATION": "근무지", "ASSET_LOC": "자산 보관위치"},
         "cfg": {"포트": settings.port, "HTTPS": "사용" if settings.https else "미사용(내부 테스트용)",
                 "2단계 인증": "필수" if settings.require_2fa else "선택",
                 "세션 유휴 만료": f"{settings.session_idle_minutes}분", "문서 보관 위치": settings.output_root,

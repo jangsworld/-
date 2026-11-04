@@ -128,3 +128,9 @@ body { background: var(--bg); font-family: "Pretendard", "Malgun Gothic", "Apple
 /* 로그인 화면 */
 .auth-body { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #1f3a5f, #2d5a8c); padding: 16px; }
 .auth-card { width: 100%; max-width: 400px; }
+
+/* 자산 라벨 */
+.label-sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.asset-label { display: flex; gap: 8px; align-items: center; border: 1px dashed #9aa5b1; border-radius: 6px; padding: 8px; background: #fff; break-inside: avoid; }
+.asset-label .qr svg { width: 64px; height: 64px; }
+@media print { .label-sheet { grid-template-columns: repeat(3, 1fr); gap: 4mm; } .asset-label { border-style: solid; } }

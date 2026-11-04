@@ -24,7 +24,7 @@
           <div class="side-group-title"><i class="bi {{ m.icon }}"></i>{{ m.name }}
             {% if not m.ready %}<span class="badge text-bg-secondary ms-auto">준비중</span>{% endif %}</div>
           {% if m.ready %}
-            {% for it in m.menus if perms.salary or not it.get('restricted') %}
+            {% for it in m.menus if (perms.salary or not it.get('restricted')) and (not it.get('perm') or perms[it.perm]) %}
               <a class="side-link {% if active_menu == it.key %}active{% endif %}" href="{{ it.url }}">
                 <i class="bi {{ it.icon }}"></i>{{ it.name }}</a>
             {% endfor %}

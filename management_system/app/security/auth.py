@@ -17,7 +17,7 @@ from app.db import query, query_one, execute, audit
 from app.security.crypto import enc
 
 COOKIE_NAME = "bms_session"
-ROLES = {"admin": "시스템관리자", "hr": "인사담당", "viewer": "조회자"}
+ROLES = {"admin": "시스템관리자", "hr": "인사·총무담당", "ga": "총무담당", "viewer": "조회자"}
 
 _ph = PasswordHasher()  # Argon2id, RFC 9106 권장 파라미터
 _DUMMY_HASH = _ph.hash(secrets.token_hex(16))  # 계정 존재 여부 타이밍 노출 방지용

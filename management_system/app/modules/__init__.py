@@ -19,10 +19,14 @@ MODULES = [
         ],
     },
     {
-        "key": "ga", "name": "총무관리", "icon": "bi-building", "ready": False,
+        "key": "ga", "name": "총무관리", "icon": "bi-building", "ready": True,
         "menus": [
-            {"name": "자산·비품 관리"}, {"name": "법인차량 관리"}, {"name": "문서 수발·관인 대장"},
-            {"name": "계약·임대차 관리"}, {"name": "경조사 관리"},
+            {"key": "ga.dashboard", "name": "총무 대시보드", "icon": "bi-grid-1x2", "url": "/ga/dashboard"},
+            {"key": "ga.assets", "name": "자산·비품", "icon": "bi-pc-display", "url": "/ga/assets"},
+            {"key": "ga.vehicles", "name": "법인차량", "icon": "bi-car-front", "url": "/ga/vehicles"},
+            {"key": "ga.docs", "name": "문서수발·관인", "icon": "bi-envelope-paper", "url": "/ga/docs"},
+            {"key": "ga.contracts", "name": "계약·임대차", "icon": "bi-file-earmark-check", "url": "/ga/contracts"},
+            {"key": "ga.events", "name": "경조사", "icon": "bi-flower1", "url": "/ga/events", "perm": "ga_events"},
         ],
     },
     {

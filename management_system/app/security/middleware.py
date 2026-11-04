@@ -18,8 +18,9 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 # 경로별 필요 권한 (위에서부터 첫 일치 규칙 적용)
 ADMIN = {"admin"}
-WRITERS = {"admin", "hr"}
-ALL = {"admin", "hr", "viewer"}
+WRITERS = {"admin", "hr"}                  # 인사 쓰기
+GA_STAFF = {"admin", "hr", "ga"}           # 총무 쓰기 (경영지원 인사·총무 겸임 고려)
+ALL = {"admin", "hr", "ga", "viewer"}
 RULES = [
     (r"^/admin", ADMIN, ADMIN),
     (r"^/settings", ADMIN, ADMIN),
@@ -29,6 +30,11 @@ RULES = [
     (r"^/hr/(salaries|contracts|documents|templates|certificates|rewards|specials|api)", WRITERS, WRITERS),
     (r"^/hr/employees/(new|import|export\.csv|template\.csv|\d+/edit)", WRITERS, WRITERS),
     (r"^/hr", ALL, WRITERS),
+    # 총무: 관인 승인은 관리자, 경조사(가족 사망·질병 등)는 총무 담당자 이상만 열람
+    (r"^/ga/seals/\d+/decide", ADMIN, ADMIN),
+    (r"^/ga/events", GA_STAFF, GA_STAFF),
+    (r"^/ga/(assets|contracts)/export\.csv", GA_STAFF, GA_STAFF),
+    (r"^/ga", ALL, GA_STAFF),
     (r"^/$", ALL, ALL),
 ]
 

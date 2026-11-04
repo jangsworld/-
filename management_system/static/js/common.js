@@ -88,3 +88,25 @@ document.querySelectorAll('[data-autosubmit]').forEach(el => el.addEventListener
     el.textContent = left <= 300 ? `⏱ ${Math.ceil(left / 60)}분 후 자동 로그아웃` : '';
   }, 1000);
 })();
+
+// ── 등록/수정 겸용 모달: <button data-bs-toggle="modal" data-bs-target="#m" data-fill='{"id":1,...}'> ──
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-fill]');
+  if (!b) return;
+  const m = document.querySelector(b.dataset.bsTarget);
+  const f = m && m.querySelector('form');
+  if (!f) return;
+  f.reset();
+  let data = {};
+  try { data = JSON.parse(b.dataset.fill || '{}'); } catch (_) {}
+  f.querySelectorAll('[name]').forEach((el) => {
+    if (el.name === 'csrf_token' || el.name === 'next') return;
+    if (!(el.name in data)) { if (el.name === 'id') el.value = ''; return; }
+    const v = data[el.name];
+    if (el.type === 'checkbox') el.checked = !!v && v !== '0';
+    else el.value = v === null || v === undefined ? '' : v;
+  });
+  m.querySelectorAll('[data-mode-title]').forEach((t) => { t.textContent = data.id ? '수정' : '등록'; });
+  m.querySelectorAll('[data-new-only]').forEach((t) => { t.hidden = !!data.id; });
+  f.dispatchEvent(new Event('bms:filled'));
+});
