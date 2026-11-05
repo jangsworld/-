@@ -15,8 +15,9 @@ from app.common import templates
 from app.config import APP_DIR, SYSTEM_CODE, SYSTEM_NAME, settings
 from app.db import init_db, get_settings, set_setting, DEFAULT_SETTINGS
 from app.modules import MODULES
-from app.modules.hr import repo as hr_repo
+from app.modules.hr import intake, repo as hr_repo
 from app.modules.hr.routes import router as hr_router
+from app.modules.hr.signing import router as sign_router
 from app.modules.ga.routes import router as ga_router
 from app.modules.ga import repo as ga_repo
 from app.security import auth
@@ -63,7 +64,9 @@ async def lifespan(_app):
     _bootstrap_admin()
     auth.purge_expired()
     log.info("BMS started on port %s", settings.port)
+    intake.start_worker()
     yield
+    intake.stop_worker()
 
 
 app = FastAPI(title=SYSTEM_NAME, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -72,6 +75,7 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 app.mount("/static", StaticFiles(directory=os.path.join(APP_DIR, "static")), name="static")
 app.include_router(auth_router)
 app.include_router(hr_router)
+app.include_router(sign_router)
 app.include_router(ga_router)
 
 templates.env.globals["MODULES"] = MODULES
@@ -118,7 +122,9 @@ def settings_page(request: Request):
         "groups": {"DEPT": "부서", "RANK": "직급", "TITLE": "직책", "LOCATION": "근무지", "ASSET_LOC": "자산 보관위치"},
         "cfg": {"포트": settings.port, "HTTPS": "사용" if settings.https else "미사용(내부 테스트용)",
                 "2단계 인증": "필수" if settings.require_2fa else "선택",
-                "세션 유휴 만료": f"{settings.session_idle_minutes}분", "문서 보관 위치": settings.output_root,
+                "세션 유휴 만료": f"{settings.session_idle_minutes}분",
+                "임직원 서류 폴더": settings.employee_root or "미설정", "문서 보관 위치": settings.employee_root or settings.output_root,
+                "메일 서버": settings.smtp_host or "미설정(서명 링크를 화면에 표시)",
                 "DB 위치": settings.db_path, "비밀키 폴더": settings.secrets_dir},
     })
 

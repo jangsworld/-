@@ -1,22 +1,25 @@
 """인사관리 데이터 접근 계층."""
 import json
+import re
 
 from app.common import today, to_date
 from app.db import query, query_one, execute, tx, audit
 from app.security.crypto import enc
+from app.modules.hr import rrn as rrn_util
 from app.modules.hr.constants import LEAVE_CATEGORIES, REDUCE_CATEGORIES
 
 EMPLOYEE_FIELDS = [
     "emp_no", "name", "birth_date", "gender", "phone", "email", "address",
-    "emergency_contact", "department", "rank", "title", "job_duty",
+    "emergency_contact", "emergency_relation", "department", "rank", "title", "job_duty",
     "employment_type", "work_location", "hire_date", "probation_end",
     "resign_date", "resign_reason", "bank_name", "bank_account",
-    "education", "certificates", "memo",
+    "education", "edu_level", "edu_school", "edu_major", "edu_grad_year",
+    "certificates", "memo", "folder_name",
 ]
 
 # AES-256-GCM 으로 암호화 저장되는 개인정보 항목
 ENCRYPTED_EMPLOYEE_FIELDS = {
-    "birth_date", "phone", "email", "address", "emergency_contact",
+    "birth_date", "phone", "email", "address", "emergency_contact", "emergency_relation",
     "bank_account", "memo", "resign_reason",
 }
 ENCRYPTED_DOC_FIELDS = {"content", "params", "annual_salary"}
@@ -127,7 +130,18 @@ def next_emp_no(hire_date: str | None = None) -> str:
     return f"{year}{seq:03d}"
 
 
+def education_summary(data: dict) -> str | None:
+    year = data.get("edu_grad_year")
+    parts = [data.get("edu_level"), data.get("edu_school"), data.get("edu_major"), f"{year}년 졸업" if year else None]
+    return " · ".join(p for p in parts if p) or None
+
+
 def _clean(data: dict) -> dict:
+    data = dict(data)
+    if any(k in data for k in ("edu_level", "edu_school", "edu_major", "edu_grad_year")):
+        data["education"] = education_summary(data)
+    if "bank_account" in data:  # 계좌번호는 숫자만 저장 (은행별 자리 구분이 다르고 대량이체 파일은 숫자만 사용)
+        data["bank_account"] = re.sub(r"\D", "", str(data["bank_account"] or ""))
     out = {}
     for f in EMPLOYEE_FIELDS:
         if f in data:
@@ -170,6 +184,89 @@ def update_employee(emp_id: int, data: dict, appt_date: str | None = None):
     if d.get("resign_date") and not before.get("resign_date"):
         add_appointment(emp_id, d["resign_date"], "퇴사", None, None, d.get("resign_reason") or "")
     audit("hr", "임직원 수정", before["name"], json.dumps(list(d.keys()), ensure_ascii=False))
+
+
+def employment_types_in_use() -> list[str]:
+    return [r["employment_type"] for r in query("SELECT DISTINCT employment_type FROM employees")]
+
+
+# 주민등록번호는 이 세 함수로만 다룹니다. 화면·문서·CSV 에는 생년월일을 사용합니다.
+def set_rrn(emp_id: int, rrn: str):
+    execute("INSERT INTO employee_rrn(employee_id, rrn) VALUES (?,?) ON CONFLICT(employee_id) DO UPDATE SET "
+            "rrn=excluded.rrn, updated_at=datetime('now','localtime')", (emp_id, enc(rrn)))
+    audit("hr", "주민등록번호 저장", f"emp#{emp_id}", "")
+
+
+def get_rrn(emp_id: int) -> str | None:
+    row = query_one("SELECT rrn FROM employee_rrn WHERE employee_id=?", (emp_id,))
+    return row["rrn"] if row else None
+
+
+def rrn_masked(emp_id: int) -> str:
+    return rrn_util.mask(get_rrn(emp_id))
+
+
+def get_qualifications(emp_id: int) -> dict[str, dict]:
+    rows = query("SELECT * FROM employee_qualifications WHERE employee_id=?", (emp_id,))
+    return {r["kind"]: r for r in rows}
+
+
+def save_qualifications(emp_id: int, items: list[dict]):
+    """입력값이 있는 자격은 저장하고, 모두 지운 자격은 삭제합니다."""
+    for q in items:
+        if any(q.get(k) for k in ("license_no", "grade", "main_cert")):
+            execute(
+                "INSERT INTO employee_qualifications(employee_id, kind, license_no, grade, main_cert) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(employee_id, kind) DO UPDATE SET license_no=excluded.license_no, grade=excluded.grade, "
+                "main_cert=excluded.main_cert",
+                (emp_id, q["kind"], enc(q.get("license_no") or None), q.get("grade") or None, q.get("main_cert") or None),
+            )
+        else:
+            execute("DELETE FROM employee_qualifications WHERE employee_id=? AND kind=?", (emp_id, q["kind"]))
+
+
+def match_employee_folder(folder_name: str) -> int | None:
+    """폴더와 연결된 임직원 id. 같은 이름의 임직원이 한 명이면 폴더를 연결합니다."""
+    row = query_one("SELECT id FROM employees WHERE folder_name=?", (folder_name,))
+    if row:
+        return row["id"]
+    rows = query("SELECT id FROM employees WHERE name=? AND (folder_name IS NULL OR folder_name='')", (folder_name,))
+    if len(rows) == 1:
+        execute("UPDATE employees SET folder_name=? WHERE id=?", (folder_name, rows[0]["id"]))
+        return rows[0]["id"]
+    return None
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 임직원 등록 초안
+# ════════════════════════════════════════════════════════════════════════
+def list_drafts(status: str = "") -> list[dict]:
+    sql = "SELECT * FROM employee_drafts"
+    params = []
+    if status:
+        sql += " WHERE status=?"
+        params.append(status)
+    return query(sql + " ORDER BY detected_at DESC, id DESC", params)
+
+
+def get_draft(draft_id: int) -> dict | None:
+    return query_one("SELECT * FROM employee_drafts WHERE id=?", (draft_id,))
+
+
+def create_draft(folder_name: str, signature: str, data: dict) -> int:
+    return execute("INSERT INTO employee_drafts(folder_name, signature, data) VALUES (?,?,?)",
+                   (folder_name, signature, enc(data)))
+
+
+def update_draft(draft_id: int, **kw):
+    if "data" in kw:
+        kw["data"] = enc(kw["data"])
+    sets = ", ".join(f"{k}=?" for k in kw) + ", updated_at=datetime('now','localtime')"
+    execute(f"UPDATE employee_drafts SET {sets} WHERE id=?", list(kw.values()) + [draft_id])
+
+
+def delete_draft(draft_id: int):
+    execute("DELETE FROM employee_drafts WHERE id=?", (draft_id,))
 
 
 def delete_employee(emp_id: int):
@@ -324,7 +421,7 @@ def list_documents(doc_group="contract", employee_id=None, status="", category="
 
 def get_document(doc_id: int) -> dict | None:
     return query_one(
-        "SELECT d.*, e.name, e.emp_no, e.department FROM hr_documents d "
+        "SELECT d.*, e.name, e.emp_no, e.department, e.email, e.folder_name FROM hr_documents d "
         "JOIN employees e ON e.id=d.employee_id WHERE d.id=?",
         (doc_id,),
     )

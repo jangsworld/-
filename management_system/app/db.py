@@ -8,7 +8,7 @@ from app.config import APP_DIR as BASE_DIR, settings
 from app.security.crypto import dec_row
 
 DB_PATH = settings.db_path
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 
 # 요청 단위 사용자·IP (감사로그 기록용, 미들웨어에서 설정)
 current_actor: contextvars.ContextVar[tuple] = contextvars.ContextVar("bms_actor", default=(None, "system", ""))
@@ -134,6 +134,7 @@ CREATE TABLE IF NOT EXISTS employees (
     email             TEXT,
     address           TEXT,
     emergency_contact TEXT,
+    emergency_relation TEXT,              -- 비상연락처 관계 (배우자, 아들 등)
     department        TEXT,
     rank              TEXT,               -- 직급
     title             TEXT,               -- 직책
@@ -146,11 +147,46 @@ CREATE TABLE IF NOT EXISTS employees (
     resign_reason     TEXT,
     bank_name         TEXT,
     bank_account      TEXT,
-    education         TEXT,
-    certificates      TEXT,               -- 보유 자격
+    education         TEXT,               -- 최종학력 요약 (edu_* 로 자동 작성)
+    edu_level         TEXT,               -- 박사/석사/학사/전문학사/고졸
+    edu_school        TEXT,
+    edu_major         TEXT,
+    edu_grad_year     TEXT,
+    certificates      TEXT,               -- 기타 보유 자격
+    folder_name       TEXT,               -- 임직원 서류 폴더명 (employee_root 하위)
     memo              TEXT,
     created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     updated_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 주민등록번호: 일반 조회(SELECT * FROM employees)에 섞이지 않도록 별도 테이블에 암호화 저장
+CREATE TABLE IF NOT EXISTS employee_rrn (
+    employee_id INTEGER PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+    rrn         TEXT NOT NULL,            -- 암호화
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 보유자격: 정보통신공사기술자 / 전기공사기술자 / 소프트웨어경력증명서
+CREATE TABLE IF NOT EXISTS employee_qualifications (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,
+    license_no  TEXT,                     -- 암호화
+    grade       TEXT,
+    main_cert   TEXT,                     -- 대표 국가기술자격증
+    UNIQUE(employee_id, kind)
+);
+
+-- 임직원 서류 폴더에서 자동 생성된 등록 초안 (담당자 확인 전에는 employees 에 넣지 않음)
+CREATE TABLE IF NOT EXISTS employee_drafts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    folder_name TEXT NOT NULL UNIQUE,
+    status      TEXT NOT NULL DEFAULT '확인필요',  -- 확인필요/등록완료/제외
+    signature   TEXT,                     -- 폴더 내용 서명 (서류 추가 시 초안 갱신)
+    data        TEXT,                     -- 추출 항목(JSON, 암호화). OCR 원문은 저장하지 않음
+    employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+    detected_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
 -- ── 인사: 발령 이력 ─────────────────────────────────────────────────
@@ -194,10 +230,32 @@ CREATE TABLE IF NOT EXISTS hr_documents (
     pdf_path      TEXT,                    -- NAS 보관 PDF 경로
     pdf_sha256    TEXT,                    -- 위·변조 확인용 해시
     pdf_saved_at  TEXT,
+    emailed_at    TEXT,                    -- 직원에게 메일 전송한 일시
     status        TEXT NOT NULL DEFAULT '작성중',  -- 작성중/서명대기/체결완료/만료/해지/발급완료
     signed_date   TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 전자서명 요청 (직원 메일 링크)
+CREATE TABLE IF NOT EXISTS hr_sign_requests (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id          INTEGER NOT NULL REFERENCES hr_documents(id) ON DELETE CASCADE,
+    token_hash      TEXT NOT NULL UNIQUE,
+    token           TEXT,                  -- 담당자 재안내용, 암호화
+    email           TEXT,                  -- 암호화
+    status          TEXT NOT NULL DEFAULT '대기',  -- 대기/완료/취소
+    content_sha256  TEXT NOT NULL,         -- 발송 시점 본문 해시
+    expires_at      TEXT NOT NULL,
+    sent_at         TEXT NOT NULL,
+    mailed          INTEGER NOT NULL DEFAULT 0,
+    fail_count      INTEGER NOT NULL DEFAULT 0,
+    session_hash    TEXT,
+    session_expires TEXT,
+    opened_at       TEXT,
+    signed_at       TEXT,
+    signer_ip       TEXT,
+    signer_ua       TEXT
 );
 
 -- ── 인사: 연봉 이력 ─────────────────────────────────────────────────
@@ -435,6 +493,7 @@ def init_db() -> bool:
                 raise RuntimeError("[BMS] 보안 기능 이전 버전의 DB 입니다. 샘플 DB 라면 삭제 후 다시 시작하세요: " + DB_PATH)
             _migrate_users_role(conn)
         conn.executescript(SCHEMA)
+        _add_columns(conn)
         conn.execute("INSERT INTO settings(key, value) VALUES ('schema_version', ?) "
                      "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (SCHEMA_VERSION,))
         for k, v in DEFAULT_SETTINGS.items():
@@ -445,6 +504,21 @@ def init_db() -> bool:
             for i, n in enumerate(names):
                 conn.execute("INSERT INTO codes(group_code, name, sort_order) VALUES (?,?,?)", (group, n, i))
     return is_new
+
+
+# v3→v4: 기존 DB 에 없는 컬럼 추가 (CREATE TABLE IF NOT EXISTS 는 기존 테이블을 바꾸지 않음)
+ADDED_COLUMNS = {
+    "employees": ["emergency_relation", "edu_level", "edu_school", "edu_major", "edu_grad_year", "folder_name"],
+    "hr_documents": ["emailed_at"],
+}
+
+
+def _add_columns(conn):
+    for table, cols in ADDED_COLUMNS.items():
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for col in cols:
+            if col not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
 
 
 def _migrate_users_role(conn):

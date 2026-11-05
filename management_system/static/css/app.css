@@ -64,6 +64,7 @@ body { background: var(--bg); font-family: "Pretendard", "Malgun Gothic", "Apple
 .st-단축근무 { background: #e8f0fe; color: #1a56c2; }
 .st-퇴사, .st-만료, .st-해지, .st-종료, .st-발급취소 { background: #eef0f2; color: #6b7280; }
 .st-작성중, .st-입사예정 { background: #f1e8fd; color: #6b35c4; }
+.st-확인필요 { background: #fff0d6; color: #9a5b00; font-weight: 600; }
 .kind-포상 { background: #e6f4ea; color: #1e7b34; }
 .kind-징계 { background: #fde8e8; color: #b42318; }
 
@@ -103,6 +104,12 @@ body { background: var(--bg); font-family: "Pretendard", "Malgun Gothic", "Apple
 .paper p { margin: 0 0 4px; }
 .paper ul { margin: 0 0 4px; padding-left: 20px; }
 .paper .doc-note { font-size: 9pt; color: #555; }
+.paper .esign-block { margin-top: 24px; page-break-inside: avoid; }
+.paper .esign-img { max-height: 56px; max-width: 200px; }
+.paper .esign-hash { font-family: Consolas, monospace; font-size: 8pt; word-break: break-all; }
+.draft-check { background: #fff8e6; border-color: #e0b252 !important; }
+.draft-src { font-size: .72rem; color: #8a6d1f; }
+.sign-pad { width: 100%; max-width: 460px; height: 170px; border: 1px dashed #8a94a6; border-radius: .4rem; touch-action: none; background: #fff; display: block; }
 .doc-table { width: 100%; border-collapse: collapse; margin: 8px 0; }
 .doc-table th, .doc-table td { border: 1px solid #333; padding: 6px 8px; font-size: 10pt; vertical-align: middle; }
 .doc-table th { background: #f2f2f2; width: 15%; text-align: center; }

@@ -20,6 +20,11 @@ secrets_dir = "D:\\BMS\\secrets"         # 암호화 마스터키 (서비스 계
 log_dir     = "D:\\BMS\\logs"
 nas_root    = "\\\\192.168.0.10\\BMS"     # NAS 공유 폴더 (BMS 전용 계정·권한)
 backup_dir  = "\\\\192.168.0.10\\BMS\\BMS_백업"
+# 임직원 서류 폴더: 이 아래에 '성명' 폴더를 만들고 입사서류를 넣으면 등록 초안이 자동 생성되고,
+# 계약서·증명서 PDF 도 그 임직원 폴더에 저장됩니다. Windows 서비스로 운영할 때는 Z: 같은 드라이브 문자가
+# 보이지 않으므로 반드시 \\\\서버\\공유 형식을 쓰고, 서비스 계정에 읽기/쓰기 권한을 주세요.
+employee_root = "\\\\192.168.0.10\\공유폴더\\인사\\BMS"
+intake_interval_sec = 60                  # 새 폴더 확인 주기(초), 0 이면 끔
 
 [security]
 require_2fa = true
@@ -30,6 +35,16 @@ lockout_minutes = 15
 password_min_length = 10
 password_max_age_days = 90
 cookie_secure = "auto"
+
+[mail]
+# 전자서명 요청·증명서 전송에 사용. 비밀번호는 여기 넣지 말고 secrets_dir\smtp_password.txt 또는 BMS_SMTP_PASSWORD 환경변수에 둡니다.
+smtp_host = ""                   # 비우면 메일 대신 서명 링크를 화면에 표시
+smtp_port = 587
+smtp_ssl  = false                # true: SMTPS(465), false: STARTTLS(587)
+smtp_user = ""
+smtp_from = ""
+public_url = ""                  # 직원이 메일 링크로 접속할 주소 (HTTPS 필수) 예: https://bms.example.co.kr
+sign_valid_days = 7
 
 [pdf]
 pdf_browser_channel = "msedge"   # Windows 기본 Edge 로 PDF 변환

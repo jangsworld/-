@@ -1,5 +1,6 @@
 """인사관리 비즈니스 로직: 문서 자동작성, 연봉 분석, 대시보드 집계, 관리 알림."""
 import html
+import math
 import re
 from datetime import timedelta
 from collections import Counter, defaultdict
@@ -8,7 +9,7 @@ from app.common import (
     today, to_date, add_years, add_months, service_period, service_years_float,
     korean_amount, won, days_until,
 )
-from app.db import get_settings, query
+from app.db import audit, execute, get_settings, query
 from app.modules.hr import repo
 from app.modules.hr.constants import (
     EMPLOYMENT_TO_CONTRACT, LEAVE_CATEGORIES, REDUCE_CATEGORIES,
@@ -95,7 +96,7 @@ def build_context(emp: dict, params: dict, settings: dict | None = None) -> dict
         "주소정근로시간": str(params.get("weekly_hours") or ""),
         "연봉": won(salary) if salary else "",
         "연봉_한글": korean_amount(salary) if salary else "",
-        "월급여": won(salary / 12) if salary else "",
+        "월급여": won(math.ceil(salary / 12)) if salary else "",   # 회사 연봉계약서 기준 원 단위 올림
         "시급": won(params.get("hourly_wage")) if params.get("hourly_wage") else "",
         "일급": won(params.get("daily_wage")) if params.get("daily_wage") else "",
         "임금지급일": s.get("pay_day", "25"),
@@ -113,6 +114,21 @@ def render_template(content: str, ctx: dict) -> str:
             return html.escape(str(ctx[key]))  # 입력값에 포함된 태그로 인한 XSS 방지
         return f'<span class="ph-missing">[{key}]</span>'
     return _PH.sub(rep, content)
+
+
+def store_document_pdf(doc_id: int) -> tuple[bool, str]:
+    """문서를 PDF 로 변환해 임직원 폴더에 저장. Playwright 동기 API 를 쓰므로 스레드에서 호출합니다."""
+    from app import storage
+    d = repo.get_document(doc_id)
+    try:
+        path, sha = storage.save_document_pdf(d)
+    except storage.StorageError as ex:
+        audit("hr", "PDF 보관 실패", f"doc#{doc_id}", str(ex)[:120])
+        return False, str(ex)
+    execute("UPDATE hr_documents SET pdf_path=?, pdf_sha256=?, pdf_saved_at=datetime('now','localtime') WHERE id=?",
+            (path, sha, doc_id))
+    audit("hr", "PDF 보관", f"doc#{doc_id}", path)
+    return True, "PDF가 임직원 폴더에 저장되었습니다"
 
 
 def suggest_template_category(emp: dict) -> str:

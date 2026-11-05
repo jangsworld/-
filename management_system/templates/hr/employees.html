@@ -28,6 +28,29 @@
   </div>
 </div>
 
+{% if perms.write and (drafts or intake.enabled) %}
+<div class="card mb-3 {{ 'border-warning' if drafts }}" id="drafts">
+  <div class="card-header d-flex align-items-center gap-2">
+    <span><i class="bi bi-folder-symlink me-1"></i>입사서류 등록 초안</span>
+    {% if drafts %}<span class="st st-확인필요">초안생성 · 확인필요 {{ drafts|length }}건</span>{% endif %}
+    <span class="help ms-auto">{% if intake.error %}<span class="text-danger">{{ intake.error }}</span>{% else %}서류 폴더 자동 확인 중{% if intake.last_scan %} · 마지막 {{ intake.last_scan[11:16] }}{% endif %}{% endif %}</span>
+    <form method="post" action="/hr/drafts/scan"><button class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat"></i> 지금 확인</button></form>
+  </div>
+  {% if drafts %}
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+    <thead><tr><th>성명</th><th>서류 폴더</th><th>입사일</th><th>생년월일</th><th>연락처</th><th>서류</th><th>확인할 사항</th><th>상태</th></tr></thead>
+    <tbody>{% for d in drafts %}
+      <tr data-href="/hr/drafts/{{ d.id }}">
+        <td class="fw-semibold">{{ d.fields.name }}</td><td class="small text-muted">{{ d.folder_name }}</td>
+        <td>{{ d.fields.hire_date or '-' }}</td><td>{{ d.fields.birth_date or '-' }}</td><td class="small">{{ d.fields.phone or '-' }}</td>
+        <td class="small">{{ d.files|length }}건</td><td class="small">{{ d.checks|length }}건</td>
+        <td><span class="st st-확인필요">확인필요</span></td>
+      </tr>{% endfor %}
+    </tbody></table></div>
+  {% else %}<div class="card-body py-2 small text-muted">확인할 초안이 없습니다. 서류 폴더에 임직원 이름으로 폴더를 만들고 입사서류를 넣으면 자동으로 초안이 생깁니다.</div>{% endif %}
+</div>
+{% endif %}
+
 <div class="card">
   <div class="card-header d-flex">조회 결과 <span class="badge text-bg-secondary ms-2">{{ rows|length }}명</span></div>
   <div class="table-responsive">

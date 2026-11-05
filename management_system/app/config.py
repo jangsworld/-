@@ -32,6 +32,8 @@ class Settings:
     nas_root: str = ""                  # 예: \\\\192.168.0.10\\BMS  (비우면 data/outbox 사용)
     backup_dir: str = ""
     log_dir: str = os.path.join(APP_DIR, "logs")
+    employee_root: str = ""             # 임직원 서류 폴더 예: \\\\NAS\\공유폴더\\인사\\BMS
+    intake_interval_sec: int = 60       # 새 폴더 확인 주기(초), 0 이면 자동 감지 끔
     # [security]
     session_idle_minutes: int = 30
     session_max_hours: int = 10
@@ -46,6 +48,14 @@ class Settings:
     pdf_browser_channel: str = "msedge" if os.name == "nt" else ""   # Windows 기본 Edge 사용
     pdf_browser_path: str = ""
     pdf_on_signed: bool = True          # 체결완료 저장 시 NAS 자동 보관
+    # [mail]
+    smtp_host: str = ""                 # 비우면 메일 대신 서명 링크를 화면에 표시
+    smtp_port: int = 587
+    smtp_ssl: bool = False              # true: SMTPS(465), false: STARTTLS(587)
+    smtp_user: str = ""
+    smtp_from: str = ""
+    public_url: str = ""                # 직원이 메일 링크로 접속할 주소 예: https://bms.example.co.kr
+    sign_valid_days: int = 7            # 서명 링크 유효기간(일)
     # [app]
     seed_sample: bool = False
 

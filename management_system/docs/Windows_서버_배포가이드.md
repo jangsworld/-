@@ -36,6 +36,14 @@ D:\BMS\venv\Scripts\python D:\BMS\app\manage.py check
 
 PDF 변환은 Windows 기본 **Microsoft Edge** 를 사용하므로 별도 브라우저 설치가 필요 없습니다.
 
+**입사서류·메일 추가 확인 사항**
+- `employee_root` 는 `\\서버\공유\...` 형식으로 지정합니다. Windows 서비스에는 Z: 같은 드라이브 문자가 보이지 않습니다.
+- 서비스 실행 계정에 해당 NAS 폴더 읽기/쓰기 권한이 있어야 합니다.
+- 스캔본 판독에는 서버의 **한국어 OCR** 이 필요합니다. PowerShell 관리자 권한으로 설치합니다.
+  `Add-WindowsCapability -Online -Name "Language.OCR~~~ko-KR~0.0.1.0"` (없으면 텍스트 PDF·HWP 만 읽음)
+- 메일은 `[mail]` 을 설정하고 비밀번호를 `secrets\smtp_password.txt` 에 둡니다.
+- 직원이 사내망 밖에서 서명하려면 `public_url` 에 HTTPS 주소를 넣고 `allowed_hosts` 에 도메인을 추가합니다. `/sign/` 경로만 로그인 없이 열립니다.
+
 ## 3. Windows 서비스 등록 (NSSM 예시)
 
 ```powershell

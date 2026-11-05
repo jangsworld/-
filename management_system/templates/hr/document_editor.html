@@ -5,7 +5,7 @@
 <div class="row g-3">
   <div class="col-xl-9 print-col">
     {% include "hr/_editor_toolbar.html" %}
-    <div class="paper-wrap"><div class="paper" id="paper" contenteditable="true" spellcheck="false">{{ d.content|safe }}</div></div>
+    <div class="paper-wrap"><div class="paper" id="paper" contenteditable="{{ 'false' if locked else 'true' }}" spellcheck="false">{{ d.content|safe }}</div></div>
     <div class="help mt-2 no-print"><span class="ph-missing">[항목]</span> 표시는 값이 비어 있는 치환자입니다. 직접 입력하거나, 인사기록 보완 후 [최신 정보로 다시 작성]을 누르세요.</div>
   </div>
   <div class="col-xl-3 no-print">
@@ -28,8 +28,16 @@
         <button class="btn btn-primary btn-sm" id="saveBtn"><i class="bi bi-save"></i> 저장 <span class="small opacity-75">(Ctrl+S)</span></button>
         <button class="btn btn-outline-dark btn-sm" data-print><i class="bi bi-printer"></i> 인쇄 / PDF 저장</button>
         <form method="post" action="/hr/documents/{{ d.id }}/pdf" class="d-grid">
-          <button class="btn btn-outline-success btn-sm"><i class="bi bi-hdd-network"></i> PDF 변환 · NAS 보관</button></form>
+          <button class="btn btn-outline-success btn-sm"><i class="bi bi-folder-check"></i> 임직원 폴더에 PDF 저장</button></form>
         {% if d.pdf_path %}<a class="btn btn-success btn-sm" href="/hr/documents/{{ d.id }}/pdf" target="_blank"><i class="bi bi-file-earmark-pdf"></i> 보관본 열기 <span class="small opacity-75">({{ d.pdf_saved_at[:16] }})</span></a>{% endif %}
+        {% if d.doc_group == 'contract' and not locked %}
+        <form method="post" action="/hr/documents/{{ d.id }}/sign-request" class="d-grid" data-confirm="저장된 내용으로 {{ d.name }}님께 전자서명을 요청합니다. 요청 후 문서를 고치면 다시 요청해야 합니다. 계속할까요?">
+          <button class="btn btn-warning btn-sm"><i class="bi bi-send"></i> {{ '서명 다시 요청' if sign and sign.status == '대기' else '직원에게 전자서명 요청' }}</button></form>
+        {% endif %}
+        {% if d.doc_group == 'certificate' or d.status == '체결완료' %}
+        <form method="post" action="/hr/documents/{{ d.id }}/email" class="d-grid" data-confirm="{{ d.name }}님 메일로 PDF 를 전송할까요?">
+          <button class="btn btn-outline-primary btn-sm" {{ 'disabled' if not mail_ready }}><i class="bi bi-envelope"></i> 직원 메일로 전송{% if d.emailed_at %} <span class="small opacity-75">({{ d.emailed_at[:10] }} 전송됨)</span>{% endif %}</button></form>
+        {% endif %}
         <form method="post" action="/hr/documents/{{ d.id }}/regenerate" class="d-grid" data-confirm="편집한 내용이 사라지고 템플릿+최신 임직원 정보로 다시 작성됩니다. 계속할까요?">
           <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-repeat"></i> 최신 정보로 다시 작성</button></form>
         <form method="post" action="/hr/documents/{{ d.id }}/delete" class="d-grid" data-confirm="문서를 삭제할까요?">
@@ -37,7 +45,15 @@
       </div>
       <div class="help mt-2" id="saveState">마지막 저장 {{ d.updated_at }}</div>
       {% if d.doc_group == 'contract' %}
-      <div class="help mt-2"><i class="bi bi-info-circle"></i> 서명 완료본은 스캔하여 보관하고 상태를 <b>체결완료</b>로 변경하세요. 체결완료 계약서가 있어야 대시보드의 '미체결' 알림이 해소됩니다.</div>
+      {% if sign and sign.status == '완료' %}
+      <div class="alert alert-success small py-2 mt-2 mb-0"><i class="bi bi-pen"></i> 전자서명 완료 {{ sign.signed_at }}<br>본문은 더 이상 수정할 수 없습니다.</div>
+      {% elif sign_link %}
+      <div class="alert alert-warning small py-2 mt-2 mb-0"><i class="bi bi-hourglass-split"></i> 서명 대기 ({{ sign.expires_at[:10] }}까지){% if sign.opened_at %} · 직원 열람 {{ sign.opened_at[:16] }}{% endif %}
+        {% if not sign.mailed %}<div class="mt-1">메일이 발송되지 않았습니다. 아래 링크를 직원에게 전달하세요.</div>{% endif %}
+        <input class="form-control form-control-sm mt-1" readonly value="{{ sign_link }}"></div>
+      {% else %}
+      <div class="help mt-2"><i class="bi bi-info-circle"></i> 전자서명을 요청하면 직원이 메일 링크에서 서명하고, 완료되면 체결완료 처리·PDF 저장이 자동으로 됩니다. 종이로 서명한 경우 상태를 <b>체결완료</b>로 바꾸세요.</div>
+      {% endif %}
       {% endif %}
     </div></div>
     <div class="card"><div class="card-header small">{{ d.name }}님의 문서 이력</div>
@@ -54,7 +70,7 @@
 const paper = document.getElementById('paper');
 let dirty = false;
 const markDirty = () => { dirty = true; document.getElementById('saveState').textContent = '변경사항 있음 (저장 필요)'; };
-initEditor(paper, markDirty);
+{% if not locked %}initEditor(paper, markDirty);{% endif %}
 async function save() {
   try {
     const r = await postJSON('/hr/api/documents/{{ d.id }}', {

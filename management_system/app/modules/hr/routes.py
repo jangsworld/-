@@ -5,12 +5,16 @@ import json
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse, Response
 
 from app.common import templates, today, sanitize_html, add_months, to_date
 from app.db import get_codes, get_settings, audit
-from app.modules.hr import repo, services
+from app import mailer
+from app.config import settings as cfg
+from app.modules.hr import intake, repo, rrn as rrn_util, services, signing
 from app.modules.hr.constants import (
+    EDU_LEVELS, EMERGENCY_RELATIONS, QUALIFICATION_KINDS, REWARD_ETC,
     EMPLOYMENT_TYPES, CONTRACT_CATEGORIES, CERT_CATEGORIES, CONTRACT_STATUSES,
     APPOINTMENT_TYPES, SALARY_REASONS, REWARD_CATEGORIES, DISCIPLINE_EXPUNGE_MONTHS,
     WORK_SPECIALS, PLACEHOLDERS,
@@ -46,6 +50,8 @@ def _codes() -> dict:
     return {
         "depts": get_codes("DEPT"), "ranks": get_codes("RANK"), "titles": get_codes("TITLE"),
         "locations": get_codes("LOCATION"), "employment_types": EMPLOYMENT_TYPES,
+        "emergency_relations": EMERGENCY_RELATIONS, "edu_levels": EDU_LEVELS,
+        "qualification_kinds": QUALIFICATION_KINDS,
     }
 
 
@@ -89,21 +95,29 @@ def dashboard(request: Request):
 def employees(request: Request, q: str = "", department: str = "", employment_type: str = "",
               status: str = "재직(전체)"):
     rows = repo.list_employees(q, department, employment_type, status)
+    codes = _codes()
+    known = [t for t in EMPLOYMENT_TYPES if t != "기타"]
+    codes["employment_types"] = known + [t for t in repo.employment_types_in_use() if t not in known]
+    is_staff = request.state.user["role"] in ("admin", "hr")
     return _render(request, "hr/employees.html", {
         "rows": rows, "f": {"q": q, "department": department, "employment_type": employment_type,
                             "status": status},
-        **_codes(),
+        "drafts": [_draft_row(d) for d in repo.list_drafts("확인필요")] if is_staff else [],
+        "intake": {"enabled": bool(cfg.employee_root), **intake.state},
+        **codes,
     }, "hr.employees")
 
 
 CSV_COLUMNS = [
     ("emp_no", "사번"), ("name", "성명"), ("birth_date", "생년월일"), ("gender", "성별"),
     ("phone", "연락처"), ("email", "이메일"), ("address", "주소"), ("emergency_contact", "비상연락처"),
+    ("emergency_relation", "비상연락처 관계"),
     ("department", "부서"), ("rank", "직급"), ("title", "직책"), ("job_duty", "담당업무"),
     ("employment_type", "고용형태"), ("work_location", "근무지"), ("hire_date", "입사일"),
     ("probation_end", "수습종료일"), ("resign_date", "퇴사일"), ("resign_reason", "퇴사사유"),
-    ("bank_name", "급여은행"), ("bank_account", "계좌번호"), ("education", "최종학력"),
-    ("certificates", "보유자격"), ("memo", "비고"),
+    ("bank_name", "급여은행"), ("bank_account", "계좌번호"), ("edu_level", "최종학력"),
+    ("edu_school", "학교명"), ("edu_major", "학과"), ("edu_grad_year", "졸업연도"),
+    ("certificates", "기타자격"), ("memo", "비고"),
 ]
 
 
@@ -166,23 +180,135 @@ async def employees_import(file: UploadFile = File(...)):
 def employee_new(request: Request):
     return _render(request, "hr/employee_form.html", {
         "e": {"employment_type": "정규직", "hire_date": today().isoformat(), "emp_no": repo.next_emp_no()},
-        "is_new": True, **_codes(),
+        "is_new": True, "quals": {}, **_codes(),
     }, "hr.employees")
+
+
+def _employee_form(form: dict) -> tuple[dict, str | None, list[dict]]:
+    """등록·수정 폼 공통 처리. (임직원 항목, 주민등록번호, 보유자격) 반환. 형식 오류는 ValueError."""
+    data = dict(form)
+    if data.get("employment_type") == "기타" and (data.get("employment_type_etc") or "").strip():
+        data["employment_type"] = data["employment_type_etc"].strip()
+    rrn = None
+    if (data.get("rrn") or "").strip():
+        rrn = rrn_util.normalize(data["rrn"])
+        if not rrn:
+            raise ValueError("주민등록번호 형식을 확인해주세요 (예: 000000-0000000)")
+        parsed = rrn_util.parse(rrn)  # 생년월일·성별은 주민등록번호 기준으로 맞춤
+        data["birth_date"], data["gender"] = parsed["birth_date"], parsed["gender"]
+    quals = [{"kind": kind, "license_no": (form.get(f"q{i}_no") or "").strip(), "grade": (form.get(f"q{i}_grade") or "").strip(),
+              "main_cert": (form.get(f"q{i}_cert") or "").strip()} for i, kind in enumerate(QUALIFICATION_KINDS)]
+    return data, rrn, quals
+
+
+def _save_extras(emp_id: int, rrn: str | None, quals: list[dict]):
+    if rrn:
+        repo.set_rrn(emp_id, rrn)
+    repo.save_qualifications(emp_id, quals)
+
+
+def _create_employee(form: dict, rrn: str | None, quals: list[dict]) -> int:
+    emp_id = repo.create_employee(form)
+    _save_extras(emp_id, rrn, quals)
+    if form.get("initial_salary"):
+        repo.upsert_salary(emp_id, to_date(form["hire_date"]).year, int(form["initial_salary"]),
+                           form["hire_date"], "신규", "입사 시 책정")
+    return emp_id
 
 
 @router.post("/employees/new")
 async def employee_create(request: Request):
-    form = dict(await request.form())
-    if not form.get("name") or not form.get("hire_date"):
+    raw = dict(await request.form())
+    if not raw.get("name") or not raw.get("hire_date"):
         return _redirect("/hr/employees/new", "성명과 입사일은 필수입니다")
     try:
-        emp_id = repo.create_employee(form)
+        form, rrn, quals = _employee_form(raw)
+        emp_id = _create_employee(form, rrn, quals)
+    except ValueError as ex:
+        return _redirect("/hr/employees/new", str(ex))
     except Exception as ex:  # 사번 중복 등
         return _redirect("/hr/employees/new", f"저장 실패: {ex}")
-    if form.get("initial_salary"):
-        repo.upsert_salary(emp_id, to_date(form["hire_date"]).year, int(form["initial_salary"]),
-                           form["hire_date"], "신규", "입사 시 책정")
     return _redirect(f"/hr/employees/{emp_id}", "임직원이 등록되었습니다")
+
+
+# ── 임직원 서류 폴더 → 등록 초안 ──
+def _draft_row(d: dict) -> dict:
+    data = d["data"] or {}
+    return {**d, "fields": data.get("fields", {}), "checks": data.get("checks", []), "files": data.get("files", []),
+            "rrn_masked": rrn_util.mask(data.get("rrn"))}
+
+
+def _draft_or_404(draft_id: int) -> dict:
+    d = repo.get_draft(draft_id)
+    if not d or d["status"] != "확인필요":
+        raise HTTPException(404, "확인 대기 중인 초안이 아닙니다")
+    return d
+
+
+@router.post("/drafts/scan")
+def draft_scan():
+    return _redirect("/hr/employees", intake.scan_once(force=True)["message"])
+
+
+@router.get("/drafts/{draft_id}", response_class=HTMLResponse)
+def draft_review(request: Request, draft_id: int):
+    d = _draft_or_404(draft_id)
+    data = d["data"] or {}
+    fields = data.get("fields", {})
+    salaries = data.get("salaries", [])
+    audit("hr", "등록초안 열람", d["folder_name"], "")
+    e = {"employment_type": "정규직", "hire_date": "", "emp_no": "", "initial_salary": salaries[0]["amount"] if salaries else "",
+         "rrn_masked": rrn_util.mask(data.get("rrn")), **fields}
+    e["emp_no"] = repo.next_emp_no(fields.get("hire_date"))
+    return _render(request, "hr/employee_form.html", {
+        "e": e, "is_new": True, "draft": d, "checks": data.get("checks", []), "sources": data.get("sources", {}),
+        "files": data.get("files", []), "salaries": salaries,
+        "quals": {q["kind"]: q for q in data.get("qualifications", [])}, **_codes(),
+    }, "hr.employees")
+
+
+@router.post("/drafts/{draft_id}")
+async def draft_confirm(request: Request, draft_id: int):
+    d = _draft_or_404(draft_id)
+    data = d["data"] or {}
+    raw = dict(await request.form())
+    back = f"/hr/drafts/{draft_id}"
+    if not raw.get("name") or not raw.get("hire_date"):
+        return _redirect(back, "성명과 입사일은 필수입니다")
+    try:
+        form, rrn, quals = _employee_form(raw)
+        rrn = rrn or data.get("rrn")
+        if rrn and not raw.get("rrn"):
+            parsed = rrn_util.parse(rrn)
+            form["birth_date"], form["gender"] = parsed["birth_date"], parsed["gender"]
+        form["folder_name"] = d["folder_name"]
+        emp_id = _create_employee(form, rrn, quals)
+    except ValueError as ex:
+        return _redirect(back, str(ex))
+    except Exception as ex:
+        return _redirect(back, f"저장 실패: {ex}")
+    hire_year = to_date(form["hire_date"]).year
+    for s in data.get("salaries", []):
+        if s["year"] != hire_year:
+            repo.upsert_salary(emp_id, s["year"], s["amount"], s["date"], "조정", "입사서류 연봉계약서")
+    repo.update_draft(draft_id, status="등록완료", employee_id=emp_id)
+    return _redirect(f"/hr/employees/{emp_id}", "초안을 확인해 임직원으로 등록했습니다")
+
+
+@router.post("/api/drafts/{draft_id}/rrn")
+def draft_rrn_reveal(draft_id: int):
+    """서류에서 읽은 주민등록번호를 원본과 대조하기 위한 확인 (접속기록 남김)."""
+    d = _draft_or_404(draft_id)
+    audit("hr", "주민등록번호 열람", f"초안 {d['folder_name']}", "")
+    return {"ok": True, "rrn": (d["data"] or {}).get("rrn") or ""}
+
+
+@router.post("/drafts/{draft_id}/exclude")
+def draft_exclude(draft_id: int):
+    d = _draft_or_404(draft_id)
+    repo.update_draft(draft_id, status="제외")
+    audit("hr", "등록초안 제외", d["folder_name"], "")
+    return _redirect("/hr/employees", "초안을 제외했습니다. 해당 폴더는 다시 초안으로 만들지 않습니다")
 
 
 @router.get("/employees/{emp_id}", response_class=HTMLResponse)
@@ -205,26 +331,43 @@ def employee_detail(request: Request, emp_id: int, tab: str = "info"):
         "work_specials": WORK_SPECIALS,
         "expunge_months": DISCIPLINE_EXPUNGE_MONTHS,
         "cert_templates": repo.list_templates("certificate", active_only=True),
+        "qualifications": repo.get_qualifications(emp_id), "qualification_kinds": QUALIFICATION_KINDS,
+        "rrn_masked": repo.rrn_masked(emp_id) if request.state.user["role"] in ("admin", "hr") else "",
         "assets": __import__("app.modules.ga.repo", fromlist=["x"]).list_assets(holder_id=emp_id),
     }, "hr.employees")
 
 
 @router.get("/employees/{emp_id}/edit", response_class=HTMLResponse)
 def employee_edit(request: Request, emp_id: int):
-    return _render(request, "hr/employee_form.html", {"e": _emp_or_404(emp_id), "is_new": False, **_codes()},
-                   "hr.employees")
+    e = _emp_or_404(emp_id)
+    e["rrn_masked"] = repo.rrn_masked(emp_id)
+    return _render(request, "hr/employee_form.html", {"e": e, "is_new": False, "quals": repo.get_qualifications(emp_id),
+                                                      **_codes()}, "hr.employees")
 
 
 @router.post("/employees/{emp_id}/edit")
 async def employee_update(request: Request, emp_id: int):
     _emp_or_404(emp_id)
-    form = dict(await request.form())
-    appt_date = form.pop("appt_date", None) or None
+    raw = dict(await request.form())
+    appt_date = raw.pop("appt_date", None) or None
     try:
+        form, rrn, quals = _employee_form(raw)
         repo.update_employee(emp_id, form, appt_date)
+        _save_extras(emp_id, rrn, quals)
+    except ValueError as ex:
+        return _redirect(f"/hr/employees/{emp_id}/edit", str(ex))
     except Exception as ex:
         return _redirect(f"/hr/employees/{emp_id}/edit", f"저장 실패: {ex}")
     return _redirect(f"/hr/employees/{emp_id}", "저장되었습니다")
+
+
+@router.post("/api/employees/{emp_id}/rrn")
+def employee_rrn_reveal(emp_id: int):
+    """주민등록번호 원문 확인: 인사담당 이상, 버튼을 누를 때만, 접속기록 남김 (값은 기록하지 않음)."""
+    e = _emp_or_404(emp_id)
+    rrn = repo.get_rrn(emp_id)
+    audit("hr", "주민등록번호 열람", f"{e['emp_no']} {e['name']}", "")
+    return {"ok": True, "rrn": rrn or ""}
 
 
 @router.post("/employees/{emp_id}/delete")
@@ -336,8 +479,14 @@ def document_editor(request: Request, doc_id: int):
         raise HTTPException(404, "문서를 찾을 수 없습니다")
     audit("hr", "문서 열람", f"doc#{doc_id}", d["title"])
     statuses = CONTRACT_STATUSES if d["doc_group"] == "contract" else ["발급완료", "발급취소"]
+    sign = signing.latest_request(doc_id)
+    sign_link = ""
+    if sign and sign["status"] == "대기" and sign["expires_at"] > signing._now():
+        sign_link = f"{signing.base_url(request)}/sign/{sign['token']}"
     return _render(request, "hr/document_editor.html", {
         "d": d, "statuses": statuses, "params": json.loads(d["params"] or "{}"),
+        "sign": sign, "sign_link": sign_link, "locked": bool(sign and sign["status"] == "완료"),
+        "mail_ready": mailer.configured(),
         "history": repo.list_documents(d["doc_group"], employee_id=d["employee_id"]),
     }, "hr.contracts" if d["doc_group"] == "contract" else "hr.certificates")
 
@@ -346,7 +495,7 @@ def document_editor(request: Request, doc_id: int):
 async def document_save(doc_id: int, request: Request):
     body = await request.json()
     kw = {}
-    if "content" in body:
+    if "content" in body and not signing.is_signed(doc_id):  # 전자서명 완료본은 본문 변경 불가
         kw["content"] = sanitize_html(body["content"])
     for k in ("status", "signed_date", "title", "start_date", "end_date"):
         if k in body:
@@ -356,32 +505,67 @@ async def document_save(doc_id: int, request: Request):
     repo.update_document(doc_id, **kw)
     audit("hr", "문서 저장", f"doc#{doc_id}", kw.get("status", ""))
     msg = "저장되었습니다"
-    from app.config import settings as cfg
     if kw.get("status") in ("체결완료", "발급완료") and cfg.pdf_on_signed:
-        ok, m = _store_pdf(doc_id)
+        ok, m = await run_in_threadpool(services.store_document_pdf, doc_id)
         msg += " · " + m
     return {"ok": True, "message": msg}
 
 
-def _store_pdf(doc_id: int) -> tuple[bool, str]:
-    from app import storage
-    d = repo.get_document(doc_id)
-    try:
-        path, sha = storage.save_document_pdf(d)
-    except storage.StorageError as ex:
-        audit("hr", "PDF 보관 실패", f"doc#{doc_id}", str(ex)[:120])
-        return False, str(ex)
-    from app.db import execute
-    execute("UPDATE hr_documents SET pdf_path=?, pdf_sha256=?, pdf_saved_at=datetime('now','localtime') WHERE id=?",
-            (path, sha, doc_id))
-    audit("hr", "PDF NAS 보관", f"doc#{doc_id}", path)
-    return True, "PDF가 NAS에 보관되었습니다"
-
-
 @router.post("/documents/{doc_id}/pdf")
 def document_pdf_store(doc_id: int):
-    ok, m = _store_pdf(doc_id)
+    ok, m = services.store_document_pdf(doc_id)
     return _redirect(f"/hr/documents/{doc_id}", m)
+
+
+@router.post("/documents/{doc_id}/sign-request")
+def document_sign_request(request: Request, doc_id: int):
+    """근로계약서 전자서명 요청: 메일 설정이 없으면 화면에 링크를 표시합니다."""
+    d = repo.get_document(doc_id)
+    if not d or d["doc_group"] != "contract":
+        raise HTTPException(404, "계약서를 찾을 수 없습니다")
+    back = f"/hr/documents/{doc_id}"
+    emp = repo.get_employee(d["employee_id"])
+    if not emp.get("email") or not emp.get("birth_date"):
+        return _redirect(back, "임직원 정보에 이메일과 생년월일이 있어야 서명을 요청할 수 있습니다")
+    if signing.is_signed(doc_id):
+        return _redirect(back, "이미 전자서명이 완료된 문서입니다")
+    if "ph-missing" in (d["content"] or ""):
+        return _redirect(back, "비어 있는 항목이 있습니다. 문서를 완성한 뒤 요청하세요")
+    _, mailed, error = signing.create_request(d, emp, signing.base_url(request))
+    if mailed:
+        return _redirect(back, "직원 메일로 전자서명 요청을 보냈습니다")
+    return _redirect(back, f"{error or '메일 서버 미설정'}: 화면의 서명 링크를 직원에게 전달하세요")
+
+
+@router.post("/documents/{doc_id}/email")
+def document_email(doc_id: int):
+    """발급한 증명서 등을 PDF 첨부로 직원 메일에 전송."""
+    from app import storage
+    d = repo.get_document(doc_id)
+    if not d:
+        raise HTTPException(404, "문서를 찾을 수 없습니다")
+    back = f"/hr/documents/{doc_id}"
+    if not mailer.configured():
+        return _redirect(back, "메일 서버가 설정되지 않았습니다 (config/bms.toml [mail])")
+    if not d.get("email"):
+        return _redirect(back, "임직원 정보에 이메일이 없습니다")
+    if not d.get("pdf_path"):
+        ok, m = services.store_document_pdf(doc_id)
+        if not ok:
+            return _redirect(back, m)
+        d = repo.get_document(doc_id)
+    company = get_settings().get("company_name", "")
+    try:
+        pdf = storage.read_verified(d["pdf_path"], d["pdf_sha256"])
+        mailer.send(d["email"], f"[{company}] {d['title']}",
+                    f"{d['name']}님, 요청하신 문서를 첨부해 보내드립니다.\n\n{company} 경영관리팀",
+                    [(f"{d['category']}_{d['name']}.pdf", pdf)])
+    except (storage.StorageError, mailer.MailError) as ex:
+        audit("hr", "메일 전송 실패", f"doc#{doc_id}", str(ex)[:120])
+        return _redirect(back, str(ex))
+    repo.update_document(doc_id, emailed_at=signing._now())
+    audit("hr", "문서 메일 전송", f"doc#{doc_id}", d["title"])
+    return _redirect(back, "직원 메일로 전송했습니다")
 
 
 @router.get("/documents/{doc_id}/pdf")
@@ -403,6 +587,8 @@ def document_pdf_download(doc_id: int):
 @router.post("/documents/{doc_id}/regenerate")
 def document_regenerate(doc_id: int):
     d = repo.get_document(doc_id)
+    if signing.is_signed(doc_id):
+        return _redirect(f"/hr/documents/{doc_id}", "전자서명이 완료된 문서는 다시 작성할 수 없습니다")
     tpl = repo.get_template(d["template_id"]) if d and d["template_id"] else None
     if not tpl:
         return _redirect(f"/hr/documents/{doc_id}", "원본 템플릿이 없어 재생성할 수 없습니다")
@@ -477,7 +663,11 @@ async def certificate_create(request: Request):
         params=json.dumps(params, ensure_ascii=False), content=content, status="발급완료",
         signed_date=today().isoformat(),
     )
-    return _redirect(f"/hr/documents/{doc_id}", f"{params['doc_no']} 발급되었습니다")
+    msg = f"{params['doc_no']} 발급되었습니다"
+    if cfg.pdf_on_signed:
+        _, m = await run_in_threadpool(services.store_document_pdf, doc_id)
+        msg += " · " + m
+    return _redirect(f"/hr/documents/{doc_id}", msg)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -544,9 +734,8 @@ def salary_export(year: int):
                     r["raise_amount"] if r["raise_amount"] is not None else "",
                     f"{r['raise_rate']:.2f}" if r["raise_rate"] is not None else "",
                     r["cur"]["reason"] if r["cur"] else ""])
-    fname = quote(f"연봉현황_{year}.csv")
-    return StreamingResponse(iter(["﻿" + buf.getvalue()]), media_type="text/csv; charset=utf-8",
-                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{fname}"})
+    audit("hr", "개인정보 내보내기", "연봉현황 CSV", str(year))
+    return _csv_response(out, f"연봉현황_{year}.csv")
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -586,6 +775,8 @@ async def reward_save(request: Request):
     if f.get("kind") == "징계" and not f.get("expunge_date") and f.get("action_date"):
         m = DISCIPLINE_EXPUNGE_MONTHS.get(f.get("category"), 12)
         f["expunge_date"] = add_months(to_date(f["action_date"]), m).isoformat()
+    if f.get("category") in REWARD_ETC and (f.get("category_etc") or "").strip():
+        f["category"] = f["category_etc"].strip()
     repo.save_reward(int(f.get("id") or 0) or None, f)
     audit("hr", "상벌 저장", f.get("employee_id", ""), f"{f.get('kind')}/{f.get('category')}")
     return _redirect(f.get("next") or "/hr/rewards", "저장되었습니다")

@@ -11,6 +11,7 @@
     <div class="col-md-2"><label class="form-label small">구분</label><select class="form-select form-select-sm" name="kind" id="rwKind">
       <option>포상</option><option>징계</option></select></div>
     <div class="col-md-3"><label class="form-label small">종류</label><select class="form-select form-select-sm" name="category" id="rwCat"></select></div>
+    <div class="col-md-3 d-none" id="rwEtcBox"><label class="form-label small">종류 직접입력</label><input class="form-control form-control-sm" name="category_etc" id="rwEtc" placeholder="예: 시말서"></div>
     <div class="col-md-3"><label class="form-label small">일자</label><input type="date" class="form-control form-control-sm" name="action_date" value="{{ today().isoformat() }}" required></div>
     <div class="col-md-8"><label class="form-label small">사유</label><input class="form-control form-control-sm" name="reason" required></div>
     <div class="col-md-4 rw-reward"><label class="form-label small">포상금(원)</label><input type="number" class="form-control form-control-sm" name="amount" step="10000"></div>
@@ -33,7 +34,12 @@
     document.querySelectorAll('.rw-reward').forEach(el => el.classList.toggle('d-none', kind.value !== '포상'));
     hint();
   };
-  const hint = () => { const m = EXP[cat.value]; document.getElementById('rwExpHint').textContent = m ? `비우면 ${m}개월 후로 자동 계산` : ''; };
+  const hint = () => {
+    const m = EXP[cat.value]; document.getElementById('rwExpHint').textContent = m ? `비우면 ${m}개월 후로 자동 계산` : '';
+    const etc = cat.value.startsWith('기타');
+    document.getElementById('rwEtcBox').classList.toggle('d-none', !etc);
+    document.getElementById('rwEtc').required = etc;
+  };
   kind.addEventListener('change', sync); cat.addEventListener('change', hint); sync();
 })();
 </script>

@@ -39,7 +39,9 @@ document.addEventListener('submit', (e) => {
 document.addEventListener('input', (e) => {
   if (!e.target.matches('[data-money]')) return;
   const hint = document.getElementById(e.target.dataset.money);
-  if (hint) hint.textContent = e.target.value ? fmt.won(e.target.value) + '원 (월 ' + fmt.won(e.target.value / 12) + '원)' : '';
+  if (hint) hint.textContent = e.target.value ? fmt.won(e.target.value) + '원' : '';
+  const monthly = document.getElementById(e.target.dataset.monthly);
+  if (monthly) monthly.value = e.target.value ? fmt.won(Math.ceil(e.target.value / 12)) : '';  // 회사 연봉계약서 기준 원 단위 올림
 });
 
 // 플래시 토스트 자동 숨김

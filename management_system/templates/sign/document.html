@@ -1,0 +1,35 @@
+{% extends "sign/_base.html" %}
+{% block title %}{{ doc.title }}{% endblock %}
+{% block content %}
+<div class="paper-wrap mb-3"><div class="paper">{{ doc.content|safe }}</div></div>
+<form method="post" action="/sign/{{ token }}/submit" class="card" id="signForm">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="signature" id="signature">
+  <div class="card-body">
+    <h6>서명</h6>
+    <p class="small text-muted mb-2">아래 칸에 마우스나 손가락으로 서명해 주세요.</p>
+    <canvas class="sign-pad mb-2" id="pad" width="920" height="340"></canvas>
+    <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="clearPad">다시 쓰기</button>
+    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="agree" value="1" id="agree" required>
+      <label class="form-check-label small" for="agree">위 내용을 모두 확인했으며, 전자적 방식으로 서명하고 계약서를 전자문서로 교부받는 데 동의합니다.</label></div>
+    <button class="btn btn-primary w-100">서명 완료</button>
+    <div class="text-danger small mt-2 d-none" id="padError">서명을 입력해 주세요.</div>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+const pad = document.getElementById('pad'), ctx = pad.getContext('2d');
+ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111';
+let drawing = false, drawn = false;
+const point = (e) => { const r = pad.getBoundingClientRect(); return [(e.clientX - r.left) * pad.width / r.width, (e.clientY - r.top) * pad.height / r.height]; };
+pad.addEventListener('pointerdown', (e) => { drawing = true; pad.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.moveTo(...point(e)); });
+pad.addEventListener('pointermove', (e) => { if (!drawing) return; ctx.lineTo(...point(e)); ctx.stroke(); drawn = true; });
+pad.addEventListener('pointerup', () => { drawing = false; });
+document.getElementById('clearPad').addEventListener('click', () => { ctx.clearRect(0, 0, pad.width, pad.height); drawn = false; });
+document.getElementById('signForm').addEventListener('submit', (e) => {
+  if (!drawn) { e.preventDefault(); document.getElementById('padError').classList.remove('d-none'); return; }
+  document.getElementById('signature').value = pad.toDataURL('image/png');
+});
+</script>
+{% endblock %}

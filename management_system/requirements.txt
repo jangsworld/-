@@ -8,6 +8,17 @@ argon2-cffi>=23       # 비밀번호 해시(Argon2id)
 nh3>=0.2              # 에디터 HTML 허용목록 정화
 # PDF 변환(NAS 보관) – Windows 에서는 설치된 Edge 사용
 playwright>=1.40
+# 임직원 서류 읽기: PDF 텍스트·스캔 이미지·한글 미리보기, 스캔본은 Windows 내장 OCR
+pypdfium2>=4.30
+pillow>=10
+olefile>=0.47
+winrt-runtime>=2.0; sys_platform == "win32"
+winrt-Windows.Foundation>=2.0; sys_platform == "win32"
+winrt-Windows.Foundation.Collections>=2.0; sys_platform == "win32"
+winrt-Windows.Globalization>=2.0; sys_platform == "win32"
+winrt-Windows.Graphics.Imaging>=2.0; sys_platform == "win32"
+winrt-Windows.Media.Ocr>=2.0; sys_platform == "win32"
+winrt-Windows.Storage.Streams>=2.0; sys_platform == "win32"
 # 테스트
 httpx
 pytest

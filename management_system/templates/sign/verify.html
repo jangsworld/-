@@ -1,0 +1,14 @@
+{% extends "sign/_base.html" %}
+{% block content %}
+<form method="post" action="/sign/{{ token }}/verify" class="card mx-auto" style="max-width:420px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="card-body p-4">
+    <h5 class="mb-3">본인 확인</h5>
+    <label class="form-label small">생년월일 6자리</label>
+    <input class="form-control mb-2" name="birth" inputmode="numeric" pattern="\d{6}" maxlength="6" placeholder="예: 900101" autocomplete="off" required autofocus>
+    {% if error %}<div class="text-danger small mb-2">{{ error }}</div>{% endif %}
+    <button class="btn btn-primary w-100">확인</button>
+    <div class="help mt-2">5회 틀리면 링크가 잠깁니다.</div>
+  </div>
+</form>
+{% endblock %}
