@@ -1,6 +1,7 @@
 """서버 점검: 시간대, PDF 변환, 한글 OCR 이 서비스 환경에서 동작하는지 확인합니다."""
 import glob
 import os
+import sqlite3
 import sys
 import time
 
@@ -8,6 +9,7 @@ sys.path.insert(0, os.getcwd())
 
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
+from app.config import settings  # noqa: E402
 from app.modules.hr import intake  # noqa: E402
 from app.storage import render_pdf  # noqa: E402
 
@@ -47,10 +49,26 @@ def ocr():
     return "A4 서류·한 줄 이미지 모두 인식"
 
 
+def data():
+    """이름 등 개인정보 없이 건수만 표시."""
+    conn = sqlite3.connect(f"file:{settings.db_path}?mode=ro", uri=True)
+    tables = ("employees", "employee_drafts", "ga_vehicles", "ga_vehicle_logs", "doc_templates", "codes")
+    return ", ".join(f"{t} {conn.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0]}" for t in tables)
+
+
+def nas():
+    root = settings.employee_root
+    if not root:
+        return "미연결"
+    return f"{root} 폴더 {sum(1 for e in os.scandir(root) if e.is_dir())}개"
+
+
 results = [
     check("Python", lambda: sys.version.split()[0]),
     check("시간대", lambda: time.strftime("%Y-%m-%d %H:%M %Z")),
     check("PDF 변환", pdf),
     check("한글 OCR", ocr),
+    check("자료 건수", data),
+    check("NAS", nas),
 ]
 sys.exit(0 if all(results) else 1)

@@ -104,7 +104,8 @@ src, dst = sqlite3.connect('$BASE/data/bms.db'), sqlite3.connect('$TMP/bms.db')
 src.backup(dst)
 assert dst.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
 "
-tar -czf - -C "$TMP" bms.db -C "$BASE/data" asset_photos 2>/dev/null \
+install -d -o bms -g bms -m 700 "$BASE/data/asset_photos"
+tar -czf - -C "$TMP" bms.db -C "$BASE/data" asset_photos \
     | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$KEY" -out "$OUT"
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "file:$KEY" -in "$OUT" | tar -tzf - | grep -q '^bms.db$'
 find "$DEST" -maxdepth 1 -name 'bms-*.tgz.enc' -mtime +7 -delete
