@@ -71,12 +71,12 @@ def test_ocr_falls_back_to_tesseract(monkeypatch):
     monkeypatch.setattr(intake.shutil, "which", lambda name: "/usr/bin/tesseract")
     monkeypatch.setattr(intake.subprocess, "run", fake_run)
     assert intake._ocr_tesseract(Image.new("RGB", (8, 8))) == "주민등록등본"
-    assert seen["cmd"][-1] == "kor+eng" and seen["png"] == b"\x89PNG"
+    assert "kor+eng" in seen["cmd"] and seen["png"] == b"\x89PNG"
     calls = []
 
     def blank_first(cmd, input, capture_output, timeout):
         calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, "등본".encode() if "--psm" in cmd else b"\n", b"")
+        return subprocess.CompletedProcess(cmd, 0, "등본".encode() if "11" in cmd else b"\n", b"")
 
     monkeypatch.setattr(intake.subprocess, "run", blank_first)
     assert intake._ocr_tesseract(Image.new("RGB", (8, 8))) == "등본" and len(calls) == 2

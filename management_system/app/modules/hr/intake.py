@@ -63,10 +63,10 @@ def _ocr_tesseract(img) -> str | None:
         return None
     png = io.BytesIO()
     img.convert("RGB").save(png, "PNG")
-    # 기본 페이지 분석이 글자가 적은 서류를 빈 페이지로 볼 때가 있어, 비면 단일 글상자로 다시 읽음
-    for options in ([], ["--psm", "6"]):
+    # 기본 페이지 분석은 짧은 줄·표 서류를 거의 못 읽음. 단일 열 분석을 쓰고, 비면 흩어진 글자로 다시 읽음
+    for psm in ("4", "11"):
         try:
-            done = subprocess.run([exe, "stdin", "stdout", "-l", "kor+eng", *options], input=png.getvalue(),
+            done = subprocess.run([exe, "stdin", "stdout", "-l", "kor+eng", "--psm", psm, "--dpi", "180"], input=png.getvalue(),
                                   capture_output=True, timeout=OCR_TIMEOUT_SEC)
         except (OSError, subprocess.TimeoutExpired) as ex:
             log.warning("Tesseract OCR 실패: %s", ex.__class__.__name__)
