@@ -4,7 +4,8 @@
   GET /cars, POST /drivings (검색기간 최대 100일), 인증 헤더 x-cartax-api-key
 
 API 키는 설정 화면에서 입력하며 DB 에 암호화 저장합니다.
-같은 운행기록은 external_id 로 구분해 중복 등록하지 않고, 카택스에서 수정된 건만 갱신합니다.
+BMS 는 카택스 내용을 그대로 보여 주기만 합니다. 카택스로 보내는 자료가 없고(GET /cars, 조회용 POST /drivings 만 호출),
+가져온 기록은 BMS 에서 고칠 수 없습니다. 카택스에서 수정·삭제된 건은 다음 동기화 때 그대로 반영합니다.
 """
 import json
 import logging
@@ -26,7 +27,6 @@ BASE_URL = "https://public.carbeast.co.kr"
 MAX_RANGE_DAYS = 100
 SYNC_HOURS = 6                     # 자동 동기화 주기
 AUTO_LOOKBACK_DAYS = 35            # 자동 동기화 범위 (월말 수정분 반영)
-DRIVER_TAG = re.compile(r"\s*\[카택스 운전자: (.+?)\]")
 
 _stop = threading.Event()
 _thread: threading.Thread | None = None
@@ -144,12 +144,23 @@ def relink_drivers(drivers: dict) -> int:
     """이름만 남아 있던 기록을 나중에 등록된 임직원과 연결합니다."""
     linked = 0
     for row in query("SELECT id, note FROM ga_vehicle_logs WHERE driver_id IS NULL AND note LIKE '%[카택스 운전자:%'"):
-        tag = DRIVER_TAG.search(row["note"])
+        tag = repo.DRIVER_TAG.search(row["note"])
         if tag and tag.group(1) in drivers:
             execute("UPDATE ga_vehicle_logs SET driver_id=?, note=? WHERE id=?",
-                    (drivers[tag.group(1)], DRIVER_TAG.sub("", row["note"]).strip() or None, row["id"]))
+                    (drivers[tag.group(1)], repo.DRIVER_TAG.sub("", row["note"]).strip() or None, row["id"]))
             linked += 1
     return linked
+
+
+def _remove_missing(seen: set, start: str, end: str) -> int:
+    """카택스에서 삭제된 기록을 기간 안에서 지웁니다."""
+    removed = 0
+    for row in query("SELECT id, external_id FROM ga_vehicle_logs WHERE external_id IS NOT NULL AND drive_date BETWEEN ? AND ?",
+                     (start, end)):
+        if row["external_id"] not in seen:
+            execute("DELETE FROM ga_vehicle_logs WHERE id=?", (row["id"],))
+            removed += 1
+    return removed
 
 
 def suspect_count(start: str, end: str) -> int:
@@ -177,9 +188,10 @@ def sync(start: str, end: str) -> str:
         plates, car_added = _ensure_vehicles(_call("/cars", key))
         drivers = _driver_index()
         added = updated = 0
-        skipped, purposes = Counter(), Counter()
+        skipped, purposes, seen = Counter(), Counter(), set()
         for a, b in _windows(start, end):
             for row in _call("/drivings", key, {"startDate": a, "endDate": b}):
+                seen.add(f"cartax:{row.get('id')}")
                 vehicle_id = plates.get(_plate(row.get("carNumber")))
                 if not vehicle_id:
                     skipped[f"카택스 차량 목록에 없음({row.get('carNumber') or '번호 없음'})"] += 1
@@ -189,18 +201,18 @@ def sync(start: str, end: str) -> str:
                     skipped["운행일 없음"] += 1
                     continue
                 purposes[values["external_purpose"]] += 1
-                old = query_one("SELECT id, purpose, external_updated, external_purpose FROM ga_vehicle_logs WHERE external_id=?",
+                old = query_one("SELECT id, external_updated, external_purpose FROM ga_vehicle_logs WHERE external_id=?",
                                 (values["external_id"],))
                 if not old:
                     repo.save("ga_vehicle_logs", None, values, quiet=True)
                     added += 1
                 elif old["external_updated"] != values["external_updated"] or not old["external_purpose"]:
-                    if values["purpose"] == PURPOSE_PENDING and old["external_purpose"] == "미지정":
-                        values["purpose"] = old["purpose"]        # 담당자가 지정한 구분을 유지
                     repo.save("ga_vehicle_logs", old["id"], values, quiet=True)
                     updated += 1
+        removed = _remove_missing(seen, start, end) if seen else 0     # 응답이 비면 오류일 수 있어 지우지 않음
         linked, suspect, pending = relink_drivers(drivers), suspect_count(start, end), pending_count(start, end)
-        result = f"카택스 동기화: 운행기록 신규 {added}건, 수정 {updated}건" + (f", 차량 {car_added}대 등록" if car_added else "") + \
+        result = f"카택스 동기화: 운행기록 신규 {added}건, 수정 {updated}건" + (f", 삭제 {removed}건" if removed else "") + \
+                 (f", 차량 {car_added}대 등록" if car_added else "") + \
                  (f", 운전자 연결 {linked}건" if linked else "") + (f", 주행거리 확인 필요 {suspect}건" if suspect else "") + \
                  (f", 목적 확인 필요 {pending}건" if pending else "") + \
                  (f", 제외 {skipped.total()}건 ({_top(skipped)})" if skipped else "") + \

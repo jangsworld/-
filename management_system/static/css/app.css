@@ -141,3 +141,8 @@ body { background: var(--bg); font-family: "Pretendard", "Malgun Gothic", "Apple
 .asset-label { display: flex; gap: 8px; align-items: center; border: 1px dashed #9aa5b1; border-radius: 6px; padding: 8px; background: #fff; break-inside: avoid; }
 .asset-label .qr svg { width: 64px; height: 64px; }
 @media print { .label-sheet { grid-template-columns: repeat(3, 1fr); gap: 4mm; } .asset-label { border-style: solid; } }
+
+/* 구분값 설정 */
+.code-groups .list-group-item { font-size: .88rem; padding: .5rem .8rem; }
+.code-groups .list-group-item.active { background: var(--brand); border-color: var(--brand); }
+.code-name:not(:focus):not(:hover) { border-color: transparent; background: transparent; }

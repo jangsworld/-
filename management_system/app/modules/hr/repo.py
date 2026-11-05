@@ -595,6 +595,11 @@ def list_codes_all() -> list[dict]:
     return query("SELECT * FROM codes ORDER BY group_code, sort_order, id")
 
 
+def code_group(cid: int) -> str | None:
+    code = query_one("SELECT group_code FROM codes WHERE id=?", (cid,))
+    return code["group_code"] if code else None
+
+
 def add_code(group, name):
     with tx() as conn:
         mx = conn.execute("SELECT COALESCE(MAX(sort_order),0)+1 FROM codes WHERE group_code=?",

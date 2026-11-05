@@ -168,7 +168,10 @@ def test_code_settings_add_move_and_used_by_screens(admin):
 
 
 def test_settings_page_and_permissions(admin, ga):
-    assert "구분값 설정" in admin.get("/settings").text
+    assert 'href="/settings/codes"' in admin.get("/settings").text
+    page = admin.get("/settings/codes?group=ASSET_EVENT").text
+    assert "자산 처리 구분" in page and "자산 상태 변경" in page and "부서" not in page.split("code-groups")[1]
+    assert ga.get("/settings/codes").status_code == 403
     assert ga.get("/settings").status_code == 403
     assert ga.post("/settings/mail", data={"mail_host": "x"}).status_code == 403
 
@@ -278,6 +281,7 @@ def test_cartax_sync_imports_and_dedupes(admin, monkeypatch):
     first, second = logs["cartax:a1"], logs["cartax:a2"]
     assert first["driver_id"] == emp["id"] and first["destination"] == "고객사" and first["toll_cost"] == 500
     assert second["purpose"] == "출퇴근" and second["driver_id"] is None and "없는사람" in second["note"]
+    assert second["driver_name"] == "없는사람"                     # 조회 화면에는 카택스 이름을 표시
     assert second["km_end"] == 1060                               # 계기판 역전 시 주행거리로 보정
 
     assert "신규 0건, 수정 0건" in cartax.sync("2026-03-01", "2026-03-31")
@@ -338,14 +342,35 @@ def test_cartax_blank_purpose_needs_review(admin, monkeypatch):
     csv = admin.get(f"/ga/vehicles/{vehicle['id']}/logbook.csv?year=2026").content.decode("utf-8-sig")
     assert "[목적 확인 필요]" in csv
     page = admin.get(f"/ga/vehicles/{vehicle['id']}?year=2026").text
-    assert "확인필요" in page and "구분을 정할 때까지" in page
+    assert "확인필요" in page and "목적을 입력할 때까지" in page
 
-    admin.post("/ga/vlogs/save", data={"id": log["id"], "vehicle_id": vehicle["id"], "drive_date": log["drive_date"],
-                                       "driver_id": emp["id"], "purpose": "비업무", "km_start": 1000, "km_end": 1030})
-    rows[0]["updateTime"] = "t2"
-    cartax.sync("2026-03-01", "2026-03-31")                                     # 지정한 구분을 덮어쓰지 않음
-    assert next(l for l in repo.vehicle_logs(vehicle["id"]) if l["external_id"] == "cartax:q1")["purpose"] == "비업무"
+    rows[0].update(updateTime="t2", purpose="일반업무")
+    cartax.sync("2026-03-01", "2026-03-31")                                     # 카택스 내용을 그대로 반영
+    assert next(l for l in repo.vehicle_logs(vehicle["id"]) if l["external_id"] == "cartax:q1")["purpose"] == "일반업무"
+    rows.pop()
+    assert "삭제 1건" in cartax.sync("2026-03-01", "2026-03-31")                  # 카택스에서 지운 기록도 반영
     execute("DELETE FROM ga_vehicle_logs WHERE external_id LIKE 'cartax:q%'")
+    set_setting("cartax_api_key", "")
+
+
+def test_cartax_logs_are_read_only(admin, monkeypatch):
+    emp = repo.employees_brief()[0]
+    monkeypatch.setattr(cartax, "_call", lambda path, key, body=None: CARS if path == "/cars" else [_driving("r1", emp["name"])])
+    set_setting("cartax_api_key", "secret-key")
+    cartax.sync("2026-03-01", "2026-03-31")
+    vehicle = next(v for v in repo.list_vehicles() if v["plate_no"] == "12가 3456")
+    log = next(l for l in repo.vehicle_logs(vehicle["id"]) if l["external_id"] == "cartax:r1")
+
+    data = {"vehicle_id": vehicle["id"], "drive_date": "2026-03-02", "driver_id": emp["id"], "purpose": "비업무", "km_start": 1, "km_end": 2}
+    admin.post("/ga/vlogs/save", data={**data, "id": log["id"]})
+    admin.post("/ga/vlogs/save", data=data)                                     # 같은 차량에 수기 추가도 차단
+    admin.post(f"/ga/vlogs/{log['id']}/delete", data={"next": f"/ga/vehicles/{vehicle['id']}"})
+    logs = repo.vehicle_logs(vehicle["id"])
+    assert len(logs) == 1 and logs[0]["purpose"] == "일반업무"
+    page = admin.get(f"/ga/vehicles/{vehicle['id']}?year=2026").text
+    assert "조회 전용" in page and f"/ga/vlogs/{log['id']}/delete" not in page
+    assert 'data-bs-target="#logModal"' not in page
+    execute("DELETE FROM ga_vehicle_logs WHERE external_id='cartax:r1'")
     set_setting("cartax_api_key", "")
 
 

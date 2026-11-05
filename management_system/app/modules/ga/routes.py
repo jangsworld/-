@@ -230,6 +230,9 @@ def vehicles(request: Request):
     }, "ga.vehicles")
 
 
+CARTAX_READONLY = "카택스 차량의 운행기록은 BMS 에서 입력·수정·삭제할 수 없습니다. 카택스에서 고쳐 주세요"
+
+
 @router.post("/vehicles/cartax-sync")
 async def vehicles_cartax_sync(request: Request):
     f = await request.form()
@@ -253,6 +256,7 @@ def vehicle_detail(request: Request, vid: int, year: int | None = None):
         "maint": repo.vehicle_maint(vid, year), "odometer": repo.last_odometer(vid), "purposes": DRIVE_PURPOSES,
         "maint_categories": get_codes("MAINT_CATEGORY"), "ownership": get_codes("VEHICLE_OWNERSHIP"),
         "statuses": VEHICLE_STATUSES, "fuels": get_codes("FUEL"), "years": list(range(today().year, today().year - 5, -1)),
+        "cartax_vehicle": repo.is_cartax_vehicle(vid),
     }, "ga.vehicles")
 
 
@@ -260,6 +264,8 @@ def vehicle_detail(request: Request, vid: int, year: int | None = None):
 async def vlog_save(request: Request):
     f = dict(await request.form())
     vid = int(f["vehicle_id"])
+    if repo.is_cartax_vehicle(vid) or repo.is_cartax_log(int(f.get("id") or 0)):
+        return _redirect(f"/ga/vehicles/{vid}", CARTAX_READONLY)
     try:
         ks, ke = int(str(f["km_start"]).replace(",", "")), int(str(f["km_end"]).replace(",", ""))
     except (KeyError, ValueError):
@@ -421,6 +427,8 @@ async def generic_save(request: Request, kind: str):
 @router.post("/{kind}/{rid}/delete")
 async def generic_delete(request: Request, kind: str, rid: int):
     f = dict(await request.form())
+    if kind == "vlogs" and repo.is_cartax_log(rid):
+        return _redirect(f.get("next") or "/ga/vehicles", CARTAX_READONLY)
     repo.delete(_table(kind), rid)
     if kind == "assets":
         photos.delete(rid)

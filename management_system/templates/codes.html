@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}구분값 설정{% endblock %}
+{% block page_title %}<i class="bi bi-list-check me-2"></i>구분값 설정{% endblock %}
+{% block content %}
+<ul class="nav nav-pills mb-3">
+  {% for name, groups in sections.items() %}
+  <li class="nav-item"><a class="nav-link py-1 {% if name == section %}active{% endif %}" href="/settings/codes?group={{ groups|first }}">{{ name }}</a></li>
+  {% endfor %}
+</ul>
+<div class="row g-3">
+  <div class="col-lg-3">
+    <select class="form-select d-lg-none" id="groupSelect" aria-label="구분 선택">
+      {% for g, gname in sections[section].items() %}<option value="{{ g }}" {% if g == group %}selected{% endif %}>{{ gname }} ({{ counts[g] }})</option>{% endfor %}
+    </select>
+    <div class="list-group code-groups d-none d-lg-flex">
+      {% for g, gname in sections[section].items() %}
+      <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center {% if g == group %}active{% endif %}" href="/settings/codes?group={{ g }}">
+        {{ gname }}<span class="badge rounded-pill {{ 'text-bg-light' if g == group else 'text-bg-secondary' }}">{{ counts[g] }}</span></a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="col-lg-9">
+    <div class="card">
+      <div class="card-header">{{ group_name }}{% if hint %}<div class="help fw-normal mt-1">{{ hint }}</div>{% endif %}</div>
+      <table class="table align-middle mb-0 code-table">
+        <thead><tr><th style="width:88px">순서</th><th>이름</th>{% if group == 'ASSET_EVENT' %}<th style="width:220px">자산 상태 변경</th>{% endif %}<th style="width:64px"></th></tr></thead>
+        <tbody>{% for c in rows %}
+          <tr>
+            <td class="text-nowrap">
+              <form method="post" action="/settings/codes/{{ c.id }}/move" class="d-inline"><input type="hidden" name="dir" value="-1"><button class="btn btn-sm btn-light" title="위로" aria-label="위로" {{ 'disabled' if loop.first }}><i class="bi bi-arrow-up"></i></button></form>
+              <form method="post" action="/settings/codes/{{ c.id }}/move" class="d-inline"><input type="hidden" name="dir" value="1"><button class="btn btn-sm btn-light" title="아래로" aria-label="아래로" {{ 'disabled' if loop.last }}><i class="bi bi-arrow-down"></i></button></form>
+            </td>
+            <td><form method="post" action="/settings/codes/{{ c.id }}/rename" class="d-flex gap-2 align-items-center">
+              <input class="form-control form-control-sm code-name" name="name" value="{{ c.name }}" aria-label="이름" required>
+              <button class="btn btn-sm btn-primary text-nowrap" hidden>저장</button></form></td>
+            {% if group == 'ASSET_EVENT' %}
+            <td><form method="post" action="/settings/codes/{{ c.id }}/behavior"><select class="form-select form-select-sm" name="behavior" data-autosubmit aria-label="자산 상태 변경">
+              {% for v, t in behaviors.items() %}<option value="{{ v }}" {% if (c.behavior or '') == v %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></form></td>
+            {% endif %}
+            <td class="text-end"><form method="post" action="/settings/codes/{{ c.id }}/delete" data-confirm="'{{ c.name }}' 항목을 목록에서 삭제할까요? 이미 등록된 자료는 유지됩니다."><button class="btn btn-sm btn-link text-danger p-0" title="삭제" aria-label="삭제"><i class="bi bi-trash"></i></button></form></td>
+          </tr>
+        {% else %}<tr><td colspan="4" class="text-center text-muted p-4">등록된 항목이 없습니다</td></tr>{% endfor %}</tbody>
+      </table>
+      <div class="card-footer">
+        <form method="post" action="/settings/codes" class="d-flex gap-2"><input type="hidden" name="group_code" value="{{ group }}">
+          <input class="form-control form-control-sm" name="name" placeholder="새 항목 이름" aria-label="새 항목 이름" required>
+          <button class="btn btn-sm btn-primary text-nowrap"><i class="bi bi-plus"></i> 추가</button></form>
+      </div>
+    </div>
+    <div class="help mt-2">이름을 고치면 저장 버튼이 나타나며, 이미 등록된 자료의 값도 함께 바뀝니다. 삭제하면 목록에서만 빠지고 등록된 자료는 유지됩니다.</div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+document.getElementById('groupSelect').addEventListener('change', (e) => { location.href = '/settings/codes?group=' + encodeURIComponent(e.target.value); });
+document.querySelectorAll('.code-name').forEach(input => input.addEventListener('input', () => {
+  input.form.querySelector('button').hidden = input.value.trim() === input.defaultValue;
+}));
+</script>
+{% endblock %}

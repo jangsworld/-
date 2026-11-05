@@ -10,7 +10,7 @@
   <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">올해 차량 운영비</div><div class="kpi-value">{{ total.cost_total|man_won }}원</div><div class="kpi-sub">유류 {{ total.fuel|man_won }} · 정비 {{ total.maint|man_won }}</div></div></div>
 </div>
 {% if total.suspect %}<div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle"></i> 올해 운행기록 {{ total.suspect }}건의 주행거리가 비정상입니다. 주행거리와 업무사용비율이 왜곡되니, 아래 표시된 차량을 열어 확인하세요.</div>{% endif %}
-{% if total.pending %}<div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle"></i> 올해 운행기록 {{ total.pending }}건의 사용 구분이 비어 있어 "확인필요"로 표시했습니다. 구분을 정할 때까지 업무용 거리에 포함되지 않습니다.</div>{% endif %}
+{% if total.pending %}<div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle"></i> 올해 운행기록 {{ total.pending }}건은 카택스에 목적이 비어 있어 "확인필요"로 표시했습니다. 카택스에서 목적을 입력할 때까지 업무용 거리에 포함되지 않습니다.</div>{% endif %}
 {% if can_write %}<div class="card mb-3"><div class="card-body py-2">
   <form method="post" action="/ga/vehicles/cartax-sync" class="row g-2 align-items-center" data-busy="가져오는 중…">
     <div class="col-auto fw-semibold small"><i class="bi bi-arrow-left-right"></i> 카택스</div>

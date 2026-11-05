@@ -38,7 +38,8 @@
         <div class="side-group-title"><i class="bi bi-gear-fill"></i>시스템 관리</div>
         <a class="side-link {% if active_menu == 'admin.users' %}active{% endif %}" href="/admin/users"><i class="bi bi-people"></i>사용자·권한 관리</a>
         <a class="side-link {% if active_menu == 'admin.audit' %}active{% endif %}" href="/admin/audit"><i class="bi bi-journal-text"></i>접속기록(감사로그)</a>
-        <a class="side-link {% if active_menu == 'settings' %}active{% endif %}" href="/settings"><i class="bi bi-sliders"></i>회사정보·코드 설정</a>
+        <a class="side-link {% if active_menu == 'settings' %}active{% endif %}" href="/settings"><i class="bi bi-sliders"></i>회사정보·환경설정</a>
+        <a class="side-link {% if active_menu == 'codes' %}active{% endif %}" href="/settings/codes"><i class="bi bi-list-check"></i>구분값 설정</a>
       </div>
       {% endif %}
     </nav>

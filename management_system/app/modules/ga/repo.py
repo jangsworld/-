@@ -1,8 +1,12 @@
 """총무관리 데이터 접근 계층."""
+import re
+
 from app.common import today, to_date
 from app.db import query, query_one, execute, audit, get_behaviors
 from app.security.crypto import enc
 from app.modules.ga.constants import ASSET_BEHAVIORS, ASSET_CATEGORIES, DEFAULT_EVENT_RULES, ODOMETER_SUSPECT_KM
+
+DRIVER_TAG = re.compile(r"\s*\[카택스 운전자: (.+?)\]")   # 임직원과 연결되지 않은 카택스 운전자 이름
 
 # 테이블별 저장 가능 필드 / 정수 필드 / 암호화 필드
 TABLES = {
@@ -181,7 +185,18 @@ def vehicle_logs(vehicle_id=None, year=None, month=None) -> list[dict]:
     for r in rows:
         r["distance"] = max(0, (r["km_end"] or 0) - (r["km_start"] or 0))
         r["suspect"] = r["distance"] > ODOMETER_SUSPECT_KM
+        tag = DRIVER_TAG.search(r["note"] or "")
+        if tag and not r["driver_name"]:
+            r["driver_name"] = tag.group(1)
     return rows
+
+
+def is_cartax_vehicle(vehicle_id: int) -> bool:
+    return bool(query_one("SELECT 1 x FROM ga_vehicle_logs WHERE vehicle_id=? AND external_id IS NOT NULL LIMIT 1", (vehicle_id,)))
+
+
+def is_cartax_log(log_id: int) -> bool:
+    return bool(query_one("SELECT 1 x FROM ga_vehicle_logs WHERE id=? AND external_id IS NOT NULL", (log_id,)))
 
 
 def last_odometer(vehicle_id: int) -> int:

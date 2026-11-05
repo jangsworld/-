@@ -1,9 +1,10 @@
 """BMS 경영관리업무시스템 FastAPI 애플리케이션."""
 import logging
 import os
+from collections import Counter
 from contextlib import asynccontextmanager
 from logging.handlers import TimedRotatingFileHandler
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
@@ -131,14 +132,20 @@ CODE_SECTIONS = {
               "RETENTION": "문서 보존기간", "SEAL_TYPE": "관인 종류", "GA_CONTRACT": "계약 구분",
               "EVENT_CATEGORY": "경조 구분", "EVENT_RELATION": "경조 관계"},
 }
+CODE_HINTS = {
+    "RANK": "연봉현황의 직급별 차트가 이 순서로 정렬됩니다.",
+    "INTAKE_DOC": "파일명에 이 단어가 있으면 제출로 표시됩니다. 학위|졸업 처럼 | 로 여러 단어를 지정할 수 있습니다.",
+    "ONBOARD": "인사기록카드의 체크리스트 탭에 표시됩니다.",
+    "OFFBOARD": "퇴사일이 있는 직원의 체크리스트 탭에 표시됩니다.",
+    "ASSET_EVENT": "항목마다 처리할 때 자산 상태를 어떻게 바꿀지 정합니다.",
+}
 
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
     return templates.TemplateResponse(request, "settings.html", {
-        "s": get_settings(), "labels": SETTING_LABELS, "codes": hr_repo.list_codes_all(),
+        "s": get_settings(), "labels": SETTING_LABELS,
         "active_menu": "settings", "msg": request.query_params.get("msg", ""),
-        "sections": CODE_SECTIONS, "behaviors": ASSET_BEHAVIORS,
         "cfg": {"포트": settings.port, "HTTPS": "사용" if settings.https else "미사용(내부 테스트용)",
                 "2단계 인증": "필수" if settings.require_2fa else "선택",
                 "세션 유휴 만료": f"{settings.session_idle_minutes}분",
@@ -206,25 +213,44 @@ async def settings_save(request: Request):
     return RedirectResponse("/settings?msg=" + quote("설정이 저장되었습니다"), status_code=303)
 
 
+@app.get("/settings/codes", response_class=HTMLResponse)
+def codes_page(request: Request, group: str = "DEPT"):
+    section = next((n for n, groups in CODE_SECTIONS.items() if group in groups), None)
+    if not section:
+        group, section = "DEPT", "공통"
+    codes = hr_repo.list_codes_all()
+    return templates.TemplateResponse(request, "codes.html", {
+        "sections": CODE_SECTIONS, "section": section, "group": group, "group_name": CODE_SECTIONS[section][group],
+        "rows": [c for c in codes if c["group_code"] == group], "counts": Counter(c["group_code"] for c in codes),
+        "behaviors": ASSET_BEHAVIORS, "hint": CODE_HINTS.get(group, ""),
+        "active_menu": "codes", "msg": request.query_params.get("msg", ""),
+    })
+
+
+def _codes_redirect(group: str | None, msg: str = "") -> RedirectResponse:
+    query = urlencode({"group": group or "DEPT", **({"msg": msg} if msg else {})})
+    return RedirectResponse("/settings/codes?" + query, status_code=303)
+
+
 @app.post("/settings/codes")
 async def code_add(request: Request):
     f = await request.form()
     if f.get("name"):
         hr_repo.add_code(f["group_code"], f["name"].strip())
-    return RedirectResponse("/settings?msg=" + quote("코드가 추가되었습니다") + "#codes", status_code=303)
+    return _codes_redirect(f.get("group_code"), "추가되었습니다")
 
 
 @app.post("/settings/codes/{cid}/rename")
 async def code_rename(request: Request, cid: int):
     name = str((await request.form()).get("name", "")).strip()
     ok = bool(name) and hr_repo.rename_code(cid, name)
-    return RedirectResponse("/settings?msg=" + quote("변경되었습니다" if ok else "같은 이름이 이미 있습니다") + "#codes", status_code=303)
+    return _codes_redirect(hr_repo.code_group(cid), "변경되었습니다" if ok else "같은 이름이 이미 있습니다")
 
 
 @app.post("/settings/codes/{cid}/move")
 async def code_move(request: Request, cid: int):
     hr_repo.move_code(cid, int((await request.form()).get("dir", 1)))
-    return RedirectResponse("/settings#codes", status_code=303)
+    return _codes_redirect(hr_repo.code_group(cid))
 
 
 @app.post("/settings/codes/{cid}/behavior")
@@ -232,10 +258,11 @@ async def code_behavior(request: Request, cid: int):
     value = str((await request.form()).get("behavior", ""))
     if value in ASSET_BEHAVIORS:
         hr_repo.set_code_behavior(cid, value)
-    return RedirectResponse("/settings?msg=" + quote("저장되었습니다") + "#codes", status_code=303)
+    return _codes_redirect(hr_repo.code_group(cid), "저장되었습니다")
 
 
 @app.post("/settings/codes/{cid}/delete")
 def code_delete(cid: int):
+    group = hr_repo.code_group(cid)
     hr_repo.delete_code(cid)
-    return RedirectResponse("/settings?msg=" + quote("코드가 삭제되었습니다") + "#codes", status_code=303)
+    return _codes_redirect(group, "삭제되었습니다")
