@@ -20,7 +20,7 @@
     <tbody>{% for c in rows %}<tr>
       <td><span class="badge text-bg-light border">{{ c.category }}</span></td><td class="fw-semibold">{{ c.title }}<div class="small text-muted">{{ c.contract_no or '' }}</div></td>
       <td>{{ c.counterparty }}</td><td class="small text-nowrap">{{ c.start_date or '' }} ~ {{ c.end_date or '' }}</td><td>{{ dday(c.dday, 60) }}</td>
-      <td class="num">{{ c.amount|won }}<div class="small text-muted">/{{ c.pay_cycle }}</div></td><td class="num">{{ c.monthly|won }}</td><td class="num">{{ c.deposit|won if c.deposit else '' }}</td>
+      <td class="num" title="{{ c.amount|vatinfo(c.amount_vat) }}">{{ c.amount|won }}<div class="small text-muted">/{{ c.pay_cycle }}{% if c.amount_vat %} · {{ c.amount_vat }}{% endif %}</div></td><td class="num">{{ c.monthly|won }}</td><td class="num">{{ c.deposit|won if c.deposit else '' }}</td>
       <td class="small text-nowrap">{{ '자동' if c.auto_renew else '수동' }}</td>
       <td class="small text-nowrap">{{ c.notice_date or '' }} {% if c.status == '유효' %}{{ dday(c.notice_dday) }}{% endif %}</td>
       <td class="text-nowrap"><span class="badge {{ {'유효':'text-bg-success','만료임박':'text-bg-warning','통보임박':'text-bg-danger','통보경과':'text-bg-warning','만료':'text-bg-danger','자동갱신':'text-bg-info','갱신확정':'text-bg-info'}.get(c.phase, 'text-bg-secondary') }}">{{ c.phase }}</span></td>
@@ -35,7 +35,7 @@
   {{ field('category', '구분', opts=categories, blank=False) }}{{ field('title', '계약명', req=True, col='col-md-8', ph='본사 사무실 임대차, 복합기 렌탈 등') }}
   {{ field('counterparty', '상대방', req=True) }}{{ field('contract_no', '계약번호') }}{{ field('manager_id', '담당자', opts=emp_opts) }}
   {{ field('start_date', '시작일', 'date') }}{{ field('end_date', '종료일', 'date') }}{{ field('status', '상태', opts=statuses, blank=False) }}
-  {{ field('amount', '금액(원)', 'number') }}{{ field('pay_cycle', '지급주기', opts=cycles.keys()|list, blank=False) }}{{ field('deposit', '보증금(원)', 'number') }}
+  {{ field('amount', '금액(원)', 'number') }}{{ field('amount_vat', '부가세 구분', opts=vat_types, blank=False) }}{{ field('pay_cycle', '지급주기', opts=cycles.keys()|list, blank=False) }}{{ field('deposit', '보증금(원)', 'number') }}
   {{ field('auto_renew', '자동갱신', 'checkbox', ph='만료 시 자동 연장') }}{{ field('notice_days', '통보기한(만료 N일 전)', 'number', value=30) }}
   {{ field('memo', '비고', 'textarea', col='col-12') }}
 {% endcall %}

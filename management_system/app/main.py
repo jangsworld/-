@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from logging.handlers import TimedRotatingFileHandler
 from urllib.parse import quote
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -13,8 +13,11 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.common import templates
 from app.config import APP_DIR, SYSTEM_CODE, SYSTEM_NAME, settings
-from app.db import init_db, get_settings, set_setting, DEFAULT_SETTINGS
+from app.db import audit, init_db, get_settings, set_setting, DEFAULT_SETTINGS
 from app.modules import MODULES
+from app import mailer
+from app.modules.ga import cartax
+from app.modules.ga.constants import ASSET_BEHAVIORS
 from app.modules.hr import intake, repo as hr_repo
 from app.modules.hr.routes import router as hr_router
 from app.modules.hr.signing import router as sign_router
@@ -22,6 +25,7 @@ from app.modules.ga.routes import router as ga_router
 from app.modules.ga import repo as ga_repo
 from app.security import auth
 from app.security.middleware import SecurityMiddleware
+from app.security.crypto import enc
 from app.security.routes import router as auth_router
 
 log = logging.getLogger("bms")
@@ -65,8 +69,10 @@ async def lifespan(_app):
     auth.purge_expired()
     log.info("BMS started on port %s", settings.port)
     intake.start_worker()
+    cartax.start_worker()
     yield
     intake.stop_worker()
+    cartax.stop_worker()
 
 
 app = FastAPI(title=SYSTEM_NAME, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -114,12 +120,25 @@ SETTING_LABELS = {
 }
 
 
+CODE_SECTIONS = {
+    "공통": {"DEPT": "부서", "RANK": "직급", "TITLE": "직책", "LOCATION": "근무지"},
+    "인사관리": {"EMPLOYMENT_TYPE": "고용형태", "EMERGENCY_RELATION": "비상연락처 관계", "EDU_LEVEL": "학력",
+              "QUAL_GRADE": "기술자 자격등급", "APPOINTMENT_TYPE": "인사발령 구분", "SALARY_REASON": "연봉 변경사유",
+              "REWARD_포상": "포상 종류", "REWARD_징계": "징계 종류", "INTAKE_DOC": "입사 필수서류",
+              "ONBOARD": "입사 체크리스트", "OFFBOARD": "퇴사 체크리스트"},
+    "총무관리": {"ASSET_EVENT": "자산 처리 구분", "ASSET_LOC": "자산 보관위치", "FUEL": "차량 연료",
+              "VEHICLE_OWNERSHIP": "차량 소유형태", "MAINT_CATEGORY": "차량 정비 구분", "DOC_METHOD": "문서 수발 방법",
+              "RETENTION": "문서 보존기간", "SEAL_TYPE": "관인 종류", "GA_CONTRACT": "계약 구분",
+              "EVENT_CATEGORY": "경조 구분", "EVENT_RELATION": "경조 관계"},
+}
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
     return templates.TemplateResponse(request, "settings.html", {
         "s": get_settings(), "labels": SETTING_LABELS, "codes": hr_repo.list_codes_all(),
         "active_menu": "settings", "msg": request.query_params.get("msg", ""),
-        "groups": {"DEPT": "부서", "RANK": "직급", "TITLE": "직책", "LOCATION": "근무지", "ASSET_LOC": "자산 보관위치"},
+        "sections": CODE_SECTIONS, "behaviors": ASSET_BEHAVIORS,
         "cfg": {"포트": settings.port, "HTTPS": "사용" if settings.https else "미사용(내부 테스트용)",
                 "2단계 인증": "필수" if settings.require_2fa else "선택",
                 "세션 유휴 만료": f"{settings.session_idle_minutes}분",
@@ -129,9 +148,56 @@ def settings_page(request: Request):
     })
 
 
+def _settings_redirect(msg: str, anchor: str) -> RedirectResponse:
+    return RedirectResponse("/settings?msg=" + quote(msg) + "#" + anchor, status_code=303)
+
+
+MAIL_FIELDS = ("mail_host", "mail_port", "mail_user", "mail_from_name", "mail_from", "mail_cc", "mail_reply_to",
+               "mail_signature", "public_url")
+
+
+@app.post("/settings/mail")
+async def settings_mail(request: Request):
+    form = await request.form()
+    for k in MAIL_FIELDS:
+        if k in form:
+            set_setting(k, str(form[k]).strip())
+    if str(form.get("mail_password", "")).strip():  # 비워 두면 기존 앱 비밀번호 유지
+        set_setting("mail_password", enc(str(form["mail_password"]).replace(" ", "")))
+    audit("system", "메일 설정 변경", "", "")
+    return _settings_redirect("메일 설정이 저장되었습니다", "mail")
+
+
+@app.post("/settings/mail/test")
+def settings_mail_test(request: Request, to: str = Form("")):
+    try:
+        mailer.send(to, "[BMS] 시험 메일", "경영관리업무시스템 메일 설정이 정상입니다.")
+    except mailer.MailError as ex:
+        return _settings_redirect(str(ex), "mail")
+    audit("system", "시험 메일 발송", "", "")
+    return _settings_redirect(f"{to} 로 시험 메일을 보냈습니다", "mail")
+
+
+@app.post("/settings/cartax")
+async def settings_cartax(request: Request):
+    form = await request.form()
+    key = str(form.get("cartax_api_key", "")).strip()
+    if key:
+        set_setting("cartax_api_key", enc(key))
+        audit("system", "카택스 API 키 변경", "", "")
+    return _settings_redirect("카택스 설정이 저장되었습니다" if key else "API 키를 입력하세요", "cartax")
+
+
+@app.post("/settings/cartax/test")
+def settings_cartax_test():
+    try:
+        return _settings_redirect(cartax.test_connection(), "cartax")
+    except cartax.CartaxError as ex:
+        return _settings_redirect(f"연결 실패: {ex}", "cartax")
+
+
 @app.post("/settings")
 async def settings_save(request: Request):
-    from app.db import audit
     form = await request.form()
     for k in DEFAULT_SETTINGS:
         if k in form:
@@ -146,6 +212,27 @@ async def code_add(request: Request):
     if f.get("name"):
         hr_repo.add_code(f["group_code"], f["name"].strip())
     return RedirectResponse("/settings?msg=" + quote("코드가 추가되었습니다") + "#codes", status_code=303)
+
+
+@app.post("/settings/codes/{cid}/rename")
+async def code_rename(request: Request, cid: int):
+    name = str((await request.form()).get("name", "")).strip()
+    ok = bool(name) and hr_repo.rename_code(cid, name)
+    return RedirectResponse("/settings?msg=" + quote("변경되었습니다" if ok else "같은 이름이 이미 있습니다") + "#codes", status_code=303)
+
+
+@app.post("/settings/codes/{cid}/move")
+async def code_move(request: Request, cid: int):
+    hr_repo.move_code(cid, int((await request.form()).get("dir", 1)))
+    return RedirectResponse("/settings#codes", status_code=303)
+
+
+@app.post("/settings/codes/{cid}/behavior")
+async def code_behavior(request: Request, cid: int):
+    value = str((await request.form()).get("behavior", ""))
+    if value in ASSET_BEHAVIORS:
+        hr_repo.set_code_behavior(cid, value)
+    return RedirectResponse("/settings?msg=" + quote("저장되었습니다") + "#codes", status_code=303)
 
 
 @app.post("/settings/codes/{cid}/delete")

@@ -64,12 +64,13 @@
       <div class="col-lg-4"><div class="border rounded p-2 h-100">
         <div class="small fw-semibold mb-1">{{ kind }}</div>
         <label class="form-label small mb-0">기술자 자격번호</label><input class="form-control form-control-sm mb-1" name="q{{ i }}_no" value="{{ q.license_no or '' }}">
-        <label class="form-label small mb-0">자격등급</label><input class="form-control form-control-sm mb-1" name="q{{ i }}_grade" value="{{ q.grade or '' }}" list="gradeList" placeholder="특급·고급·중급·초급">
-        <label class="form-label small mb-0">대표 국가기술자격증</label><input class="form-control form-control-sm" name="q{{ i }}_cert" value="{{ q.main_cert or '' }}" placeholder="정보통신기사 등">
+        <label class="form-label small mb-0">자격등급</label><input class="form-control form-control-sm mb-1" name="q{{ i }}_grade" value="{{ q.grade or '' }}" list="gradeList" placeholder="{{ qualification_grades|join('·') }}">
+        <label class="form-label small mb-0">대표 국가기술자격증</label><input class="form-control form-control-sm mb-1" name="q{{ i }}_cert" value="{{ q.main_cert or '' }}" placeholder="정보통신기사 등">
+        <label class="form-label small mb-0">교육·갱신 만료일</label><input class="form-control form-control-sm" type="date" name="q{{ i }}_exp" value="{{ q.expires_on or '' }}">
         {% if q.file %}<div class="draft-src"><i class="bi bi-file-earmark-text"></i> {{ q.file }}</div>{% endif %}
       </div></div>
       {% endfor %}
-      <datalist id="gradeList"><option value="특급"></option><option value="고급"></option><option value="중급"></option><option value="초급"></option></datalist>
+      <datalist id="gradeList">{% for g in qualification_grades %}<option value="{{ g }}"></option>{% endfor %}</datalist>
     </div>
     <div class="row g-2 mb-3">{{ inp('certificates', '기타 자격', col='col-12', ph='위 3가지 외 자격증') }}</div>
     <h6 class="section-title mb-2">인사·고용 정보</h6>

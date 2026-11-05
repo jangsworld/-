@@ -41,8 +41,9 @@ PDF 변환은 Windows 기본 **Microsoft Edge** 를 사용하므로 별도 브�
 - 서비스 실행 계정에 해당 NAS 폴더 읽기/쓰기 권한이 있어야 합니다.
 - 스캔본 판독에는 서버의 **한국어 OCR** 이 필요합니다. PowerShell 관리자 권한으로 설치합니다.
   `Add-WindowsCapability -Online -Name "Language.OCR~~~ko-KR~0.0.1.0"` (없으면 텍스트 PDF·HWP 만 읽음)
-- 메일은 `[mail]` 을 설정하고 비밀번호를 `secrets\smtp_password.txt` 에 둡니다.
-- 직원이 사내망 밖에서 서명하려면 `public_url` 에 HTTPS 주소를 넣고 `allowed_hosts` 에 도메인을 추가합니다. `/sign/` 경로만 로그인 없이 열립니다.
+- 메일은 관리자 화면 **회사정보·환경설정 > 메일 발송** 에서 입력합니다 (메일플러그: smtp.mailplug.co.kr / 465 / 앱 비밀번호). 앱 비밀번호는 2주 미사용 시 삭제되므로 발송이 실패하면 새로 만들어 넣습니다.
+- 자산 사진은 `data_dir\asset_photos` 에 저장되므로 DB 와 함께 백업합니다.
+- 직원이 사내망 밖에서 서명하려면 설정의 **직원 접속 주소** 에 HTTPS 주소를 넣고 `allowed_hosts` 에 도메인을 추가합니다. `/sign/` 경로만 로그인 없이 열립니다.
 
 ## 3. Windows 서비스 등록 (NSSM 예시)
 

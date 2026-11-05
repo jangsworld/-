@@ -100,6 +100,10 @@ def build_context(emp: dict, params: dict, settings: dict | None = None) -> dict
         "시급": won(params.get("hourly_wage")) if params.get("hourly_wage") else "",
         "일급": won(params.get("daily_wage")) if params.get("daily_wage") else "",
         "임금지급일": s.get("pay_day", "25"),
+        "기본급": won(params.get("pay_base")) if params.get("pay_base") else "",
+        "연장근로수당": won(params.get("pay_overtime")) if params.get("pay_overtime") else "",
+        "연구보조비": won(params.get("pay_research")) if params.get("pay_research") else "0",
+        "보육수당": won(params.get("pay_childcare")) if params.get("pay_childcare") else "0",
         "작성일": _kdate(params.get("doc_date") or today()),
         "발급번호": params.get("doc_no") or "",
         "용도": params.get("purpose") or "",
@@ -457,6 +461,14 @@ def build_alerts(emps: list[dict], alert_days: int = 60) -> list[dict]:
             add("info", "징계말소", {"id": rw["employee_id"], "name": rw["name"]},
                 f"{rw['category']} 징계 효력 말소 예정 ({rw['expunge_date']}) — 인사평가·승진 제한 해제",
                 rw["expunge_date"], "/hr/rewards")
+
+    # 6-1) 기술자 교육·자격 갱신 만료
+    for q in repo.list_technicians():
+        left = days_until(q.get("expires_on"))
+        if left is not None and left <= alert_days:
+            add("danger" if left < 0 else "warning", "기술자격", {"id": q["employee_id"], "name": q["name"]},
+                f"{q['kind']} 교육·갱신 {'만료' if left < 0 else '만료 예정'} ({q['expires_on']})",
+                q["expires_on"], "/hr/technicians")
 
     # 7) 근속 기념 (이번 달) — 포상 검토
     for e in active:

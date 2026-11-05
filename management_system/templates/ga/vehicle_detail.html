@@ -35,7 +35,7 @@
     <div class="card"><div class="card-header">정비·보험·세금 내역</div>
       <ul class="list-group list-group-flush small">{% for m in maint %}
         <li class="list-group-item d-flex gap-2"><span class="text-muted">{{ m.maint_date }}</span><span class="badge text-bg-light border">{{ m.category }}</span>
-          <span class="text-truncate">{{ m.detail or '' }}</span><span class="ms-auto text-nowrap">{{ m.cost|won }}원</span>{% if can_write %}{{ del_btn('maint', m.id, back) }}{% endif %}</li>
+          <span class="text-truncate">{{ m.detail or '' }}</span><span class="ms-auto text-nowrap" title="{{ m.cost|vatinfo(m.cost_vat) }}">{{ m.cost|won }}원{% if m.cost_vat %} <span class="small text-muted">{{ m.cost_vat }}</span>{% endif %}</span>{% if can_write %}{{ del_btn('maint', m.id, back) }}{% endif %}</li>
       {% else %}<li class="list-group-item text-muted">내역 없음</li>{% endfor %}</ul></div>
     <div class="card mt-3"><div class="card-body small"><dl class="info-grid mb-0">
       <dt>소유형태</dt><dd>{{ v.ownership }}{% if v.monthly_cost %} (월 {{ v.monthly_cost|won }}원){% endif %}</dd><dt>보험</dt><dd>{{ v.insurer or '-' }} ~ {{ v.insurance_end or '' }}</dd>
@@ -57,7 +57,7 @@
 {% call modal('maintModal', '정비·비용', '/ga/maint/save') %}
   <input type="hidden" name="vehicle_id" value="{{ v.id }}">
   {{ field('maint_date', '일자', 'date', value=today().isoformat(), req=True) }}{{ field('category', '구분', opts=maint_categories, blank=False) }}
-  {{ field('cost', '금액(원)', 'number', req=True) }}{{ field('detail', '내용', col='col-md-8', ph='엔진오일 교체, 자동차보험 갱신 등') }}
+  {{ field('cost', '금액(원)', 'number', req=True) }}{{ field('cost_vat', '부가세 구분', opts=vat_types, blank=False) }}{{ field('detail', '내용', col='col-md-8', ph='엔진오일 교체, 자동차보험 갱신 등') }}
   {{ field('km', '계기판(km)', 'number') }}{{ field('vendor', '업체', col='col-md-12') }}
 {% endcall %}
 {% endif %}

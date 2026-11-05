@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block title %}설정{% endblock %}
-{% block page_title %}<i class="bi bi-sliders me-2"></i>회사정보 · 코드 설정{% endblock %}
+{% block page_title %}<i class="bi bi-sliders me-2"></i>회사정보 · 환경설정{% endblock %}
 {% block content %}
 <div class="row g-3">
   <div class="col-lg-6">
-    <form class="card" method="post" action="/settings">
+    <form class="card h-100" method="post" action="/settings">
       <div class="card-header">회사 정보 · 기준값 <span class="help">근로계약서·증명서 자동작성에 사용됩니다</span></div>
       <div class="card-body row g-2">
         {% for k, label in labels.items() %}
@@ -16,26 +16,94 @@
       <div class="card-footer text-end"><button class="btn btn-sm btn-primary"><i class="bi bi-save"></i> 저장</button></div>
     </form>
   </div>
-  <div class="col-lg-6" id="codes">
-    <div class="card"><div class="card-header">기준 코드 (부서·직급·직책·근무지)</div>
+
+  <div class="col-lg-6" id="cartax">
+    <div class="card h-100"><div class="card-header">카택스(CARTAX) 연동 <span class="help">운행기록을 법인차량 운행일지로 가져옵니다</span></div>
       <div class="card-body">
-        {% for g, gname in groups.items() %}
-        <div class="mb-3"><div class="small fw-semibold mb-1">{{ gname }}</div>
-          <div class="d-flex flex-wrap gap-1 align-items-center">
-            {% for c in codes if c.group_code == g %}
-            <form method="post" action="/settings/codes/{{ c.id }}/delete" class="d-inline" data-confirm="'{{ c.name }}' 코드를 삭제할까요? (기존 임직원 정보는 유지)">
-              <span class="badge text-bg-light border">{{ c.name }} <button class="btn btn-link p-0 text-danger" style="font-size:.7rem"><i class="bi bi-x"></i></button></span></form>
-            {% endfor %}
-            <form method="post" action="/settings/codes" class="d-inline-flex gap-1"><input type="hidden" name="group_code" value="{{ g }}">
-              <input class="form-control form-control-sm" style="width:120px" name="name" placeholder="추가"><button class="btn btn-sm btn-outline-primary"><i class="bi bi-plus"></i></button></form>
-          </div></div>
-        {% endfor %}
-        <div class="help">직급 코드 순서는 연봉현황의 직급별 차트 정렬에 사용됩니다.</div>
+        <form method="post" action="/settings/cartax" class="row g-2 align-items-end">
+          <div class="col"><label class="form-label small">API 키 {% if s.cartax_api_key %}<span class="badge text-bg-success">저장됨</span>{% endif %}</label>
+            <input class="form-control form-control-sm" type="password" name="cartax_api_key" autocomplete="off" placeholder="바꿀 때만 입력"></div>
+          <div class="col-auto"><button class="btn btn-sm btn-primary">저장</button></div>
+        </form>
+        <form method="post" action="/settings/cartax/test" class="mt-2"><button class="btn btn-sm btn-outline-secondary" {{ 'disabled' if not s.cartax_api_key }}><i class="bi bi-plug"></i> 연결 테스트</button></form>
+        <div class="help mt-2">카택스 관리자 페이지 '시스템 설정'의 REST API 키를 넣으세요. API 는 플러스·프리미엄 등급에서 제공됩니다. 키를 저장하면 6시간마다 자동으로 가져오고, 법인차량 화면에서 기간을 정해 가져올 수도 있습니다.</div>
+        {% if s.cartax_last_sync %}<div class="small mt-2"><i class="bi bi-clock-history"></i> {{ s.cartax_last_sync }}</div>{% endif %}
       </div></div>
   </div>
+
+  <div class="col-12" id="mail">
+    <form class="card" method="post" action="/settings/mail">
+      <div class="card-header">메일 발송 (메일플러그)</div>
+      <div class="card-body row g-2">
+        <div class="col-12 help">메일플러그 메일 설정에서 'POP3/SMTP 사용'을 켜고, 사용자 모드 &gt; 로그인 보안 설정 &gt; 앱 비밀번호를 만들어 아래에 넣어 주세요. 앱 비밀번호는 2주 동안 쓰지 않으면 자동으로 지워지니, 발송이 안 되면 새로 만들어 넣으면 됩니다.</div>
+        <div class="col-md-4"><label class="form-label small">보내는 서버</label><input class="form-control form-control-sm" name="mail_host" value="{{ s.mail_host or 'smtp.mailplug.co.kr' }}"></div>
+        <div class="col-md-4"><label class="form-label small">포트 (SSL)</label><input class="form-control form-control-sm" type="number" name="mail_port" value="{{ s.mail_port or 465 }}"></div>
+        <div class="col-md-4"><label class="form-label small">메일 계정 (아이디)</label><input class="form-control form-control-sm" name="mail_user" value="{{ s.mail_user or '' }}" autocomplete="off"></div>
+        <div class="col-md-4"><label class="form-label small">앱 비밀번호 {% if s.mail_password %}<span class="badge text-bg-success">저장됨</span>{% endif %}</label>
+          <input class="form-control form-control-sm" type="password" name="mail_password" placeholder="바꿀 때만 입력" autocomplete="new-password"></div>
+        <div class="col-md-4"><label class="form-label small">보내는 사람 이름</label><input class="form-control form-control-sm" name="mail_from_name" value="{{ s.mail_from_name or '' }}"></div>
+        <div class="col-md-4"><label class="form-label small">보내는 주소 (비우면 계정과 같음)</label><input class="form-control form-control-sm" type="email" name="mail_from" value="{{ s.mail_from or '' }}"></div>
+        <div class="col-md-4"><label class="form-label small">기본 참조(CC)</label><input class="form-control form-control-sm" name="mail_cc" value="{{ s.mail_cc or '' }}" placeholder="계약서·증명서 메일에 함께 참조됩니다"></div>
+        <div class="col-md-4"><label class="form-label small">회신 주소(선택)</label><input class="form-control form-control-sm" type="email" name="mail_reply_to" value="{{ s.mail_reply_to or '' }}"></div>
+        <div class="col-md-4"><label class="form-label small">직원 접속 주소 (전자서명 링크)</label><input class="form-control form-control-sm" name="public_url" value="{{ s.public_url or '' }}" placeholder="https://bms.회사도메인"></div>
+        <div class="col-12"><label class="form-label small">메일 서명 (본문 끝에 붙음)</label><textarea class="form-control form-control-sm" name="mail_signature" rows="2">{{ s.mail_signature or '' }}</textarea></div>
+      </div>
+      <div class="card-footer d-flex gap-2 align-items-center">
+        <button class="btn btn-sm btn-primary"><i class="bi bi-save"></i> 메일 설정 저장</button>
+        <input class="form-control form-control-sm" style="max-width:240px" type="email" form="mailTest" name="to" value="{{ s.mail_user or '' }}" placeholder="시험 메일 받을 주소" required>
+        <button class="btn btn-sm btn-outline-secondary" form="mailTest">시험 메일 보내기</button>
+      </div>
+    </form>
+    <form id="mailTest" method="post" action="/settings/mail/test"></form>
+  </div>
+
+  <div class="col-12" id="codes">
+    <div class="card"><div class="card-header">구분값 설정 <span class="help">화면의 선택 목록을 바꿉니다. 이름을 누르면 수정되고, 이미 등록된 자료의 값도 함께 바뀝니다.</span></div>
+      <div class="card-body">
+        {% for section, groups in sections.items() %}
+        <div class="fw-semibold mb-2 {{ 'mt-3 pt-3 border-top' if not loop.first }}">{{ section }}</div>
+        <div class="row g-3">
+        {% for g, gname in groups.items() %}
+        <div class="col-lg-6"><div class="small fw-semibold mb-1">{{ gname }}</div>
+          <div class="d-flex flex-wrap gap-1 align-items-center">
+            {% for c in codes if c.group_code == g %}
+            <span class="badge text-bg-light border d-inline-flex align-items-center gap-1">
+              <form method="post" action="/settings/codes/{{ c.id }}/move" class="d-inline"><input type="hidden" name="dir" value="-1"><button class="btn btn-link p-0 text-muted" style="font-size:.65rem" title="앞으로"><i class="bi bi-chevron-left"></i></button></form>
+              <button type="button" class="btn btn-link p-0 text-dark text-decoration-none" style="font-size:.75rem" data-rename="{{ c.id }}" data-name="{{ c.name }}">{{ c.name }}</button>
+              {% if g == 'ASSET_EVENT' %}
+              <form method="post" action="/settings/codes/{{ c.id }}/behavior" class="d-inline"><select class="form-select form-select-sm py-0" style="font-size:.65rem;width:auto" name="behavior" data-autosubmit title="처리 시 자산 상태 변경">
+                {% for v, t in behaviors.items() %}<option value="{{ v }}" {% if (c.behavior or '') == v %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></form>
+              {% endif %}
+              <form method="post" action="/settings/codes/{{ c.id }}/delete" class="d-inline" data-confirm="'{{ c.name }}' 항목을 목록에서 삭제할까요? (이미 등록된 자료는 유지)"><button class="btn btn-link p-0 text-danger" style="font-size:.7rem"><i class="bi bi-x"></i></button></form>
+              <form method="post" action="/settings/codes/{{ c.id }}/move" class="d-inline"><input type="hidden" name="dir" value="1"><button class="btn btn-link p-0 text-muted" style="font-size:.65rem" title="뒤로"><i class="bi bi-chevron-right"></i></button></form>
+            </span>
+            {% endfor %}
+            <form method="post" action="/settings/codes" class="d-inline-flex gap-1"><input type="hidden" name="group_code" value="{{ g }}">
+              <input class="form-control form-control-sm" style="width:110px" name="name" placeholder="추가"><button class="btn btn-sm btn-outline-primary"><i class="bi bi-plus"></i></button></form>
+          </div></div>
+        {% endfor %}
+        </div>
+        {% endfor %}
+        <div class="help mt-3">직급 순서는 연봉현황의 직급별 차트 정렬에 사용됩니다. 입사 필수서류는 파일명에 그 단어가 있으면 제출로 표시되며, <code>학위|졸업</code> 처럼 | 로 여러 단어를 지정할 수 있습니다. 상태처럼 시스템 동작과 연결된 값(재직·휴직, 계약 상태, 자산 상태, 자산 분류 번호체계)은 여기서 바꾸지 않습니다.</div>
+      </div></div>
+  </div>
+
   <div class="col-12">
     <div class="card"><div class="card-header">서버 구동 설정 <span class="help">config/bms.toml 에서 변경 (변경 후 서비스 재시작)</span></div>
       <table class="table table-sm mb-0">{% for k, v in cfg.items() %}<tr><th style="width:200px">{{ k }}</th><td><code>{{ v }}</code></td></tr>{% endfor %}</table></div>
   </div>
 </div>
+<form id="renameForm" method="post" class="d-none"><input type="hidden" name="name"></form>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+document.querySelectorAll('[data-rename]').forEach(b => b.addEventListener('click', () => {
+  const name = prompt('새 이름 (등록된 자료의 값도 함께 바뀝니다)', b.dataset.name);
+  if (!name || name.trim() === b.dataset.name) return;
+  const f = document.getElementById('renameForm');
+  f.action = `/settings/codes/${b.dataset.rename}/rename`;
+  f.elements.name.value = name.trim();
+  f.submit();
+}));
+</script>
 {% endblock %}

@@ -163,7 +163,27 @@ def _service(v, end=None):
     return f"{y}년 {m}개월"
 
 
+def vat_split(amount, vat_type) -> dict:
+    """공급가액·부가세·합계. 입력값이 부가세포함인지 별도인지에 따라 나눕니다."""
+    a = int(amount or 0)
+    if vat_type == "부가세포함":
+        supply = round(a / 1.1)
+        return {"supply": supply, "vat": a - supply, "total": a}
+    if vat_type == "부가세별도":
+        vat = round(a * 0.1)
+        return {"supply": a, "vat": vat, "total": a + vat}
+    return {"supply": a, "vat": 0, "total": a}
+
+
+def _vatinfo(amount, vat_type) -> str:
+    if not amount or vat_type not in ("부가세포함", "부가세별도"):
+        return vat_type or ""
+    v = vat_split(amount, vat_type)
+    return f"{vat_type} · 공급가 {won(v['supply'])} + 부가세 {won(v['vat'])} = 합계 {won(v['total'])}"
+
+
 templates.env.filters["won"] = won
+templates.env.filters["vatinfo"] = _vatinfo
 templates.env.filters["man_won"] = man_won
 templates.env.filters["pct"] = pct
 templates.env.filters["fdate"] = _fmt_date

@@ -1,28 +1,29 @@
 """총무관리 데이터 접근 계층."""
 from app.common import today, to_date
-from app.db import query, query_one, execute, audit
+from app.db import query, query_one, execute, audit, get_behaviors
 from app.security.crypto import enc
-from app.modules.ga.constants import ASSET_CATEGORIES, DEFAULT_EVENT_RULES
+from app.modules.ga.constants import ASSET_BEHAVIORS, ASSET_CATEGORIES, DEFAULT_EVENT_RULES
 
 # 테이블별 저장 가능 필드 / 정수 필드 / 암호화 필드
 TABLES = {
     "ga_assets": (["asset_no", "category", "name", "model", "serial_no", "vendor", "acquired_date", "cost",
-                   "useful_years", "location", "status", "holder_id", "warranty_end", "disposed_date", "memo"],
+                   "useful_years", "location", "status", "holder_id", "warranty_end", "disposed_date", "memo", "cost_vat", "photo"],
                   {"cost", "useful_years", "holder_id"}, set()),
+    "ga_asset_history": (["event_date", "event_type", "holder_id", "cost", "cost_vat", "note"], {"holder_id", "cost"}, set()),
     "ga_vehicles": (["plate_no", "model", "model_year", "fuel", "ownership", "acquired_date", "lease_end",
                      "monthly_cost", "insurer", "insurance_end", "inspection_due", "manager_id", "status",
                      "odometer_start", "memo"],
                     {"model_year", "monthly_cost", "manager_id", "odometer_start"}, set()),
     "ga_vehicle_logs": (["vehicle_id", "drive_date", "driver_id", "purpose", "destination", "km_start", "km_end",
-                         "fuel_cost", "toll_cost", "note"],
+                         "fuel_cost", "toll_cost", "note", "external_id", "external_updated"],
                         {"vehicle_id", "driver_id", "km_start", "km_end", "fuel_cost", "toll_cost"}, {"destination"}),
-    "ga_vehicle_maint": (["vehicle_id", "maint_date", "category", "detail", "km", "cost", "vendor"],
+    "ga_vehicle_maint": (["vehicle_id", "maint_date", "category", "detail", "km", "cost", "cost_vat", "vendor"],
                          {"vehicle_id", "km", "cost"}, set()),
     "ga_docs": (["direction", "doc_no", "doc_date", "counterpart", "title", "department", "handler_id", "method",
                  "status", "due_date", "retention", "note"], {"handler_id"}, set()),
     "ga_seal_logs": (["use_date", "seal_type", "purpose", "submit_to", "copies", "requester_id", "status",
                       "approver", "approved_at", "note"], {"copies", "requester_id"}, set()),
-    "ga_contracts": (["category", "title", "counterparty", "contract_no", "start_date", "end_date", "amount",
+    "ga_contracts": (["category", "title", "counterparty", "contract_no", "start_date", "end_date", "amount", "amount_vat",
                       "pay_cycle", "deposit", "auto_renew", "notice_days", "manager_id", "status", "memo"],
                      {"amount", "deposit", "auto_renew", "notice_days", "manager_id"}, set()),
     "ga_events": (["employee_id", "category", "relation", "event_date", "amount", "leave_days", "flower",
@@ -30,7 +31,7 @@ TABLES = {
                   {"employee_id", "amount", "leave_days", "flower"}, {"detail"}),
     "ga_event_rules": (["category", "relation", "amount", "leave_days", "flower"], {"amount", "leave_days", "flower"}, set()),
 }
-LABELS = {"ga_assets": "자산", "ga_vehicles": "차량", "ga_vehicle_logs": "운행일지", "ga_vehicle_maint": "차량정비",
+LABELS = {"ga_assets": "자산", "ga_asset_history": "자산이력", "ga_vehicles": "차량", "ga_vehicle_logs": "운행일지", "ga_vehicle_maint": "차량정비",
           "ga_docs": "문서수발", "ga_seal_logs": "관인사용", "ga_contracts": "계약", "ga_events": "경조사",
           "ga_event_rules": "경조규정"}
 
@@ -46,7 +47,7 @@ def _int(v):
     return int(float(v)) if v else None
 
 
-def save(table: str, rid: int | None, data: dict) -> int:
+def save(table: str, rid: int | None, data: dict, quiet: bool = False) -> int:
     fields, ints, encrypted = TABLES[table]
     d = {}
     for f in fields:
@@ -63,10 +64,12 @@ def save(table: str, rid: int | None, data: dict) -> int:
     if rid:
         sets = ", ".join(f"{k}=?" for k in d)
         execute(f"UPDATE {table} SET {sets} WHERE id=?", list(d.values()) + [rid])
-        audit("ga", f"{LABELS[table]} 수정", f"#{rid}", "")
+        if not quiet:
+            audit("ga", f"{LABELS[table]} 수정", f"#{rid}", "")
         return rid
     new_id = execute(f"INSERT INTO {table} ({', '.join(d)}) VALUES ({', '.join('?' * len(d))})", list(d.values()))
-    audit("ga", f"{LABELS[table]} 등록", f"#{new_id}", "")
+    if not quiet:
+        audit("ga", f"{LABELS[table]} 등록", f"#{new_id}", "")
     return new_id
 
 
@@ -121,19 +124,41 @@ def asset_history(asset_id: int) -> list[dict]:
                  "WHERE h.asset_id=? ORDER BY h.event_date DESC, h.id DESC", (asset_id,))
 
 
-def add_asset_event(asset_id, event_date, event_type, holder_id=None, cost=0, note=""):
-    execute("INSERT INTO ga_asset_history(asset_id, event_date, event_type, holder_id, cost, note) VALUES (?,?,?,?,?,?)",
-            (asset_id, event_date, event_type, holder_id, _int(cost) or 0, note))
-    # 이력에 따라 자산 상태·사용자 자동 반영
-    if event_type == "지급":
+def event_behavior(event_type: str) -> str:
+    """처리 구분 → 상태 변경 방식. 설정에서 지운 구분의 과거 이력은 이름으로 판단."""
+    behaviors = get_behaviors("ASSET_EVENT")
+    if event_type in behaviors:
+        return behaviors[event_type]
+    return event_type if event_type in ASSET_BEHAVIORS else ""
+
+
+def _apply_event(asset_id, behavior, holder_id, event_date):
+    """이력에 따라 자산 상태·사용자 자동 반영."""
+    if behavior == "지급":
         execute("UPDATE ga_assets SET holder_id=?, status='사용중' WHERE id=?", (holder_id, asset_id))
-    elif event_type == "반납":
+    elif behavior == "반납":
         execute("UPDATE ga_assets SET holder_id=NULL, status='보관' WHERE id=?", (asset_id,))
-    elif event_type == "수리":
+    elif behavior == "수리":
         execute("UPDATE ga_assets SET status='수리중' WHERE id=?", (asset_id,))
-    elif event_type == "폐기":
+    elif behavior == "수리완료":
+        execute("UPDATE ga_assets SET status=CASE WHEN holder_id IS NULL THEN '보관' ELSE '사용중' END WHERE id=?", (asset_id,))
+    elif behavior == "폐기":
         execute("UPDATE ga_assets SET status='폐기', holder_id=NULL, disposed_date=? WHERE id=?", (event_date, asset_id))
+
+
+def add_asset_event(asset_id, event_date, event_type, holder_id=None, cost=0, note="", cost_vat=None):
+    execute("INSERT INTO ga_asset_history(asset_id, event_date, event_type, holder_id, cost, note, cost_vat) "
+            "VALUES (?,?,?,?,?,?,?)", (asset_id, event_date, event_type, holder_id, _int(cost) or 0, note, cost_vat or None))
+    _apply_event(asset_id, event_behavior(event_type), holder_id, event_date)
     audit("ga", f"자산 {event_type}", f"asset#{asset_id}", note or "")
+
+
+def rebuild_asset_state(asset_id: int):
+    """이력을 수정·삭제한 뒤 남은 이력을 시간순으로 다시 적용해 상태·사용자를 맞춥니다."""
+    rows = query("SELECT * FROM ga_asset_history WHERE asset_id=? ORDER BY event_date, id", (asset_id,))
+    execute("UPDATE ga_assets SET holder_id=NULL, status='보관', disposed_date=NULL WHERE id=?", (asset_id,))
+    for r in rows:
+        _apply_event(asset_id, event_behavior(r["event_type"]), r["holder_id"], r["event_date"])
 
 
 # ── 차량 ────────────────────────────────────────────────────────────────

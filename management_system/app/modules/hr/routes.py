@@ -2,22 +2,21 @@
 import csv
 import io
 import json
+import os
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse, Response
 
-from app.common import templates, today, sanitize_html, add_months, to_date
+from app.common import templates, today, sanitize_html, add_months, days_until, to_date
 from app.db import get_codes, get_settings, audit
 from app import mailer
 from app.config import settings as cfg
 from app.modules.hr import intake, repo, rrn as rrn_util, services, signing
 from app.modules.hr.constants import (
-    EDU_LEVELS, EMERGENCY_RELATIONS, QUALIFICATION_KINDS, REWARD_ETC,
-    EMPLOYMENT_TYPES, CONTRACT_CATEGORIES, CERT_CATEGORIES, CONTRACT_STATUSES,
-    APPOINTMENT_TYPES, SALARY_REASONS, REWARD_CATEGORIES, DISCIPLINE_EXPUNGE_MONTHS,
-    WORK_SPECIALS, PLACEHOLDERS,
+    QUALIFICATION_KINDS, CONTRACT_CATEGORIES, CERT_CATEGORIES, CONTRACT_STATUSES,
+    DISCIPLINE_EXPUNGE_MONTHS, WORK_SPECIALS, PLACEHOLDERS,
 )
 
 router = APIRouter(prefix="/hr")
@@ -49,10 +48,14 @@ def _redirect(url: str, msg: str = "") -> RedirectResponse:
 def _codes() -> dict:
     return {
         "depts": get_codes("DEPT"), "ranks": get_codes("RANK"), "titles": get_codes("TITLE"),
-        "locations": get_codes("LOCATION"), "employment_types": EMPLOYMENT_TYPES,
-        "emergency_relations": EMERGENCY_RELATIONS, "edu_levels": EDU_LEVELS,
-        "qualification_kinds": QUALIFICATION_KINDS,
+        "locations": get_codes("LOCATION"), "employment_types": get_codes("EMPLOYMENT_TYPE"),
+        "emergency_relations": get_codes("EMERGENCY_RELATION"), "edu_levels": get_codes("EDU_LEVEL"),
+        "qualification_kinds": QUALIFICATION_KINDS, "qualification_grades": get_codes("QUAL_GRADE"),
     }
+
+
+def _reward_categories() -> dict:
+    return {"포상": get_codes("REWARD_포상"), "징계": get_codes("REWARD_징계")}
 
 
 def _render(request: Request, name: str, ctx: dict, active: str = ""):
@@ -96,7 +99,7 @@ def employees(request: Request, q: str = "", department: str = "", employment_ty
               status: str = "재직(전체)"):
     rows = repo.list_employees(q, department, employment_type, status)
     codes = _codes()
-    known = [t for t in EMPLOYMENT_TYPES if t != "기타"]
+    known = [t for t in codes["employment_types"] if t != "기타"]
     codes["employment_types"] = known + [t for t in repo.employment_types_in_use() if t not in known]
     is_staff = request.state.user["role"] in ("admin", "hr")
     return _render(request, "hr/employees.html", {
@@ -197,7 +200,8 @@ def _employee_form(form: dict) -> tuple[dict, str | None, list[dict]]:
         parsed = rrn_util.parse(rrn)  # 생년월일·성별은 주민등록번호 기준으로 맞춤
         data["birth_date"], data["gender"] = parsed["birth_date"], parsed["gender"]
     quals = [{"kind": kind, "license_no": (form.get(f"q{i}_no") or "").strip(), "grade": (form.get(f"q{i}_grade") or "").strip(),
-              "main_cert": (form.get(f"q{i}_cert") or "").strip()} for i, kind in enumerate(QUALIFICATION_KINDS)]
+              "main_cert": (form.get(f"q{i}_cert") or "").strip(), "expires_on": (form.get(f"q{i}_exp") or "").strip()}
+             for i, kind in enumerate(QUALIFICATION_KINDS)]
     return data, rrn, quals
 
 
@@ -314,20 +318,24 @@ def draft_exclude(draft_id: int):
 @router.get("/employees/{emp_id}", response_class=HTMLResponse)
 def employee_detail(request: Request, emp_id: int, tab: str = "info"):
     e = _emp_or_404(emp_id)
-    if request.state.user["role"] not in ("admin", "hr") and tab in ("salary", "contract", "reward", "special"):
+    if request.state.user["role"] not in ("admin", "hr") and tab in ("salary", "contract", "reward", "special", "files", "check"):
         tab = "info"
     audit("hr", "인사기록 열람", f"{e['emp_no']} {e['name']}", tab)  # 개인정보 접속기록
+    files = intake.list_files(e) if tab == "files" else []
     return _render(request, "hr/employee_detail.html", {
-        "e": e, "tab": tab,
+        "e": e, "tab": tab, "files": files, "employee_root": cfg.employee_root,
+        "doc_status": intake.document_status(get_codes("INTAKE_DOC"), files) if tab == "files" else [],
+        "checklists": {"ONBOARD": ("입사", get_codes("ONBOARD")), "OFFBOARD": ("퇴사", get_codes("OFFBOARD"))},
+        "checks": repo.list_checks(emp_id) if tab == "check" else {},
         "appointments": repo.list_appointments(emp_id),
         "contracts": repo.list_documents("contract", employee_id=emp_id),
         "certs": repo.list_documents("certificate", employee_id=emp_id),
         "salaries": repo.employee_salaries(emp_id),
         "rewards": repo.list_rewards(employee_id=emp_id),
         "specials": repo.list_specials(employee_id=emp_id),
-        "appointment_types": APPOINTMENT_TYPES,
-        "salary_reasons": SALARY_REASONS,
-        "reward_categories": REWARD_CATEGORIES,
+        "appointment_types": get_codes("APPOINTMENT_TYPE"),
+        "salary_reasons": get_codes("SALARY_REASON"),
+        "reward_categories": _reward_categories(),
         "work_specials": WORK_SPECIALS,
         "expunge_months": DISCIPLINE_EXPUNGE_MONTHS,
         "cert_templates": repo.list_templates("certificate", active_only=True),
@@ -359,6 +367,48 @@ async def employee_update(request: Request, emp_id: int):
     except Exception as ex:
         return _redirect(f"/hr/employees/{emp_id}/edit", f"저장 실패: {ex}")
     return _redirect(f"/hr/employees/{emp_id}", "저장되었습니다")
+
+
+@router.get("/employees/{emp_id}/file")
+def employee_file(emp_id: int, name: str):
+    """임직원 폴더의 서류 열람. 폴더 목록에 있는 파일명만 허용합니다."""
+    e = _emp_or_404(emp_id)
+    if name not in {f["name"] for f in intake.list_files(e)}:
+        raise HTTPException(404, "파일을 찾을 수 없습니다")
+    audit("hr", "입사서류 열람", f"{e['emp_no']} {e['name']}", name)
+    ext = name.rsplit(".", 1)[-1].lower()
+    media = {"pdf": "application/pdf", "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png"}.get(ext)
+    return FileResponse(os.path.join(intake.employee_folder(e), name), media_type=media or "application/octet-stream",
+                        headers={"Content-Disposition": f"{'inline' if media else 'attachment'}; filename*=UTF-8''{quote(name)}"})
+
+
+@router.post("/employees/{emp_id}/checks")
+async def employee_check(request: Request, emp_id: int):
+    _emp_or_404(emp_id)
+    f = await request.form()
+    kind = f.get("kind")
+    if kind not in ("ONBOARD", "OFFBOARD"):
+        raise HTTPException(400)
+    repo.set_check(emp_id, kind, f.get("item", ""), bool(f.get("done")), request.state.user["display_name"])
+    return _redirect(f"/hr/employees/{emp_id}?tab=check")
+
+
+@router.get("/technicians", response_class=HTMLResponse)
+def technicians(request: Request, kind: str = ""):
+    rows = repo.list_technicians(kind)
+    for r in rows:
+        r["dday"] = days_until(r.get("expires_on"))
+    return _render(request, "hr/technicians.html", {"rows": rows, "kind": kind, "kinds": QUALIFICATION_KINDS}, "hr.technicians")
+
+
+@router.get("/technicians/export.csv")
+def technicians_export(kind: str = ""):
+    rows = repo.list_technicians(kind)
+    out = [["구분", "성명", "사번", "부서", "직급", "자격번호", "등급", "대표 국가기술자격증", "교육·갱신 만료일"]]
+    for r in rows:
+        out.append([r["kind"], r["name"], r["emp_no"], r["department"], r["rank"], r["license_no"], r["grade"], r["main_cert"], r["expires_on"]])
+    audit("hr", "개인정보 내보내기", "기술자 현황 CSV", f"{len(rows)}명")
+    return _csv_response(out, f"기술자현황_{today().isoformat()}.csv")
 
 
 @router.post("/api/employees/{emp_id}/rrn")
@@ -683,7 +733,7 @@ def salaries(request: Request, year: int | None = None, department: str = ""):
         ov["rows"] = [r for r in ov["rows"] if r["employee"]["department"] == department]
     return _render(request, "hr/salaries.html", {
         "ov": ov, "years": years, "year": year, "trend": services.salary_trend(),
-        "department": department, "depts": get_codes("DEPT"), "reasons": SALARY_REASONS,
+        "department": department, "depts": get_codes("DEPT"), "reasons": get_codes("SALARY_REASON"),
         "settings": get_settings(),
     }, "hr.salaries")
 
@@ -764,7 +814,7 @@ def rewards(request: Request, kind: str = "", year: str = ""):
         "by_year": dict(sorted(by_year.items())), "by_cat": by_cat, "by_dept": by_dept,
         "effective": effective,
         "total_amount": sum(r["amount"] or 0 for r in rows if r["kind"] == "포상"),
-        "emps": repo.list_employees(status=""), "reward_categories": REWARD_CATEGORIES,
+        "emps": repo.list_employees(status=""), "reward_categories": _reward_categories(),
         "expunge_months": DISCIPLINE_EXPUNGE_MONTHS,
     }, "hr.rewards")
 
@@ -775,7 +825,7 @@ async def reward_save(request: Request):
     if f.get("kind") == "징계" and not f.get("expunge_date") and f.get("action_date"):
         m = DISCIPLINE_EXPUNGE_MONTHS.get(f.get("category"), 12)
         f["expunge_date"] = add_months(to_date(f["action_date"]), m).isoformat()
-    if f.get("category") in REWARD_ETC and (f.get("category_etc") or "").strip():
+    if (f.get("category") or "").startswith("기타") and (f.get("category_etc") or "").strip():
         f["category"] = f["category_etc"].strip()
     repo.save_reward(int(f.get("id") or 0) or None, f)
     audit("hr", "상벌 저장", f.get("employee_id", ""), f"{f.get('kind')}/{f.get('category')}")

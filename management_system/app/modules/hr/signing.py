@@ -48,7 +48,7 @@ def _now() -> str:
 
 
 def base_url(request: Request) -> str:
-    return (settings.public_url or str(request.base_url)).rstrip("/")
+    return (get_settings().get("public_url") or settings.public_url or str(request.base_url)).rstrip("/")
 
 
 def latest_request(doc_id: int) -> dict | None:

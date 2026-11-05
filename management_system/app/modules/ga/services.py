@@ -2,7 +2,7 @@
 from collections import defaultdict
 from datetime import timedelta
 
-from app.common import today, to_date, add_months, days_until
+from app.common import today, to_date, add_months, days_until, vat_split
 from app.db import get_settings
 from app.modules.ga import repo
 from app.modules.ga.constants import PAY_CYCLES
@@ -11,7 +11,7 @@ from app.modules.ga.constants import PAY_CYCLES
 # ── 자산 감가상각 (정액법, 월할) ───────────────────────────────────────
 def depreciation(asset: dict, ref=None) -> dict:
     ref = ref or today()
-    cost = asset.get("cost") or 0
+    cost = vat_split(asset.get("cost"), asset.get("cost_vat"))["supply"]   # 감가상각은 공급가액 기준
     life = max(1, asset.get("useful_years") or 5)
     acq = to_date(asset.get("acquired_date"))
     end = to_date(asset.get("disposed_date")) or ref
@@ -30,6 +30,7 @@ def depreciation(asset: dict, ref=None) -> dict:
 def enrich_assets(rows: list[dict]) -> list[dict]:
     for a in rows:
         a.update(depreciation(a))
+        a.update(vat_split(a.get("cost"), a.get("cost_vat")))
         a["warranty_dday"] = days_until(a.get("warranty_end"))
     return rows
 
@@ -43,7 +44,7 @@ def vehicle_stats(vehicle_id=None, year=None) -> dict:
     biz = sum(l["distance"] for l in logs if l["purpose"] in ("일반업무", "출퇴근"))
     fuel = sum(l["fuel_cost"] or 0 for l in logs)
     toll = sum(l["toll_cost"] or 0 for l in logs)
-    mcost = sum(m["cost"] or 0 for m in maint)
+    mcost = sum(vat_split(m["cost"], m.get("cost_vat"))["total"] for m in maint)
     monthly = defaultdict(lambda: {"km": 0, "fuel": 0})
     for l in logs:
         k = l["drive_date"][:7]
@@ -67,7 +68,7 @@ def contract_view(c: dict) -> dict:
     c["notice_date"] = (end - timedelta(days=c.get("notice_days") or 0)).isoformat() if end else None
     c["notice_dday"] = days_until(c["notice_date"])
     months = PAY_CYCLES.get(c.get("pay_cycle") or "월", 1)
-    c["monthly"] = (c.get("amount") or 0) / months if months else 0
+    c["monthly"] = vat_split(c.get("amount"), c.get("amount_vat"))["total"] / months if months else 0
     nd, dd = c["notice_dday"], c["dday"]
     if c["status"] != "유효":
         c["phase"] = c["status"]
@@ -127,7 +128,7 @@ def dashboard() -> dict:
 
     kpi = {
         "assets": len(live_assets),
-        "asset_cost": sum(a["cost"] or 0 for a in live_assets),
+        "asset_cost": sum(a["supply"] for a in live_assets),
         "asset_book": sum(a["book"] for a in live_assets),
         "vehicles": sum(1 for v in vehicles if v["status"] != "매각"),
         "km_year": vstat["total_km"], "biz_ratio": vstat["biz_ratio"], "vcost_year": vstat["cost_total"],

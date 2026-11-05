@@ -1,15 +1,18 @@
 {% from "ga/_macros.html" import field, modal %}
-{% call modal('assetModal', '자산', '/ga/assets/save') %}
+{% call modal('assetModal', '자산', '/ga/assets/save', enctype='multipart/form-data') %}
   {{ field('category', '분류', opts=categories.keys()|list, req=True, blank=False) }}
   {{ field('name', '품명', req=True, col='col-md-8', ph='노트북, 책상, 복합기 등') }}
   {{ field('model', '모델명') }}{{ field('serial_no', '시리얼번호') }}{{ field('vendor', '구입처') }}
   {{ field('acquired_date', '취득일', 'date', value=today().isoformat()) }}
-  {{ field('cost', '취득가(원)', 'number', step='1000') }}
+  {{ field('cost', '취득가(원)', 'number', step='1') }}
+  {{ field('cost_vat', '부가세 구분', opts=vat_types, blank=False) }}
   {{ field('useful_years', '내용연수(년)', 'number', ph='비우면 분류 기본값') }}
   {{ field('location', '보관위치', opts=locations) }}
   {{ field('status', '상태', opts=statuses, blank=False) }}
   {{ field('warranty_end', 'AS보증·라이선스 만료일', 'date') }}
   <div class="col-md-4" data-new-only>{{ field('holder_id', '최초 지급 대상자', opts=emp_opts, col='') }}</div>
+  <div class="col-md-4"><label class="form-label small">자산 사진</label>
+    <input class="form-control form-control-sm" type="file" name="photo_file" accept="image/*"></div>
   {{ field('memo', '비고', 'textarea', col='col-12') }}
-  <div class="col-12 help">자산번호는 분류·취득연도로 자동 부여됩니다(예: IT-2026-001). 사용자 변경은 상세화면의 <b>지급·반납</b>으로 기록하세요.</div>
+  <div class="col-12 help">사진은 저장 공간을 아끼도록 자동으로 줄여서 보관합니다(약 100KB 이하). 자산번호는 분류·취득연도로 자동 부여됩니다(예: IT-2026-001). 사용자 변경은 상세화면의 <b>지급·반납</b>으로 기록하세요.</div>
 {% endcall %}

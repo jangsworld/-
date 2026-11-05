@@ -158,6 +158,34 @@ def read_folder(folder: str) -> tuple[list[Page], list[dict]]:
     return pages, files
 
 
+def employee_folder(emp: dict) -> str | None:
+    if not settings.employee_root:
+        return None
+    return os.path.join(settings.employee_root, emp.get("folder_name") or emp["name"])
+
+
+def list_files(emp: dict) -> list[dict]:
+    """임직원 폴더의 파일 목록 (폴더가 없거나 접근 불가면 빈 목록)."""
+    folder = employee_folder(emp)
+    try:
+        with os.scandir(folder) as it:
+            found = [f for f in it if f.is_file(follow_symlinks=False) and not f.name.startswith((".", "~"))]
+    except (OSError, TypeError):
+        return []
+    return [{"name": f.name, "size": f.stat().st_size, "date": datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d"),
+             "system": f.name.startswith(BMS_FILE_PREFIX)} for f in sorted(found, key=lambda f: f.name)]
+
+
+def document_status(required: list[str], files: list[dict]) -> list[dict]:
+    """필수서류 제출 여부: 파일명에 단어가 있으면 제출로 판단."""
+    out = []
+    for item in required:
+        words = [w.strip() for w in item.split("|") if w.strip()]
+        hit = next((f["name"] for f in files if any(w in f["name"] for w in words)), None)
+        out.append({"label": " / ".join(words), "file": hit})
+    return out
+
+
 def signature(folder: str) -> str:
     h = hashlib.sha256()
     for f in _employee_files(folder):

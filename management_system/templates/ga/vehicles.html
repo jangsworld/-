@@ -9,6 +9,16 @@
   <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">업무사용비율</div><div class="kpi-value">{{ ('%.1f'|format(total.biz_ratio) ~ '%') if total.biz_ratio is not none else '-' }}</div><div class="kpi-sub">비용 손금 인정 비율 기준</div></div></div>
   <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">올해 차량 운영비</div><div class="kpi-value">{{ total.cost_total|man_won }}원</div><div class="kpi-sub">유류 {{ total.fuel|man_won }} · 정비 {{ total.maint|man_won }}</div></div></div>
 </div>
+{% if can_write %}<div class="card mb-3"><div class="card-body py-2">
+  <form method="post" action="/ga/vehicles/cartax-sync" class="row g-2 align-items-center">
+    <div class="col-auto fw-semibold small"><i class="bi bi-arrow-left-right"></i> 카택스</div>
+    {% if cartax_on %}
+    <div class="col-auto"><input class="form-control form-control-sm" type="date" name="start" value="{{ year_start }}"></div>
+    <div class="col-auto"><input class="form-control form-control-sm" type="date" name="end" value="{{ today().isoformat() }}"></div>
+    <div class="col-auto"><button class="btn btn-sm btn-outline-primary">운행기록 가져오기</button></div>
+    <div class="col help">{{ cartax_last or '6시간마다 자동으로 가져옵니다' }}</div>
+    {% else %}<div class="col help">설정에 카택스 API 키를 넣으면 운행기록을 자동으로 가져옵니다.</div>{% endif %}
+  </form></div></div>{% endif %}
 <div class="card">
   <div class="card-header d-flex align-items-center">차량 대장
     {% if can_write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#vehicleModal" data-fill="{}"><i class="bi bi-plus"></i> 차량 등록</button>{% endif %}</div>

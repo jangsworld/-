@@ -8,7 +8,7 @@ from app.config import APP_DIR as BASE_DIR, settings
 from app.security.crypto import dec_row
 
 DB_PATH = settings.db_path
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "5"
 
 # 요청 단위 사용자·IP (감사로그 기록용, 미들웨어에서 설정)
 current_actor: contextvars.ContextVar[tuple] = contextvars.ContextVar("bms_actor", default=(None, "system", ""))
@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS codes (
     group_code TEXT NOT NULL,          -- DEPT / RANK / TITLE / LOCATION
     name       TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
+    behavior   TEXT,                   -- ASSET_EVENT: 처리 시 자산 상태 변경 방식
     UNIQUE(group_code, name)
 );
 
@@ -235,6 +236,17 @@ CREATE TABLE IF NOT EXISTS hr_documents (
     signed_date   TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 입사·퇴사 체크리스트 완료 기록 (항목은 구분값 설정의 ONBOARD/OFFBOARD)
+CREATE TABLE IF NOT EXISTS employee_checks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,            -- ONBOARD / OFFBOARD
+    item        TEXT NOT NULL,
+    done_date   TEXT NOT NULL,
+    done_by     TEXT,
+    UNIQUE(employee_id, kind, item)
 );
 
 -- 전자서명 요청 (직원 메일 링크)
@@ -471,6 +483,8 @@ DEFAULT_SETTINGS = {
     "doc_prefix": "총무",             # 발신 문서번호 접두어 (예: 총무-2026-0001)
 }
 
+ASSET_EVENT_BEHAVIOR = {"지급": "지급", "반납": "반납", "수리": "수리", "수리완료": "수리완료", "폐기": "폐기"}
+
 DEFAULT_CODES = {
     "DEPT": ["경영지원팀", "인사팀", "재무팀", "영업팀", "기술팀", "연구소"],
     "RANK": ["사원", "주임", "대리", "과장", "차장", "부장", "이사", "상무", "대표이사"],
@@ -498,18 +512,44 @@ def init_db() -> bool:
                      "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (SCHEMA_VERSION,))
         for k, v in DEFAULT_SETTINGS.items():
             conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
-        for group, names in DEFAULT_CODES.items():
+        for group, names in _all_default_codes().items():
             if conn.execute("SELECT COUNT(*) FROM codes WHERE group_code=?", (group,)).fetchone()[0]:
                 continue
             for i, n in enumerate(names):
-                conn.execute("INSERT INTO codes(group_code, name, sort_order) VALUES (?,?,?)", (group, n, i))
+                conn.execute("INSERT INTO codes(group_code, name, sort_order, behavior) VALUES (?,?,?,?)",
+                             (group, n, i, ASSET_EVENT_BEHAVIOR.get(n) if group == "ASSET_EVENT" else None))
     return is_new
+
+
+def _all_default_codes() -> dict:
+    """구분값 기본 목록. 설정 화면에서 바꾼 값은 그대로 유지됩니다(비어 있는 그룹만 채움)."""
+    from app.modules.ga import constants as ga
+    from app.modules.hr import constants as hr
+    return {
+        **DEFAULT_CODES,
+        "EMPLOYMENT_TYPE": hr.EMPLOYMENT_TYPES, "EMERGENCY_RELATION": hr.EMERGENCY_RELATIONS, "EDU_LEVEL": hr.EDU_LEVELS,
+        "APPOINTMENT_TYPE": hr.APPOINTMENT_TYPES, "SALARY_REASON": hr.SALARY_REASONS,
+        "REWARD_포상": hr.REWARD_CATEGORIES["포상"], "REWARD_징계": hr.REWARD_CATEGORIES["징계"],
+        "QUAL_GRADE": hr.QUALIFICATION_GRADES, "INTAKE_DOC": hr.INTAKE_DOCS, "ONBOARD": hr.ONBOARD_ITEMS,
+        "OFFBOARD": hr.OFFBOARD_ITEMS,
+        "ASSET_EVENT": ga.ASSET_EVENTS, "FUEL": ga.FUEL_TYPES, "VEHICLE_OWNERSHIP": ga.VEHICLE_OWNERSHIP,
+        "MAINT_CATEGORY": ga.MAINT_CATEGORIES, "DOC_METHOD": ga.DOC_METHODS, "RETENTION": ga.RETENTION,
+        "SEAL_TYPE": ga.SEAL_TYPES, "GA_CONTRACT": ga.CONTRACT_CATEGORIES, "EVENT_CATEGORY": ga.EVENT_CATEGORIES,
+        "EVENT_RELATION": ga.EVENT_RELATIONS,
+    }
 
 
 # v3→v4: 기존 DB 에 없는 컬럼 추가 (CREATE TABLE IF NOT EXISTS 는 기존 테이블을 바꾸지 않음)
 ADDED_COLUMNS = {
     "employees": ["emergency_relation", "edu_level", "edu_school", "edu_major", "edu_grad_year", "folder_name"],
     "hr_documents": ["emailed_at"],
+    "codes": ["behavior"],
+    "employee_qualifications": ["expires_on"],
+    "ga_assets": ["cost_vat", "photo"],
+    "ga_asset_history": ["cost_vat"],
+    "ga_vehicle_maint": ["cost_vat"],
+    "ga_contracts": ["amount_vat"],
+    "ga_vehicle_logs": ["external_id", "external_updated"],
 }
 
 
@@ -517,8 +557,10 @@ def _add_columns(conn):
     for table, cols in ADDED_COLUMNS.items():
         have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
         for col in cols:
-            if col not in have:
+            if have and col not in have:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+    if "external_id" in {r[1] for r in conn.execute("PRAGMA table_info(ga_vehicle_logs)")}:
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_vlog_external ON ga_vehicle_logs(external_id)")
 
 
 def _migrate_users_role(conn):
@@ -552,6 +594,10 @@ def get_codes(group: str) -> list[str]:
     return [r["name"] for r in query(
         "SELECT name FROM codes WHERE group_code=? ORDER BY sort_order, id", (group,)
     )]
+
+
+def get_behaviors(group: str) -> dict[str, str]:
+    return {r["name"]: r["behavior"] or "" for r in query("SELECT name, behavior FROM codes WHERE group_code=?", (group,))}
 
 
 def audit(module: str, action: str, target: str = "", detail: str = ""):

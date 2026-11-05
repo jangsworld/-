@@ -12,8 +12,8 @@
 {%- endif %}</div>
 {%- endmacro %}
 
-{% macro modal(id, title, action, size='modal-lg') -%}
-<div class="modal fade" id="{{ id }}" tabindex="-1"><div class="modal-dialog {{ size }}"><form class="modal-content" method="post" action="{{ action }}">
+{% macro modal(id, title, action, size='modal-lg', enctype='') -%}
+<div class="modal fade" id="{{ id }}" tabindex="-1"><div class="modal-dialog {{ size }}"><form class="modal-content" method="post" action="{{ action }}" {% if enctype %}enctype="{{ enctype }}"{% endif %}>
   <input type="hidden" name="id" value="">
   <div class="modal-header"><h6 class="modal-title">{{ title }} <span data-mode-title>등록</span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body row g-2">{{ caller() }}</div>

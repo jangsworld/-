@@ -206,6 +206,31 @@ def rrn_masked(emp_id: int) -> str:
     return rrn_util.mask(get_rrn(emp_id))
 
 
+def list_technicians(kind: str = "") -> list[dict]:
+    """보유자격 등록자 (퇴사자 제외)."""
+    sql = ("SELECT q.*, e.name, e.emp_no, e.department, e.rank FROM employee_qualifications q "
+           "JOIN employees e ON e.id=q.employee_id WHERE (e.resign_date IS NULL OR e.resign_date='' "
+           "OR e.resign_date > date('now','localtime'))")
+    params = []
+    if kind:
+        sql += " AND q.kind=?"
+        params.append(kind)
+    return query(sql + " ORDER BY q.kind, e.name", params)
+
+
+def list_checks(emp_id: int) -> dict[tuple, dict]:
+    rows = query("SELECT * FROM employee_checks WHERE employee_id=?", (emp_id,))
+    return {(r["kind"], r["item"]): r for r in rows}
+
+
+def set_check(emp_id: int, kind: str, item: str, done: bool, by: str):
+    if done:
+        execute("INSERT OR IGNORE INTO employee_checks(employee_id, kind, item, done_date, done_by) VALUES (?,?,?,?,?)",
+                (emp_id, kind, item, today().isoformat(), by))
+    else:
+        execute("DELETE FROM employee_checks WHERE employee_id=? AND kind=? AND item=?", (emp_id, kind, item))
+
+
 def get_qualifications(emp_id: int) -> dict[str, dict]:
     rows = query("SELECT * FROM employee_qualifications WHERE employee_id=?", (emp_id,))
     return {r["kind"]: r for r in rows}
@@ -214,12 +239,13 @@ def get_qualifications(emp_id: int) -> dict[str, dict]:
 def save_qualifications(emp_id: int, items: list[dict]):
     """입력값이 있는 자격은 저장하고, 모두 지운 자격은 삭제합니다."""
     for q in items:
-        if any(q.get(k) for k in ("license_no", "grade", "main_cert")):
+        if any(q.get(k) for k in ("license_no", "grade", "main_cert", "expires_on")):
             execute(
-                "INSERT INTO employee_qualifications(employee_id, kind, license_no, grade, main_cert) VALUES (?,?,?,?,?) "
-                "ON CONFLICT(employee_id, kind) DO UPDATE SET license_no=excluded.license_no, grade=excluded.grade, "
-                "main_cert=excluded.main_cert",
-                (emp_id, q["kind"], enc(q.get("license_no") or None), q.get("grade") or None, q.get("main_cert") or None),
+                "INSERT INTO employee_qualifications(employee_id, kind, license_no, grade, main_cert, expires_on) "
+                "VALUES (?,?,?,?,?,?) ON CONFLICT(employee_id, kind) DO UPDATE SET license_no=excluded.license_no, "
+                "grade=excluded.grade, main_cert=excluded.main_cert, expires_on=excluded.expires_on",
+                (emp_id, q["kind"], enc(q.get("license_no") or None), q.get("grade") or None, q.get("main_cert") or None,
+                 q.get("expires_on") or None),
             )
         else:
             execute("DELETE FROM employee_qualifications WHERE employee_id=? AND kind=?", (emp_id, q["kind"]))
@@ -579,6 +605,57 @@ def add_code(group, name):
 
 def delete_code(cid: int):
     execute("DELETE FROM codes WHERE id=?", (cid,))
+
+
+# 구분값 이름을 바꿀 때 함께 고칠 자료 (테이블, 컬럼)
+CODE_USAGE = {
+    "DEPT": [("employees", "department")], "RANK": [("employees", "rank")], "TITLE": [("employees", "title")],
+    "LOCATION": [("employees", "work_location")], "EMPLOYMENT_TYPE": [("employees", "employment_type")],
+    "EDU_LEVEL": [("employees", "edu_level")], "APPOINTMENT_TYPE": [("appointments", "appt_type")],
+    "SALARY_REASON": [("salaries", "reason")], "REWARD_포상": [("rewards", "category")], "REWARD_징계": [("rewards", "category")],
+    "ASSET_EVENT": [("ga_asset_history", "event_type")], "ASSET_LOC": [("ga_assets", "location")],
+    "FUEL": [("ga_vehicles", "fuel")], "VEHICLE_OWNERSHIP": [("ga_vehicles", "ownership")],
+    "MAINT_CATEGORY": [("ga_vehicle_maint", "category")], "DOC_METHOD": [("ga_docs", "method")],
+    "RETENTION": [("ga_docs", "retention")], "SEAL_TYPE": [("ga_seal_logs", "seal_type")],
+    "GA_CONTRACT": [("ga_contracts", "category")],
+    "EVENT_CATEGORY": [("ga_events", "category"), ("ga_event_rules", "category")],
+    "EVENT_RELATION": [("ga_events", "relation"), ("ga_event_rules", "relation")],
+}
+
+
+def rename_code(cid: int, name: str) -> bool:
+    """이름 변경. 같은 그룹에 이미 있으면 False."""
+    code = query_one("SELECT * FROM codes WHERE id=?", (cid,))
+    if not code or query_one("SELECT 1 x FROM codes WHERE group_code=? AND name=? AND id!=?", (code["group_code"], name, cid)):
+        return False
+    with tx() as conn:
+        conn.execute("UPDATE codes SET name=? WHERE id=?", (name, cid))
+        if code["group_code"] == "ONBOARD" or code["group_code"] == "OFFBOARD":
+            conn.execute("UPDATE employee_checks SET item=? WHERE kind=? AND item=?", (name, code["group_code"], code["name"]))
+        for table, col in CODE_USAGE.get(code["group_code"], []):
+            conn.execute(f"UPDATE {table} SET {col}=? WHERE {col}=?", (name, code["name"]))
+    audit("system", "구분값 변경", code["group_code"], f"{code['name']} → {name}")
+    return True
+
+
+def move_code(cid: int, direction: int):
+    """같은 그룹 안에서 앞뒤 항목과 순서를 바꿉니다."""
+    code = query_one("SELECT * FROM codes WHERE id=?", (cid,))
+    if not code:
+        return
+    rows = query("SELECT id FROM codes WHERE group_code=? ORDER BY sort_order, id", (code["group_code"],))
+    ids = [r["id"] for r in rows]
+    i = ids.index(cid)
+    j = i + (1 if direction > 0 else -1)
+    if 0 <= j < len(ids):
+        ids[i], ids[j] = ids[j], ids[i]
+        with tx() as conn:
+            for order, rid in enumerate(ids):
+                conn.execute("UPDATE codes SET sort_order=? WHERE id=?", (order, rid))
+
+
+def set_code_behavior(cid: int, behavior: str):
+    execute("UPDATE codes SET behavior=? WHERE id=?", (behavior or None, cid))
 
 
 def recent_audit(limit=30, q="", date_from="", date_to="") -> list[dict]:

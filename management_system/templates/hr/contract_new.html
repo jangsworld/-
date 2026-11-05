@@ -34,6 +34,10 @@
         <div class="col-md-4"><label class="form-label small">연봉(원)</label><input type="number" step="10000" class="form-control form-control-sm" name="annual_salary" value="{{ p.annual_salary }}" data-money="salHint"><div class="help" id="salHint"></div></div>
         <div class="col-md-4"><label class="form-label small">시급(원) <span class="help">단시간</span></label><input type="number" class="form-control form-control-sm" name="hourly_wage" value="{{ p.hourly_wage }}"></div>
         <div class="col-md-4"><label class="form-label small">일급(원) <span class="help">일용직</span></label><input type="number" class="form-control form-control-sm" name="daily_wage" value="{{ p.daily_wage }}"></div>
+        <div class="col-md-3"><label class="form-label small">기본급(월)</label><input type="number" class="form-control form-control-sm" name="pay_base"></div>
+        <div class="col-md-3"><label class="form-label small">연장근로수당(월)</label><input type="number" class="form-control form-control-sm" name="pay_overtime"></div>
+        <div class="col-md-3"><label class="form-label small">연구보조비(월)</label><input type="number" class="form-control form-control-sm" name="pay_research"></div>
+        <div class="col-md-3"><label class="form-label small">보육수당(월)</label><input type="number" class="form-control form-control-sm" name="pay_childcare"></div>
         <div class="col-md-4"><label class="form-label small">작성일</label><input type="date" class="form-control form-control-sm" name="doc_date" value="{{ today().isoformat() }}"></div>
         <div class="col-md-8 d-flex align-items-end"><label class="form-check-label small"><input class="form-check-input me-1" type="checkbox" name="sync_salary" value="1" checked>
           연봉계약서인 경우 연봉현황에 자동 반영</label></div>

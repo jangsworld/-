@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}기술자 현황{% endblock %}
+{% block page_title %}<i class="bi bi-tools me-2"></i>기술자 현황{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-body border-bottom"><form class="row g-2 align-items-center" method="get">
+    <div class="col-auto"><select class="form-select form-select-sm" name="kind" data-autosubmit><option value="">구분 전체</option>
+      {% for k in kinds %}<option {% if kind == k %}selected{% endif %}>{{ k }}</option>{% endfor %}</select></div>
+    <div class="col text-end"><a class="btn btn-sm btn-outline-secondary" href="/hr/technicians/export.csv{{ '?kind=' ~ kind|urlencode if kind }}"><i class="bi bi-download"></i> 기술자 명단(CSV)</a></div>
+  </form></div>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+    <thead><tr><th>구분</th><th>성명</th><th>부서</th><th>직급</th><th>자격번호</th><th>등급</th><th>대표 국가기술자격증</th><th>교육·갱신 만료일</th></tr></thead>
+    <tbody>{% for r in rows %}
+      <tr data-href="/hr/employees/{{ r.employee_id }}"><td>{{ r.kind }}</td><td class="fw-semibold">{{ r.name }}</td><td>{{ r.department or '' }}</td><td>{{ r.rank or '' }}</td>
+        <td>{{ r.license_no or '' }}</td><td>{{ r.grade or '' }}</td><td>{{ r.main_cert or '' }}</td>
+        <td>{{ r.expires_on or '' }}{% if r.dday is not none %}{% if r.dday < 0 %} <span class="badge text-bg-danger">만료</span>{% elif r.dday <= 90 %} <span class="badge text-bg-warning">D-{{ r.dday }}</span>{% endif %}{% endif %}</td></tr>
+    {% else %}<tr><td colspan="8" class="text-center text-muted p-4">등록된 기술자가 없습니다. 임직원 수정 화면의 보유자격에서 입력합니다.</td></tr>{% endfor %}
+    </tbody></table></div>
+</div>
+{% endblock %}

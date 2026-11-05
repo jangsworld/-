@@ -27,8 +27,8 @@ RULES = [
     (r"^/account", ALL, ALL),
     (r"^/logout", ALL, ALL),
     # 연봉·계약서·증명서·상벌·근로특이사항(건강·가족정보)·내보내기: 조회자 접근 불가
-    (r"^/hr/(salaries|contracts|documents|templates|certificates|rewards|specials|drafts|api)", WRITERS, WRITERS),
-    (r"^/hr/employees/(new|import|export\.csv|template\.csv|\d+/edit)", WRITERS, WRITERS),
+    (r"^/hr/(salaries|contracts|documents|templates|certificates|rewards|specials|drafts|technicians|api)", WRITERS, WRITERS),
+    (r"^/hr/employees/(new|import|export\.csv|template\.csv|\d+/(edit|file|checks))", WRITERS, WRITERS),
     (r"^/hr", ALL, WRITERS),
     # 총무: 관인 승인은 관리자, 경조사(가족 사망·질병 등)는 총무 담당자 이상만 열람
     (r"^/ga/seals/\d+/decide", ADMIN, ADMIN),
@@ -109,7 +109,8 @@ class SecurityMiddleware(BaseHTTPMiddleware):
 
         # 업로드 크기 제한
         cl = request.headers.get("content-length")
-        if cl and cl.isdigit() and int(cl) > settings.max_upload_mb * 1024 * 1024:
+        limit_mb = 25 if path.startswith("/ga/assets/") else settings.max_upload_mb   # 자산 사진은 서버에서 줄여 저장
+        if cl and cl.isdigit() and int(cl) > limit_mb * 1024 * 1024:
             return PlainTextResponse("요청 크기가 너무 큽니다", status_code=413)
 
         is_public = path.startswith(PUBLIC_PREFIXES)

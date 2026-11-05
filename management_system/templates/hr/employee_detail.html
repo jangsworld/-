@@ -23,7 +23,7 @@
   <div class="card-footer bg-white p-0">
     <ul class="nav nav-tabs border-0 px-2">
       {% for key, label, cnt in [('info','기본정보',None), ('history','인사발령',appointments|length), ('contract','근로계약·증명서',contracts|length + certs|length),
-        ('salary','연봉',salaries|length), ('reward','상벌',rewards|length), ('special','근로특이사항',specials|length)] if perms.salary or key in ('info', 'history') %}
+        ('salary','연봉',salaries|length), ('reward','상벌',rewards|length), ('special','근로특이사항',specials|length), ('files','입사서류',None), ('check','체크리스트',None)] if perms.salary or key in ('info', 'history') %}
       <li class="nav-item"><a class="nav-link {% if tab == key %}active{% endif %}" href="?tab={{ key }}">{{ label }}{% if cnt %} <span class="badge text-bg-light border">{{ cnt }}</span>{% endif %}</a></li>
       {% endfor %}
     </ul>
@@ -51,10 +51,10 @@
       <dt>비고</dt><dd style="white-space:pre-wrap">{{ (e.memo or '-') if perms.pii else '🔒' }}</dd>
     </dl></div></div></div>
   <div class="col-12"><div class="card"><div class="card-header">보유자격</div>
-    <table class="table table-sm mb-0"><thead><tr><th>구분</th><th>기술자 자격번호</th><th>자격등급</th><th>대표 국가기술자격증</th></tr></thead><tbody>
+    <table class="table table-sm mb-0"><thead><tr><th>구분</th><th>기술자 자격번호</th><th>자격등급</th><th>대표 국가기술자격증</th><th>교육·갱신 만료일</th></tr></thead><tbody>
     {% for kind in qualification_kinds %}{% set q = qualifications.get(kind) %}<tr><td class="fw-semibold">{{ kind }}</td>
-      {% if q %}<td>{{ (q.license_no or '-') if perms.pii else '🔒' }}</td><td>{{ q.grade or '-' }}</td><td>{{ q.main_cert or '-' }}</td>
-      {% else %}<td colspan="3" class="text-muted small">해당 없음</td>{% endif %}</tr>{% endfor %}</tbody></table></div></div>
+      {% if q %}<td>{{ (q.license_no or '-') if perms.pii else '🔒' }}</td><td>{{ q.grade or '-' }}</td><td>{{ q.main_cert or '-' }}</td><td>{{ q.expires_on or '-' }}</td>
+      {% else %}<td colspan="4" class="text-muted small">해당 없음</td>{% endif %}</tr>{% endfor %}</tbody></table></div></div>
   <div class="col-12"><div class="card"><div class="card-header d-flex">지급 자산 · 비품 <span class="badge text-bg-light border ms-2">{{ assets|length }}</span>
     {% if e.status == '퇴사' and assets %}<span class="badge text-bg-danger ms-2">퇴사자 미반납 — 회수 필요</span>{% endif %}<a class="ms-auto small" href="/ga/assets?q={{ e.name|urlencode }}">자산관리</a></div>
     <table class="table table-sm mb-0"><thead><tr><th>자산번호</th><th>분류</th><th>품명</th><th>모델</th><th>상태</th></tr></thead><tbody>
@@ -117,6 +117,30 @@
     <td class="small">{{ s.replacement or '' }}{% if s.subsidy %}<br>{{ s.subsidy }}{% endif %}</td>
     <td><form method="post" action="/hr/specials/{{ s.id }}/delete" data-confirm="삭제할까요?"><input type="hidden" name="next" value="{{ back }}?tab=special"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
   {% else %}<tr><td colspan="8" class="text-muted text-center p-3">등록된 사항 없음</td></tr>{% endfor %}</tbody></table></div>
+
+{% elif tab == 'files' %}
+<div class="row g-3">
+  <div class="col-lg-4"><div class="card h-100"><div class="card-header">필수서류 제출 현황</div>
+    <ul class="list-group list-group-flush small">{% for d in doc_status %}
+      <li class="list-group-item d-flex gap-2 align-items-center">{% if d.file %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-exclamation-circle text-danger"></i>{% endif %}
+        <span>{{ d.label }}</span><span class="ms-auto text-muted text-truncate" style="max-width:55%">{{ d.file or '미제출' }}</span></li>{% endfor %}</ul></div></div>
+  <div class="col-lg-8"><div class="card h-100"><div class="card-header">서류 폴더 <span class="help">{{ e.folder_name or e.name }}</span></div>
+    <table class="table table-sm table-hover mb-0"><thead><tr><th>파일</th><th>날짜</th><th class="num">크기</th></tr></thead><tbody>
+    {% for f in files %}<tr><td><a href="/hr/employees/{{ e.id }}/file?name={{ f.name|urlencode }}" target="_blank">{{ f.name }}</a>{% if f.system %} <span class="badge text-bg-light border">시스템 저장</span>{% endif %}</td><td class="small">{{ f.date }}</td><td class="num small">{{ (f.size / 1024)|round|int|won }}KB</td></tr>
+    {% else %}<tr><td colspan="3" class="text-muted text-center p-3">{{ '폴더가 없거나 비어 있습니다' if employee_root else '서류 폴더(employee_root)가 설정되지 않았습니다' }}</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+
+{% elif tab == 'check' %}
+<div class="row g-3">
+  {% for kind, (label, items) in checklists.items() %}{% if kind == 'ONBOARD' or e.resign_date %}
+  <div class="col-lg-6"><div class="card h-100"><div class="card-header">{{ label }} 처리 체크리스트</div>
+    <ul class="list-group list-group-flush small">{% for item in items %}{% set c = checks.get((kind, item)) %}
+      <li class="list-group-item"><form method="post" action="/hr/employees/{{ e.id }}/checks" class="d-flex align-items-center gap-2">
+        <input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="item" value="{{ item }}">
+        <input class="form-check-input mt-0" type="checkbox" name="done" value="1" {% if c %}checked{% endif %} data-autosubmit {{ 'disabled' if not perms.write }}>
+        <span>{{ item }}</span>{% if c %}<span class="ms-auto text-muted">{{ c.done_date }} · {{ c.done_by or '' }}</span>{% endif %}</form></li>{% endfor %}</ul></div></div>
+  {% endif %}{% endfor %}
+</div>
 {% endif %}
 
 {# ── 모달 ─────────────────────────────────────────────── #}
