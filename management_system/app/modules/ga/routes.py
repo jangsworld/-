@@ -235,6 +235,8 @@ async def vehicles_cartax_sync(request: Request):
     f = await request.form()
     try:
         msg = await run_in_threadpool(cartax.sync, f.get("start") or f"{today().year}-01-01", f.get("end") or today().isoformat())
+    except cartax.CartaxBusy as ex:
+        msg = str(ex)
     except (cartax.CartaxError, ValueError) as ex:
         msg = f"카택스 동기화 실패: {ex}"
     return _redirect("/ga/vehicles", msg)

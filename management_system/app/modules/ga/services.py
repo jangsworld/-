@@ -53,6 +53,7 @@ def vehicle_stats(vehicle_id=None, year=None) -> dict:
     months = [f"{year}-{m:02d}" for m in range(1, 13)]
     return {
         "year": year, "trips": len(logs), "total_km": total, "biz_km": biz,
+        "suspect": sum(1 for l in logs if l["suspect"]),
         "biz_ratio": biz / total * 100 if total else None,
         "fuel": fuel, "toll": toll, "maint": mcost, "cost_total": fuel + toll + mcost,
         "cost_per_km": (fuel + toll) / total if total else None,

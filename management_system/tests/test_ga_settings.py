@@ -12,7 +12,7 @@ from PIL import Image
 from app import mailer
 from app.common import vat_split
 from app.config import settings
-from app.db import get_behaviors, get_codes, get_settings, set_setting
+from app.db import execute, get_behaviors, get_codes, get_settings, query_one, set_setting
 from app.main import app
 from app.modules.ga import cartax, photos, repo, services
 from app.modules.hr import intake
@@ -288,6 +288,50 @@ def test_cartax_sync_imports_and_dedupes(admin, monkeypatch):
     assert get_settings()["cartax_last_sync"]
     r = admin.post("/ga/vehicles/cartax-sync", data={"start": "2026-03-01", "end": "2026-03-31"}, follow_redirects=False)
     assert r.status_code == 303
+
+
+def test_cartax_sync_reports_problems(admin, monkeypatch):
+    emp = repo.employees_brief()[0]
+    rows = [_driving("p1", "나중등록", purpose="업무용"),
+            _driving("p2", emp["name"], purpose="", fromOdometer=81287, toOdometer=8128755),
+            _driving("p3", emp["name"], carNumber="99하 9999"), _driving("p4", emp["name"], fromDate="", fromTime="")]
+    monkeypatch.setattr(cartax, "_call", lambda path, key, body=None: CARS if path == "/cars" else rows)
+    set_setting("cartax_api_key", "secret-key")
+
+    msg = cartax.sync("2026-03-01", "2026-03-31")
+    assert "주행거리 확인 필요 1건" in msg and "제외 2건" in msg and "99하 9999" in msg and "운행일 없음" in msg
+    assert "업무용 1건" in msg and "미지정 1건" in msg
+    vehicle = next(v for v in repo.list_vehicles() if v["plate_no"] == "12가 3456")
+    logs = {l["external_id"]: l for l in repo.vehicle_logs(vehicle["id"])}
+    assert logs["cartax:p1"]["external_purpose"] == "업무용" and logs["cartax:p1"]["driver_id"] is None
+    assert logs["cartax:p2"]["suspect"] and not logs["cartax:p1"]["suspect"]
+    assert services.vehicle_stats(vehicle["id"], 2026)["suspect"] == 1
+    page = admin.get(f"/ga/vehicles/{vehicle['id']}?year=2026").text
+    assert "table-warning" in page and "비정상" in page
+
+    late = query_one("SELECT id, name FROM employees ORDER BY id DESC LIMIT 1")
+    new_id = late["id"]
+    execute("UPDATE employees SET name='나중등록' WHERE id=?", (new_id,))
+    assert "운전자 연결 1건" in cartax.sync("2026-03-01", "2026-03-31")
+    linked = next(l for l in repo.vehicle_logs(vehicle["id"]) if l["external_id"] == "cartax:p1")
+    assert linked["driver_id"] == new_id and "카택스 운전자" not in (linked["note"] or "")
+
+    execute("UPDATE ga_vehicle_logs SET external_purpose=NULL WHERE external_id='cartax:p1'")
+    assert "수정 1건" in cartax.sync("2026-03-01", "2026-03-31")           # 도입 전 자료의 원본 목적값 채움
+    execute("UPDATE employees SET name=? WHERE id=?", (late["name"], new_id))
+    execute("DELETE FROM ga_vehicle_logs WHERE external_id LIKE 'cartax:p%'")
+    set_setting("cartax_api_key", "")
+
+
+def test_cartax_busy_is_not_failure(admin):
+    set_setting("cartax_api_key", "secret-key")
+    assert cartax._lock.acquire(blocking=False)
+    try:
+        r = admin.post("/ga/vehicles/cartax-sync", data={"start": "2026-03-01", "end": "2026-03-31"}, follow_redirects=False)
+    finally:
+        cartax._lock.release()
+        set_setting("cartax_api_key", "")
+    assert r.status_code == 303 and "%EC%8B%A4%ED%8C%A8" not in r.headers["location"]     # "실패" 문구 없음
 
 
 def test_cartax_connection_errors(admin, monkeypatch):

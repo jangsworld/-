@@ -12,11 +12,13 @@ import re
 import threading
 import urllib.error
 import urllib.request
+from collections import Counter
 from datetime import datetime, timedelta
 
 from app.common import today
-from app.db import audit, get_settings, query, query_one, set_setting
+from app.db import audit, execute, get_settings, query, query_one, set_setting
 from app.modules.ga import repo
+from app.modules.ga.constants import ODOMETER_SUSPECT_KM
 
 log = logging.getLogger("bms")
 
@@ -24,6 +26,7 @@ BASE_URL = "https://public.carbeast.co.kr"
 MAX_RANGE_DAYS = 100
 SYNC_HOURS = 6                     # 자동 동기화 주기
 AUTO_LOOKBACK_DAYS = 35            # 자동 동기화 범위 (월말 수정분 반영)
+DRIVER_TAG = re.compile(r"\s*\[카택스 운전자: (.+?)\]")
 
 _stop = threading.Event()
 _thread: threading.Thread | None = None
@@ -32,6 +35,10 @@ _lock = threading.Lock()
 
 class CartaxError(Exception):
     pass
+
+
+class CartaxBusy(CartaxError):
+    """이전 동기화가 끝나지 않음 (실패가 아니므로 결과를 덮어쓰지 않음)."""
 
 
 def _api_key() -> str:
@@ -127,7 +134,29 @@ def _log_values(row: dict, vehicle_id: int, drivers: dict) -> dict:
         "destination": row.get("toLocation") or row.get("toAddress"), "km_start": start, "km_end": end,
         "fuel_cost": int(row.get("fuelCost") or 0), "toll_cost": int(row.get("tollgateCost") or 0) + int(row.get("etcCost") or 0),
         "note": memo, "external_id": f"cartax:{row.get('id')}", "external_updated": row.get("updateTime") or "",
+        "external_purpose": (row.get("purpose") or "").strip() or "미지정",
     }
+
+
+def relink_drivers(drivers: dict) -> int:
+    """이름만 남아 있던 기록을 나중에 등록된 임직원과 연결합니다."""
+    linked = 0
+    for row in query("SELECT id, note FROM ga_vehicle_logs WHERE driver_id IS NULL AND note LIKE '%[카택스 운전자:%'"):
+        tag = DRIVER_TAG.search(row["note"])
+        if tag and tag.group(1) in drivers:
+            execute("UPDATE ga_vehicle_logs SET driver_id=?, note=? WHERE id=?",
+                    (drivers[tag.group(1)], DRIVER_TAG.sub("", row["note"]).strip() or None, row["id"]))
+            linked += 1
+    return linked
+
+
+def suspect_count(start: str, end: str) -> int:
+    return query("SELECT COUNT(*) c FROM ga_vehicle_logs WHERE external_id IS NOT NULL AND drive_date BETWEEN ? AND ? "
+                 "AND km_end - km_start > ?", (start, end, ODOMETER_SUSPECT_KM))[0]["c"]
+
+
+def _top(counter: Counter) -> str:
+    return ", ".join(f"{k} {v}건" for k, v in counter.most_common(5))
 
 
 def sync(start: str, end: str) -> str:
@@ -136,27 +165,36 @@ def sync(start: str, end: str) -> str:
     if not key:
         raise CartaxError("API 키가 입력되지 않았습니다 (회사정보·코드 설정)")
     if not _lock.acquire(blocking=False):
-        raise CartaxError("이미 동기화 중입니다")
+        raise CartaxBusy("이전 동기화가 진행 중입니다. 잠시 후 새로고침하면 결과가 표시됩니다")
     try:
         plates, car_added = _ensure_vehicles(_call("/cars", key))
         drivers = _driver_index()
-        added = updated = skipped = 0
+        added = updated = 0
+        skipped, purposes = Counter(), Counter()
         for a, b in _windows(start, end):
             for row in _call("/drivings", key, {"startDate": a, "endDate": b}):
                 vehicle_id = plates.get(_plate(row.get("carNumber")))
-                values = _log_values(row, vehicle_id, drivers) if vehicle_id else None
-                if not values or not values["drive_date"]:
-                    skipped += 1
+                if not vehicle_id:
+                    skipped[f"카택스 차량 목록에 없음({row.get('carNumber') or '번호 없음'})"] += 1
                     continue
-                old = query_one("SELECT id, external_updated FROM ga_vehicle_logs WHERE external_id=?", (values["external_id"],))
+                values = _log_values(row, vehicle_id, drivers)
+                if not values["drive_date"]:
+                    skipped["운행일 없음"] += 1
+                    continue
+                purposes[values["external_purpose"]] += 1
+                old = query_one("SELECT id, external_updated, external_purpose FROM ga_vehicle_logs WHERE external_id=?",
+                                (values["external_id"],))
                 if not old:
                     repo.save("ga_vehicle_logs", None, values, quiet=True)
                     added += 1
-                elif old["external_updated"] != values["external_updated"]:
+                elif old["external_updated"] != values["external_updated"] or not old["external_purpose"]:
                     repo.save("ga_vehicle_logs", old["id"], values, quiet=True)
                     updated += 1
+        linked, suspect = relink_drivers(drivers), suspect_count(start, end)
         result = f"카택스 동기화: 운행기록 신규 {added}건, 수정 {updated}건" + (f", 차량 {car_added}대 등록" if car_added else "") + \
-                 (f", 제외 {skipped}건" if skipped else "")
+                 (f", 운전자 연결 {linked}건" if linked else "") + (f", 주행거리 확인 필요 {suspect}건" if suspect else "") + \
+                 (f", 제외 {skipped.total()}건 ({_top(skipped)})" if skipped else "") + \
+                 (f" · 카택스 목적값: {_top(purposes)}" if purposes else "")
         set_setting("cartax_last_sync", f"{datetime.now():%Y-%m-%d %H:%M} · {result}")
         audit("ga", "카택스 동기화", f"{start}~{end}", result)
         return result
@@ -173,6 +211,8 @@ def _loop():
         try:
             if enabled():
                 sync((today() - timedelta(days=AUTO_LOOKBACK_DAYS)).isoformat(), today().isoformat())
+        except CartaxBusy:
+            pass
         except CartaxError as ex:
             log.warning("카택스 자동 동기화 실패: %s", ex)
             set_setting("cartax_last_sync", f"{datetime.now():%Y-%m-%d %H:%M} · 실패: {ex}")

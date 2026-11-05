@@ -8,7 +8,7 @@ from app.config import APP_DIR as BASE_DIR, settings
 from app.security.crypto import dec_row
 
 DB_PATH = settings.db_path
-SCHEMA_VERSION = "5"
+SCHEMA_VERSION = "6"
 
 # 요청 단위 사용자·IP (감사로그 기록용, 미들웨어에서 설정)
 current_actor: contextvars.ContextVar[tuple] = contextvars.ContextVar("bms_actor", default=(None, "system", ""))
@@ -549,7 +549,7 @@ ADDED_COLUMNS = {
     "ga_asset_history": ["cost_vat"],
     "ga_vehicle_maint": ["cost_vat"],
     "ga_contracts": ["amount_vat"],
-    "ga_vehicle_logs": ["external_id", "external_updated"],
+    "ga_vehicle_logs": ["external_id", "external_updated", "external_purpose"],
 }
 
 

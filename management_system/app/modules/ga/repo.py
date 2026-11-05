@@ -2,7 +2,7 @@
 from app.common import today, to_date
 from app.db import query, query_one, execute, audit, get_behaviors
 from app.security.crypto import enc
-from app.modules.ga.constants import ASSET_BEHAVIORS, ASSET_CATEGORIES, DEFAULT_EVENT_RULES
+from app.modules.ga.constants import ASSET_BEHAVIORS, ASSET_CATEGORIES, DEFAULT_EVENT_RULES, ODOMETER_SUSPECT_KM
 
 # 테이블별 저장 가능 필드 / 정수 필드 / 암호화 필드
 TABLES = {
@@ -15,7 +15,7 @@ TABLES = {
                      "odometer_start", "memo"],
                     {"model_year", "monthly_cost", "manager_id", "odometer_start"}, set()),
     "ga_vehicle_logs": (["vehicle_id", "drive_date", "driver_id", "purpose", "destination", "km_start", "km_end",
-                         "fuel_cost", "toll_cost", "note", "external_id", "external_updated"],
+                         "fuel_cost", "toll_cost", "note", "external_id", "external_updated", "external_purpose"],
                         {"vehicle_id", "driver_id", "km_start", "km_end", "fuel_cost", "toll_cost"}, {"destination"}),
     "ga_vehicle_maint": (["vehicle_id", "maint_date", "category", "detail", "km", "cost", "cost_vat", "vendor"],
                          {"vehicle_id", "km", "cost"}, set()),
@@ -180,6 +180,7 @@ def vehicle_logs(vehicle_id=None, year=None, month=None) -> list[dict]:
     rows = query(sql + " ORDER BY l.drive_date DESC, l.km_end DESC", p)
     for r in rows:
         r["distance"] = max(0, (r["km_end"] or 0) - (r["km_start"] or 0))
+        r["suspect"] = r["distance"] > ODOMETER_SUSPECT_KM
     return rows
 
 

@@ -35,6 +35,13 @@ document.addEventListener('submit', (e) => {
   if (msg && !confirm(msg)) e.preventDefault();
 });
 
+// 오래 걸리는 폼: <form data-busy="진행 문구"> → 응답이 올 때까지 버튼을 잠가 중복 제출을 막음
+document.addEventListener('submit', (e) => {
+  const text = e.target.dataset.busy;
+  const btn = e.target.querySelector('button:not([type="button"])');
+  if (text && btn && !e.defaultPrevented) { btn.disabled = true; btn.textContent = text; }
+});
+
 // 금액 입력: data-money 속성 → 실시간 한글/콤마 미리보기
 document.addEventListener('input', (e) => {
   if (!e.target.matches('[data-money]')) return;
