@@ -18,6 +18,7 @@ VEHICLE_OWNERSHIP = ["소유", "리스", "장기렌트"]
 VEHICLE_STATUSES = ["운행", "정비중", "매각"]
 FUEL_TYPES = ["휘발유", "경유", "LPG", "하이브리드", "전기"]
 DRIVE_PURPOSES = ["일반업무", "출퇴근", "비업무"]   # 국세청 업무용승용차 운행기록부 구분
+PURPOSE_PENDING = "확인필요"                      # 카택스 목적이 비어 있음 (업무용으로 집계하지 않음)
 ODOMETER_SUSPECT_KM = 1000                       # 1회 운행이 이 거리를 넘으면 계기판 입력 오류로 표시
 MAINT_CATEGORIES = ["정비", "소모품", "보험", "자동차세", "검사", "사고", "세차·기타"]
 

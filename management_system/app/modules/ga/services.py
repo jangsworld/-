@@ -5,7 +5,7 @@ from datetime import timedelta
 from app.common import today, to_date, add_months, days_until, vat_split
 from app.db import get_settings
 from app.modules.ga import repo
-from app.modules.ga.constants import PAY_CYCLES
+from app.modules.ga.constants import PAY_CYCLES, PURPOSE_PENDING
 
 
 # ── 자산 감가상각 (정액법, 월할) ───────────────────────────────────────
@@ -54,6 +54,7 @@ def vehicle_stats(vehicle_id=None, year=None) -> dict:
     return {
         "year": year, "trips": len(logs), "total_km": total, "biz_km": biz,
         "suspect": sum(1 for l in logs if l["suspect"]),
+        "pending": sum(1 for l in logs if l["purpose"] == PURPOSE_PENDING),
         "biz_ratio": biz / total * 100 if total else None,
         "fuel": fuel, "toll": toll, "maint": mcost, "cost_total": fuel + toll + mcost,
         "cost_per_km": (fuel + toll) / total if total else None,

@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from app.common import today
 from app.db import audit, execute, get_settings, query, query_one, set_setting
 from app.modules.ga import repo
-from app.modules.ga.constants import ODOMETER_SUSPECT_KM
+from app.modules.ga.constants import ODOMETER_SUSPECT_KM, PURPOSE_PENDING
 
 log = logging.getLogger("bms")
 
@@ -91,6 +91,8 @@ def _windows(start: str, end: str) -> list[tuple[str, str]]:
 def purpose_of(value: str | None) -> str:
     """카택스 운행 목적 → 운행기록부 구분."""
     text = re.sub(r"[\s·\-]", "", value or "")
+    if not text:
+        return PURPOSE_PENDING
     if "비업무" in text:
         return "비업무"
     if "출퇴근" in text or "출근" in text or "퇴근" in text:
@@ -155,6 +157,11 @@ def suspect_count(start: str, end: str) -> int:
                  "AND km_end - km_start > ?", (start, end, ODOMETER_SUSPECT_KM))[0]["c"]
 
 
+def pending_count(start: str, end: str) -> int:
+    return query("SELECT COUNT(*) c FROM ga_vehicle_logs WHERE external_id IS NOT NULL AND drive_date BETWEEN ? AND ? "
+                 "AND purpose=?", (start, end, PURPOSE_PENDING))[0]["c"]
+
+
 def _top(counter: Counter) -> str:
     return ", ".join(f"{k} {v}건" for k, v in counter.most_common(5))
 
@@ -182,17 +189,20 @@ def sync(start: str, end: str) -> str:
                     skipped["운행일 없음"] += 1
                     continue
                 purposes[values["external_purpose"]] += 1
-                old = query_one("SELECT id, external_updated, external_purpose FROM ga_vehicle_logs WHERE external_id=?",
+                old = query_one("SELECT id, purpose, external_updated, external_purpose FROM ga_vehicle_logs WHERE external_id=?",
                                 (values["external_id"],))
                 if not old:
                     repo.save("ga_vehicle_logs", None, values, quiet=True)
                     added += 1
                 elif old["external_updated"] != values["external_updated"] or not old["external_purpose"]:
+                    if values["purpose"] == PURPOSE_PENDING and old["external_purpose"] == "미지정":
+                        values["purpose"] = old["purpose"]        # 담당자가 지정한 구분을 유지
                     repo.save("ga_vehicle_logs", old["id"], values, quiet=True)
                     updated += 1
-        linked, suspect = relink_drivers(drivers), suspect_count(start, end)
+        linked, suspect, pending = relink_drivers(drivers), suspect_count(start, end), pending_count(start, end)
         result = f"카택스 동기화: 운행기록 신규 {added}건, 수정 {updated}건" + (f", 차량 {car_added}대 등록" if car_added else "") + \
                  (f", 운전자 연결 {linked}건" if linked else "") + (f", 주행거리 확인 필요 {suspect}건" if suspect else "") + \
+                 (f", 목적 확인 필요 {pending}건" if pending else "") + \
                  (f", 제외 {skipped.total()}건 ({_top(skipped)})" if skipped else "") + \
                  (f" · 카택스 목적값: {_top(purposes)}" if purposes else "")
         set_setting("cartax_last_sync", f"{datetime.now():%Y-%m-%d %H:%M} · {result}")

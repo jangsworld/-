@@ -371,7 +371,7 @@ CREATE TABLE IF NOT EXISTS ga_vehicle_logs (           -- 운행기록부
     vehicle_id   INTEGER NOT NULL REFERENCES ga_vehicles(id) ON DELETE CASCADE,
     drive_date   TEXT NOT NULL,
     driver_id    INTEGER REFERENCES employees(id) ON DELETE SET NULL,
-    purpose      TEXT NOT NULL DEFAULT '일반업무',  -- 일반업무/출퇴근/비업무
+    purpose      TEXT NOT NULL DEFAULT '일반업무',  -- 일반업무/출퇴근/비업무/확인필요
     destination  TEXT,                              -- 암호화
     km_start     INTEGER NOT NULL,
     km_end       INTEGER NOT NULL,

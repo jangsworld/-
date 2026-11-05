@@ -323,6 +323,32 @@ def test_cartax_sync_reports_problems(admin, monkeypatch):
     set_setting("cartax_api_key", "")
 
 
+def test_cartax_blank_purpose_needs_review(admin, monkeypatch):
+    assert cartax.purpose_of("") == "확인필요" and cartax.purpose_of(None) == "확인필요"
+    emp = repo.employees_brief()[0]
+    rows = [_driving("q1", emp["name"], purpose=""), _driving("q2", emp["name"], fromOdometer=2000, toOdometer=2030)]
+    monkeypatch.setattr(cartax, "_call", lambda path, key, body=None: CARS if path == "/cars" else rows)
+    set_setting("cartax_api_key", "secret-key")
+    assert "목적 확인 필요 1건" in cartax.sync("2026-03-01", "2026-03-31")
+
+    vehicle = next(v for v in repo.list_vehicles() if v["plate_no"] == "12가 3456")
+    log = next(l for l in repo.vehicle_logs(vehicle["id"]) if l["external_id"] == "cartax:q1")
+    before = services.vehicle_stats(vehicle["id"], 2026)
+    assert before["pending"] == 1 and before["biz_km"] == before["total_km"] - 30    # 업무용 거리에서 제외
+    csv = admin.get(f"/ga/vehicles/{vehicle['id']}/logbook.csv?year=2026").content.decode("utf-8-sig")
+    assert "[목적 확인 필요]" in csv
+    page = admin.get(f"/ga/vehicles/{vehicle['id']}?year=2026").text
+    assert "확인필요" in page and "구분을 정할 때까지" in page
+
+    admin.post("/ga/vlogs/save", data={"id": log["id"], "vehicle_id": vehicle["id"], "drive_date": log["drive_date"],
+                                       "driver_id": emp["id"], "purpose": "비업무", "km_start": 1000, "km_end": 1030})
+    rows[0]["updateTime"] = "t2"
+    cartax.sync("2026-03-01", "2026-03-31")                                     # 지정한 구분을 덮어쓰지 않음
+    assert next(l for l in repo.vehicle_logs(vehicle["id"]) if l["external_id"] == "cartax:q1")["purpose"] == "비업무"
+    execute("DELETE FROM ga_vehicle_logs WHERE external_id LIKE 'cartax:q%'")
+    set_setting("cartax_api_key", "")
+
+
 def test_cartax_busy_is_not_failure(admin):
     set_setting("cartax_api_key", "secret-key")
     assert cartax._lock.acquire(blocking=False)

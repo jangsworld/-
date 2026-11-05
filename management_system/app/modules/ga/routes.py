@@ -11,7 +11,7 @@ from app.config import settings as cfg
 from app.db import audit, get_codes, get_settings, execute
 from app.modules.ga import cartax, photos, repo, services
 from app.modules.ga.constants import (
-    ASSET_CATEGORIES, ASSET_STATUSES, VEHICLE_STATUSES, DRIVE_PURPOSES, DOC_STATUSES, SEAL_STATUSES,
+    ASSET_CATEGORIES, ASSET_STATUSES, VEHICLE_STATUSES, DRIVE_PURPOSES, PURPOSE_PENDING, DOC_STATUSES, SEAL_STATUSES,
     PAY_CYCLES, CONTRACT_STATUSES, EVENT_STATUSES, VAT_TYPES,
 )
 from app.modules.hr.routes import _csv_response, _redirect
@@ -282,7 +282,8 @@ def vehicle_logbook(vid: int, year: int):
         d = l["distance"]
         out.append([l["drive_date"], l["driver_dept"], l["driver_name"], l["km_start"], l["km_end"], d,
                     d if l["purpose"] == "출퇴근" else 0, d if l["purpose"] == "일반업무" else 0,
-                    d if l["purpose"] == "비업무" else 0, l["note"] or ""])
+                    d if l["purpose"] == "비업무" else 0,
+                    " ".join(x for x in ["[목적 확인 필요]" if l["purpose"] == PURPOSE_PENDING else "", l["note"]] if x)])
     st = services.vehicle_stats(vid, year)
     out.append(["합계", "", "", "", "", st["total_km"], "", "", "",
                 f"업무사용비율 {st['biz_ratio']:.1f}%" if st["biz_ratio"] is not None else ""])
