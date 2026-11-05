@@ -6,14 +6,17 @@
   {employee_root}/장지원/01. 근로계약서.pdf ...
       새 폴더 발견 → 서류에서 기본사항 추출 → employee_drafts 저장 → 임직원 현황에 '확인필요' 표시
 
-추출은 서버 안에서만 수행하며(외부 전송 없음) 스캔본은 Windows 내장 OCR 을 사용합니다.
+추출은 서버 안에서만 수행하며(외부 전송 없음) 스캔본은 Windows 내장 OCR 또는 Tesseract 를 사용합니다.
 OCR 원문에는 세대원 주민번호·카드번호 등이 섞여 있으므로 저장하지 않고 추출한 항목만 암호화 저장합니다.
 """
 import asyncio
 import hashlib
+import io
 import logging
 import os
 import re
+import shutil
+import subprocess
 import threading
 import zipfile
 from collections import Counter
@@ -34,6 +37,7 @@ SUPPORTED_EXT = IMAGE_EXT | {".pdf", ".hwp", ".hwpx"}
 MAX_FILE_MB = 30
 MAX_PAGES = 12
 MIN_TEXT_LAYER = 30               # 이보다 글자가 적은 PDF 페이지는 스캔본으로 보고 OCR
+OCR_TIMEOUT_SEC = 120
 
 state = {"last_scan": "", "error": "", "enabled": False}
 _lock = threading.Lock()
@@ -52,15 +56,31 @@ class Page:
 # ════════════════════════════════════════════════════════════════════════
 # 파일 → 텍스트
 # ════════════════════════════════════════════════════════════════════════
+def _ocr_tesseract(img) -> str | None:
+    """Linux 서버용 Tesseract OCR(한국어·영어). 설치되지 않았으면 None."""
+    exe = shutil.which("tesseract")
+    if not exe:
+        return None
+    png = io.BytesIO()
+    img.convert("RGB").save(png, "PNG")
+    try:
+        done = subprocess.run([exe, "stdin", "stdout", "-l", "kor+eng"], input=png.getvalue(),
+                              capture_output=True, timeout=OCR_TIMEOUT_SEC)
+    except (OSError, subprocess.TimeoutExpired) as ex:
+        log.warning("Tesseract OCR 실패: %s", ex.__class__.__name__)
+        return None
+    return done.stdout.decode("utf-8", "replace") if done.returncode == 0 else None
+
+
 def _ocr_image(img) -> str | None:
-    """Windows 내장 OCR(한국어). 미지원 환경이면 None."""
+    """Windows 내장 OCR(한국어), 없으면 Tesseract. 둘 다 없으면 None."""
     try:
         from winrt.windows.globalization import Language
         from winrt.windows.graphics.imaging import BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap
         from winrt.windows.media.ocr import OcrEngine
         from winrt.windows.storage.streams import DataWriter
     except ImportError:
-        return None
+        return _ocr_tesseract(img)
 
     async def run():
         engine = OcrEngine.try_create_from_language(Language("ko"))

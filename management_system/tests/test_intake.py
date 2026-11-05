@@ -58,6 +58,24 @@ def write_hwpx(path, text):
         z.writestr("Preview/PrvText.txt", text)
 
 
+def test_ocr_falls_back_to_tesseract(monkeypatch):
+    import subprocess
+
+    from PIL import Image
+    seen = {}
+
+    def fake_run(cmd, input, capture_output, timeout):
+        seen.update(cmd=cmd, png=input[:4])
+        return subprocess.CompletedProcess(cmd, 0, "주민등록등본".encode(), b"")
+
+    monkeypatch.setattr(intake.shutil, "which", lambda name: "/usr/bin/tesseract")
+    monkeypatch.setattr(intake.subprocess, "run", fake_run)
+    assert intake._ocr_tesseract(Image.new("RGB", (8, 8))) == "주민등록등본"
+    assert seen["cmd"][-1] == "kor+eng" and seen["png"] == b"\x89PNG"
+    monkeypatch.setattr(intake.shutil, "which", lambda name: None)
+    assert intake._ocr_tesseract(Image.new("RGB", (8, 8))) is None
+
+
 def test_rrn_utils():
     assert rrn.normalize("9003151234567") == RRN
     assert rrn.normalize("901315-1234567") is None           # 13월
