@@ -63,13 +63,18 @@ def _ocr_tesseract(img) -> str | None:
         return None
     png = io.BytesIO()
     img.convert("RGB").save(png, "PNG")
-    try:
-        done = subprocess.run([exe, "stdin", "stdout", "-l", "kor+eng"], input=png.getvalue(),
-                              capture_output=True, timeout=OCR_TIMEOUT_SEC)
-    except (OSError, subprocess.TimeoutExpired) as ex:
-        log.warning("Tesseract OCR 실패: %s", ex.__class__.__name__)
-        return None
-    return done.stdout.decode("utf-8", "replace") if done.returncode == 0 else None
+    # 기본 페이지 분석이 글자가 적은 서류를 빈 페이지로 볼 때가 있어, 비면 단일 글상자로 다시 읽음
+    for options in ([], ["--psm", "6"]):
+        try:
+            done = subprocess.run([exe, "stdin", "stdout", "-l", "kor+eng", *options], input=png.getvalue(),
+                                  capture_output=True, timeout=OCR_TIMEOUT_SEC)
+        except (OSError, subprocess.TimeoutExpired) as ex:
+            log.warning("Tesseract OCR 실패: %s", ex.__class__.__name__)
+            return None
+        text = done.stdout.decode("utf-8", "replace").strip() if done.returncode == 0 else ""
+        if text:
+            return text
+    return None
 
 
 def _ocr_image(img) -> str | None:

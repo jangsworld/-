@@ -32,12 +32,19 @@ def ocr():
     fonts = glob.glob("/usr/share/fonts/**/NotoSansCJK-Regular.ttc", recursive=True)
     if not fonts:
         raise FileNotFoundError("Noto CJK 글꼴")
-    img = Image.new("RGB", (1000, 160), "white")
-    ImageDraw.Draw(img).text((30, 40), "주민등록등본 근로계약서", fill="black", font=ImageFont.truetype(fonts[0], 60))
-    text = intake._ocr_image(img) or ""
-    if "근로계약서" not in text.replace(" ", ""):
-        raise ValueError(f"인식 결과: {text!r}")
-    return text.strip()
+    # A4 150dpi 서류 형태와 글자가 적은 한 줄 이미지를 모두 확인
+    font = ImageFont.truetype(fonts[0], 30)
+    page = Image.new("RGB", (1240, 1754), "white")
+    draw = ImageDraw.Draw(page)
+    for i, line in enumerate(["근로계약서", "성명: 홍길동", "생년월일: 1990년 1월 1일", "근무장소: 본사", "계약기간: 2027년 1월 1일부터",
+                              "업무내용: 경영지원", "위와 같이 근로계약을 체결한다."]):
+        draw.text((120, 160 + i * 90), line, fill="black", font=font)
+    line = Image.new("RGB", (1000, 160), "white")
+    ImageDraw.Draw(line).text((30, 40), "주민등록등본 근로계약서", fill="black", font=ImageFont.truetype(fonts[0], 60))
+    texts = [(intake._ocr_image(img) or "").replace(" ", "") for img in (page, line)]
+    if "성명:홍길동" not in texts[0].replace("\n", "") or "근로계약서" not in texts[1]:
+        raise ValueError(f"인식 결과: {texts!r}")
+    return "A4 서류·한 줄 이미지 모두 인식"
 
 
 results = [
