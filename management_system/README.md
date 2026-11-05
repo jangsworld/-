@@ -5,6 +5,8 @@
 
 ## 실행
 
+> **노트북 테스트**: Windows 는 `run_demo.bat` 더블클릭 → http://localhost:8100 · 자세한 방법은 [docs/노트북_테스트_가이드.md](docs/노트북_테스트_가이드.md)
+
 ```bash
 cd management_system
 pip install -r requirements.txt

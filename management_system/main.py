@@ -32,10 +32,15 @@ if __name__ == "__main__":
     scheme = "https" if settings.ssl_certfile else "http"
     print()
     print(f"  🏢 [{SYSTEM_CODE}] 경영관리업무시스템 시작")
-    print(f"  📡 접속 주소: {scheme}://{local_ip()}:{settings.port}")
+    if settings.host in ("127.0.0.1", "localhost"):
+        print(f"  💻 접속 주소: {scheme}://localhost:{settings.port}  (이 PC 에서만 접속)")
+    else:
+        print(f"  📡 접속 주소: {scheme}://{local_ip()}:{settings.port}")
     print(f"  🗄  DB: {settings.db_path}")
     print(f"  📁 문서 보관: {settings.output_root}")
-    if not settings.https:
+    if settings.seed_sample:
+        print("  🧪 데모 모드: 최초 실행 시 샘플 데이터(가상 임직원 20명 등)가 생성됩니다")
+    if not settings.https and settings.host not in ("127.0.0.1", "localhost"):
         print("  ⚠  HTTPS 미설정: 외부 접속 전 반드시 HTTPS(인증서 또는 리버스 프록시)를 구성하세요")
     print("  Ctrl+C 로 종료\n")
     opts = dict(host=settings.host, port=settings.port, reload=False, server_header=False,

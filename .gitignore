@@ -8,3 +8,4 @@ management_system/secrets/
 management_system/logs/
 management_system/config/bms.toml
 management_system/data/outbox/
+management_system/.venv/
