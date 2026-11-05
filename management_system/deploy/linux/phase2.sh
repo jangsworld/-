@@ -107,7 +107,8 @@ assert dst.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
 install -d -o bms -g bms -m 700 "$BASE/data/asset_photos"
 tar -czf - -C "$TMP" bms.db -C "$BASE/data" asset_photos \
     | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$KEY" -out "$OUT"
-openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "file:$KEY" -in "$OUT" | tar -tzf - | grep -q '^bms.db$'
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "file:$KEY" -in "$OUT" | tar -tzf - > "$TMP/list"
+grep -qx 'bms.db' "$TMP/list"
 find "$DEST" -maxdepth 1 -name 'bms-*.tgz.enc' -mtime +7 -delete
 cp --no-preserve=all "$OUT" "$NAS/"
 find "$NAS" -maxdepth 1 -name 'bms-*.tgz.enc' -mtime +30 -delete
