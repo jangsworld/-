@@ -64,7 +64,8 @@ def _deny(request: Request, status: int, msg: str) -> Response:
         return JSONResponse({"ok": False, "message": msg}, status_code=status)
     if status == 401:
         nxt = request.url.path + (("?" + request.url.query) if request.url.query else "")
-        return RedirectResponse("/login?next=" + quote(nxt), status_code=303)
+        ended = "&ended=1" if request.cookies.get(auth.COOKIE_NAME) else ""    # 쿠키는 있는데 세션이 끝난 경우 안내
+        return RedirectResponse("/login?next=" + quote(nxt) + ended, status_code=303)
     from app.common import templates
     return templates.TemplateResponse(request, "error.html", {"status": status, "message": msg}, status_code=status)
 

@@ -7,7 +7,10 @@
   python manage.py list-users
   python manage.py backup [저장폴더]        DB 온라인 백업 (암호화된 상태로 복사)
   python manage.py check                     보안 설정 점검
+  python manage.py prepare-production <회사설정 JSON> --delete-all-business-data
+                                             임직원·총무 자료를 모두 지우고 회사 설정·양식만 넣음 (계정 유지)
 """
+import json
 import os
 import sqlite3
 import sys
@@ -39,6 +42,37 @@ def backup(dest=None):
     src.close()
     dst.close()
     print(f"백업 완료: {path}\n※ 마스터키({key_path()})는 이 백업과 다른 장소에 별도 보관하세요.")
+
+
+BUSINESS_TABLES = ("employee_rrn", "employee_qualifications", "employee_drafts", "appointments", "employee_checks",
+                   "hr_sign_requests", "hr_documents", "salaries", "rewards", "work_specials", "employees",
+                   "ga_asset_history", "ga_assets", "ga_vehicle_logs", "ga_vehicle_maint", "ga_vehicles",
+                   "ga_docs", "ga_seal_logs", "ga_contracts", "ga_events")
+
+
+def prepare_production(seed_path):
+    """샘플 자료를 비우고 회사 설정·구분값·양식을 넣습니다. 계정과 접속기록은 유지합니다."""
+    with open(seed_path, encoding="utf-8") as f:
+        seed = json.load(f)
+    conn = sqlite3.connect(settings.db_path)
+    with conn:
+        for table in BUSINESS_TABLES:
+            conn.execute(f"DELETE FROM {table}")
+        conn.executemany("DELETE FROM sqlite_sequence WHERE name=?", [(t,) for t in BUSINESS_TABLES])
+        conn.executemany("INSERT INTO settings(key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                         list(seed["settings"].items()))
+        conn.execute("DELETE FROM codes")
+        conn.executemany("INSERT INTO codes(group_code, name, sort_order, behavior) VALUES (?,?,?,?)",
+                         [(c["group_code"], c["name"], c["sort_order"], c["behavior"]) for c in seed["codes"]])
+        conn.execute("DELETE FROM doc_templates")
+        conn.executemany("INSERT INTO doc_templates(doc_group, category, name, content, is_active) VALUES (?,?,?,?,?)",
+                         [(t["doc_group"], t["category"], t["name"], t["content"], t["is_active"]) for t in seed["templates"]])
+    conn.close()
+    photos = os.path.join(os.path.dirname(settings.db_path), "asset_photos")
+    if os.path.isdir(photos):
+        for name in os.listdir(photos):
+            os.remove(os.path.join(photos, name))
+    print(f"정리 완료: 양식 {len(seed['templates'])}건, 구분값 {len(seed['codes'])}건 반영")
 
 
 def check():
@@ -86,6 +120,10 @@ def main():
         backup(args[0] if args else None)
     elif cmd == "check":
         check()
+    elif cmd == "prepare-production":
+        if "--delete-all-business-data" not in args:
+            sys.exit("모든 업무 자료가 지워집니다. --delete-all-business-data 를 함께 지정하세요")
+        prepare_production(args[0])
     else:
         sys.exit(__doc__)
 

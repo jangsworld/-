@@ -47,10 +47,11 @@ def healthz():
 
 # ── 로그인 ──────────────────────────────────────────────────────────────
 @router.get("/login", response_class=HTMLResponse)
-def login_page(request: Request, next: str = "/"):
+def login_page(request: Request, next: str = "/", ended: str = ""):
     if request.state.user and request.state.session["mfa_passed"]:
         return _go(_safe_next(next))
-    return _r(request, "auth/login.html", {"next": _safe_next(next)})
+    notice = "접속이 종료되었습니다. 같은 계정이 다른 곳에서 로그인했거나 오래 사용하지 않았습니다" if ended else ""
+    return _r(request, "auth/login.html", {"next": _safe_next(next), "notice": notice})
 
 
 @router.post("/login")
@@ -64,6 +65,8 @@ async def login(request: Request):
     auth.destroy_session(request.cookies.get(auth.COOKIE_NAME))  # 세션 고정 공격 방지
     mfa_needed = bool(user["totp_enabled"]) or settings.require_2fa
     token = auth.create_session(user, request.state.ip, request.headers.get("user-agent", ""), not mfa_needed)
+    if not mfa_needed:
+        auth.revoke_sessions(user["id"], except_token=token)    # 계정당 한 곳만 접속
     execute("UPDATE users SET last_login_at=datetime('now','localtime'), last_login_ip=? WHERE id=?",
             (request.state.ip, user["id"]))
     audit("auth", "로그인(1단계)", user["username"], "")
@@ -89,6 +92,7 @@ async def login_2fa(request: Request):
     nxt = _safe_next(str(f.get("next", "/")))
     if auth.verify_totp(user, str(f.get("code", ""))):
         auth.mark_mfa_passed(request.cookies.get(auth.COOKIE_NAME))
+        auth.revoke_sessions(user["id"], except_token=request.cookies.get(auth.COOKIE_NAME))    # 계정당 한 곳만 접속
         execute("UPDATE users SET failed_count=0 WHERE id=?", (user["id"],))
         audit("auth", "로그인 성공(2단계)", user["username"], "")
         return _go(nxt)
@@ -192,6 +196,7 @@ async def twofa_enable(request: Request):
         return _go("/account/2fa", "인증코드가 올바르지 않습니다. 휴대폰 시간이 자동 설정인지 확인하세요")
     auth.enable_totp(u["id"], u["totp_secret"])
     auth.mark_mfa_passed(request.cookies.get(auth.COOKIE_NAME))
+    auth.revoke_sessions(u["id"], except_token=request.cookies.get(auth.COOKIE_NAME))
     audit("auth", "2단계 인증 등록", u["username"], "")
     return _go("/", "2단계 인증이 등록되었습니다")
 
