@@ -23,7 +23,7 @@
   <div class="card-footer bg-white p-0">
     <ul class="nav nav-tabs border-0 px-2">
       {% for key, label, cnt in [('info','기본정보',None), ('history','인사발령',appointments|length), ('contract','근로계약·증명서',contracts|length + certs|length),
-        ('salary','연봉',salaries|length), ('reward','상벌',rewards|length), ('special','근로특이사항',specials|length), ('files','입사서류',None), ('check','체크리스트',None)] if perms.salary or key in ('info', 'history') %}
+        ('salary','연봉',salaries|length), ('reward','상벌',rewards|length), ('special','근로특이사항',specials|length), ('insurance','상해공제',insurances|length), ('files','입사서류',None), ('check','체크리스트',None)] if perms.salary or key in ('info', 'history') %}
       <li class="nav-item"><a class="nav-link {% if tab == key %}active{% endif %}" href="?tab={{ key }}">{{ label }}{% if cnt %} <span class="badge text-bg-light border">{{ cnt }}</span>{% endif %}</a></li>
       {% endfor %}
     </ul>
@@ -124,6 +124,38 @@
     <td><form method="post" action="/hr/specials/{{ s.id }}/delete" data-confirm="삭제할까요?"><input type="hidden" name="next" value="{{ back }}?tab=special"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
   {% else %}<tr><td colspan="8" class="text-muted text-center p-3">등록된 사항 없음</td></tr>{% endfor %}</tbody></table></div>
 
+{% elif tab == 'insurance' %}
+<div class="card"><div class="card-header d-flex align-items-center">상해공제 가입 이력
+  {% if perms.write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#insModal" data-ins="{}"><i class="bi bi-plus"></i> 가입 등록</button>{% endif %}</div>
+  <table class="table table-sm mb-0 align-middle"><thead><tr><th>공제명</th><th>보험사·공제사</th><th>가입일</th><th>가입기간</th><th>상태</th><th>증권번호</th><th class="num">공제료</th><th>비고</th><th></th></tr></thead><tbody>
+  {% for i in insurances %}{% set left = i.end_date|dday if i.end_date else none %}
+  <tr><td class="fw-semibold">{{ i.product }}</td><td>{{ i.insurer or '' }}</td><td>{{ i.joined_on or '' }}</td>
+    <td>{{ i.start_date or '' }} ~ {{ i.end_date or '' }}</td>
+    <td>{% if left is none %}<span class="text-muted small">기간 미입력</span>{% elif left < 0 %}<span class="badge text-bg-secondary">만기</span>
+        {% elif left <= 30 %}<span class="badge text-bg-warning">만기 D-{{ left }}</span>{% else %}<span class="badge text-bg-success">보장중</span>{% endif %}</td>
+    <td class="small">{{ i.policy_no or '' }}</td><td class="num">{{ i.premium|won if i.premium else '' }}</td><td class="small">{{ i.note or '' }}</td>
+    <td class="text-end text-nowrap">{% if perms.write %}
+      <button type="button" class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#insModal" data-ins='{{ i|tojson }}'><i class="bi bi-pencil"></i></button>
+      <form method="post" action="/hr/employees/{{ e.id }}/insurances/{{ i.id }}/delete" class="d-inline" data-confirm="이 상해공제 기록을 삭제할까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="9" class="text-muted text-center p-3">상해공제 가입 기록 없음</td></tr>{% endfor %}</tbody></table>
+  <div class="card-footer help">갱신하면 [가입 등록]으로 새 기간을 추가하세요(이전 기록은 이력으로 남습니다). 만기 30일 전부터 인사 대시보드에 알림이 뜹니다.</div></div>
+
+<div class="modal fade" id="insModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="/hr/employees/{{ e.id }}/insurances" id="insForm">
+  <input type="hidden" name="ins_id">
+  <div class="modal-header"><h6 class="modal-title">상해공제 가입</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body row g-2">
+    <div class="col-7"><label class="form-label small">공제명 *</label><input class="form-control form-control-sm" name="product" required placeholder="예: 근로자 상해공제"></div>
+    <div class="col-5"><label class="form-label small">보험사·공제사</label><input class="form-control form-control-sm" name="insurer" list="insurerList"></div>
+    <div class="col-4"><label class="form-label small">가입일</label><input type="date" class="form-control form-control-sm" name="joined_on"></div>
+    <div class="col-4"><label class="form-label small">보장 시작</label><input type="date" class="form-control form-control-sm" name="start_date"></div>
+    <div class="col-4"><label class="form-label small">보장 종료(만기)</label><input type="date" class="form-control form-control-sm" name="end_date"></div>
+    <div class="col-6"><label class="form-label small">증권·가입번호</label><input class="form-control form-control-sm" name="policy_no"></div>
+    <div class="col-6"><label class="form-label small">공제료(원)</label><input class="form-control form-control-sm" name="premium" inputmode="numeric"></div>
+    <div class="col-12"><label class="form-label small">비고</label><input class="form-control form-control-sm" name="note"></div>
+    <div class="col-12"><button type="button" class="btn btn-sm btn-link p-0" id="insYear">시작일부터 1년으로 만기 채우기</button></div>
+  </div><div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div></form></div></div>
+<datalist id="insurerList">{% for x in insurances|map(attribute='insurer')|select|unique %}<option value="{{ x }}">{% endfor %}</datalist>
+
 {% elif tab == 'files' %}
 <div class="row g-3">
   <div class="col-lg-4"><div class="card h-100"><div class="card-header">필수서류 제출 현황</div>
@@ -189,6 +221,26 @@
 {% endblock %}
 
 {% block scripts %}
+{% if tab == 'insurance' %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const m = document.getElementById('insModal'); if (!m) return;
+  const f = document.getElementById('insForm');
+  m.addEventListener('show.bs.modal', ev => {
+    const d = JSON.parse(ev.relatedTarget?.dataset.ins || '{}');
+    f.reset(); f.ins_id.value = d.id || '';
+    ['product', 'insurer', 'joined_on', 'start_date', 'end_date', 'policy_no', 'premium', 'note'].forEach(k => { f[k].value = d[k] || ''; });
+    if (!d.id) { const t = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10); f.joined_on.value = t; f.start_date.value = t; }
+    m.querySelector('.modal-title').textContent = d.id ? '상해공제 수정' : '상해공제 가입 등록';
+  });
+  document.getElementById('insYear').addEventListener('click', () => {
+    if (!f.start_date.value) return;
+    const s = new Date(f.start_date.value); s.setFullYear(s.getFullYear() + 1); s.setDate(s.getDate() - 1);
+    f.end_date.value = s.toISOString().slice(0, 10);
+  });
+})();
+</script>
+{% endif %}
 {% if tab == 'salary' and salaries %}
 <script nonce="{{ csp_nonce }}" src="/static/vendor/chartjs/chart.umd.min.js"></script>
 <script nonce="{{ csp_nonce }}">

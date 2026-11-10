@@ -431,6 +431,7 @@ def employee_detail(request: Request, emp_id: int, tab: str = "info"):
         "salaries": repo.employee_salaries(emp_id),
         "rewards": repo.list_rewards(employee_id=emp_id),
         "specials": repo.list_specials(employee_id=emp_id),
+        "insurances": repo.list_insurances(emp_id),
         "appointment_types": get_codes("APPOINTMENT_TYPE"),
         "salary_reasons": get_codes("SALARY_REASON"),
         "reward_categories": _reward_categories(),
@@ -1134,6 +1135,37 @@ async def special_delete(request: Request, sid: int):
     f = dict(await request.form())
     repo.delete_special(sid)
     return _redirect(f.get("next") or "/hr/specials", "삭제되었습니다")
+
+
+@router.post("/employees/{emp_id}/insurances")
+async def insurance_save(request: Request, emp_id: int):
+    """상해공제 가입 등록·수정 (ins_id 가 있으면 수정)."""
+    _emp_or_404(emp_id)
+    f = dict(await request.form())
+    back = f"/hr/employees/{emp_id}?tab=insurance"
+    data = {k: (f.get(k) or "").strip() for k in ("product", "insurer", "joined_on", "start_date", "end_date",
+                                                     "policy_no", "premium", "note")}
+    data["employee_id"] = emp_id
+    if not data["product"]:
+        return _redirect(back, "공제명을 입력하세요")
+    for k in ("joined_on", "start_date", "end_date"):
+        if data[k] and not to_date(data[k]):
+            return _redirect(back, "날짜 형식이 맞지 않습니다")
+    if data["start_date"] and data["end_date"] and data["end_date"] < data["start_date"]:
+        return _redirect(back, "보장 종료일이 시작일보다 빠릅니다")
+    data["premium"] = re.sub(r"[^\d]", "", data["premium"])
+    ins_id = int(f["ins_id"]) if str(f.get("ins_id") or "").isdigit() else None
+    if ins_id and not repo.query_one("SELECT 1 x FROM employee_insurances WHERE id=? AND employee_id=?", (ins_id, emp_id)):
+        return _redirect(back, "기록을 찾을 수 없습니다")
+    repo.save_insurance(data, ins_id)
+    return _redirect(back, "상해공제 정보를 저장했습니다")
+
+
+@router.post("/employees/{emp_id}/insurances/{ins_id}/delete")
+def insurance_delete(emp_id: int, ins_id: int):
+    if repo.query_one("SELECT 1 x FROM employee_insurances WHERE id=? AND employee_id=?", (ins_id, emp_id)):
+        repo.delete_insurance(ins_id)
+    return _redirect(f"/hr/employees/{emp_id}?tab=insurance", "삭제되었습니다")
 
 
 @router.get("/api/employees/{emp_id}/contract-defaults")

@@ -351,6 +351,21 @@ CREATE TABLE IF NOT EXISTS leave_plans (
     created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
+-- 상해공제(단체상해보험) 가입 이력: 안전사고 대비 직원별 가입
+CREATE TABLE IF NOT EXISTS employee_insurances (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    product     TEXT NOT NULL,            -- 공제명(상품명)
+    insurer     TEXT,                     -- 보험사·공제조합
+    joined_on   TEXT,                     -- 가입일(청약일)
+    start_date  TEXT,                     -- 보장 시작
+    end_date    TEXT,                     -- 보장 종료(만기)
+    policy_no   TEXT,                     -- 증권·가입번호
+    premium     TEXT,                     -- 공제료(원)
+    note        TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
 -- 입사·퇴사 체크리스트 완료 기록 (항목은 구분값 설정의 ONBOARD/OFFBOARD)
 CREATE TABLE IF NOT EXISTS employee_checks (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -596,6 +611,7 @@ CREATE INDEX IF NOT EXISTS idx_leave_promo ON leave_promotions(employee_id, year
 CREATE INDEX IF NOT EXISTS idx_leave_plans ON leave_plans(employee_id, year);
 CREATE INDEX IF NOT EXISTS idx_rewards_emp ON rewards(employee_id);
 CREATE INDEX IF NOT EXISTS idx_specials_emp ON work_specials(employee_id);
+CREATE INDEX IF NOT EXISTS idx_ins_emp ON employee_insurances(employee_id);
 """
 
 DEFAULT_SETTINGS = {

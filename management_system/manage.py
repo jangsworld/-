@@ -45,7 +45,7 @@ def backup(dest=None):
 
 
 BUSINESS_TABLES = ("leave_plans", "leave_promotions", "leave_adjust", "leave_name_map", "leave_records",
-                   "leave_imports", "employee_rrn", "employee_qualifications", "employee_drafts", "appointments", "employee_checks",
+                   "leave_imports", "employee_insurances", "employee_rrn", "employee_qualifications", "employee_drafts", "appointments", "employee_checks",
                    "hr_sign_requests", "hr_doc_mails", "hr_documents", "salaries", "rewards", "work_specials", "employees",
                    "ga_asset_history", "ga_assets", "ga_vehicle_logs", "ga_vehicle_maint", "ga_vehicles",
                    "ga_docs", "ga_seal_logs", "ga_contract_drafts", "ga_contracts", "ga_events")

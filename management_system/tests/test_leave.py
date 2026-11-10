@@ -263,3 +263,32 @@ def test_parse_date_text():
     assert not err and rows == [("2026-11-03", "종일"), ("2026-11-04", "오전"), ("2026-11-05", "종일")]
     assert parse_date_text("2026-11-07", 2026)[1]                  # 토요일
     assert parse_date_text("2026-11-03, 2026-11-03", 2026)[1]      # 중복
+
+
+# ── 상해공제 ────────────────────────────────────────────────────────────
+def test_injury_insurance_crud_and_alert(client, monkeypatch):
+    monkeypatch.setenv("BMS_TODAY", "2026-11-11")
+    emp = _emp()
+    r = client.post(f"/hr/employees/{emp['id']}/insurances", data={
+        "product": "근로자 상해공제", "insurer": "테스트공제조합", "joined_on": "2025-11-20", "start_date": "2025-11-20",
+        "end_date": "2026-11-19", "policy_no": "P-001", "premium": "120,000", "note": ""}, follow_redirects=False)
+    assert r.status_code == 303
+    rows = repo.list_insurances(emp["id"])
+    assert rows[0]["product"] == "근로자 상해공제" and rows[0]["premium"] == "120000"
+    page = client.get(f"/hr/employees/{emp['id']}?tab=insurance").text
+    assert "테스트공제조합" in page and "만기 D-8" in page
+    from app.modules.hr import services
+    alerts = services.build_alerts(repo.list_employees(status=""))
+    assert any(a["category"] == "상해공제" and a["emp_id"] == emp["id"] for a in alerts)
+    assert any(a["category"] == "상해공제" and a["emp_id"] is None for a in alerts)          # 미가입자 안내
+    # 수정 · 잘못된 기간 거부 · 다른 직원 기록은 못 건드림
+    client.post(f"/hr/employees/{emp['id']}/insurances", data={"ins_id": rows[0]["id"], "product": "근로자 상해공제",
+                                                                "start_date": "2026-11-20", "end_date": "2027-11-19"})
+    assert repo.list_insurances(emp["id"])[0]["end_date"] == "2027-11-19"
+    client.post(f"/hr/employees/{emp['id']}/insurances", data={"product": "x", "start_date": "2026-05-01", "end_date": "2026-01-01"})
+    assert len(repo.list_insurances(emp["id"])) == 1
+    other = next(e for e in repo.list_employees(status="") if e["id"] != emp["id"])
+    client.post(f"/hr/employees/{other['id']}/insurances/{rows[0]['id']}/delete")
+    assert len(repo.list_insurances(emp["id"])) == 1
+    client.post(f"/hr/employees/{emp['id']}/insurances/{rows[0]['id']}/delete")
+    assert not repo.list_insurances(emp["id"])

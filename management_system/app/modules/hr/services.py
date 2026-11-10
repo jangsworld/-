@@ -470,6 +470,32 @@ def build_alerts(emps: list[dict], alert_days: int = 60) -> list[dict]:
                 f"{q['kind']} 교육·갱신 {'만료' if left < 0 else '만료 예정'} ({q['expires_on']})",
                 q["expires_on"], "/hr/technicians")
 
+    # 6-2) 상해공제 만기 · 미가입
+    active_ids = {e["id"] for e in active}
+    covered = set()
+    latest = {}
+    for i in repo.list_insurances():
+        if i["employee_id"] not in active_ids:
+            continue
+        end = to_date(i.get("end_date"))
+        if not end or end >= t:
+            covered.add(i["employee_id"])
+        if i["employee_id"] not in latest or (i.get("end_date") or "9999") > (latest[i["employee_id"]].get("end_date") or "9999"):
+            latest[i["employee_id"]] = i
+    for emp_id, i in latest.items():
+        left = days_until(i.get("end_date"))
+        if left is not None and left <= 30:
+            add("danger" if left < 0 else "warning", "상해공제", {"id": emp_id, "name": i["name"]},
+                f"{i['product']} {'만기 지남' if left < 0 else '만기 예정'} ({i['end_date']}) — 갱신 확인",
+                i["end_date"], f"/hr/employees/{emp_id}?tab=insurance")
+    if latest:                       # 상해공제를 쓰기 시작한 뒤에만 미가입자 안내
+        missing_ins = [e for e in active if e["id"] not in covered and e["id"] not in latest]
+        if missing_ins:
+            alerts.append({"level": "info", "category": "상해공제", "name": f"{len(missing_ins)}명", "emp_id": None,
+                           "message": f"상해공제 기록이 없는 재직자 {len(missing_ins)}명 — " +
+                                      ", ".join(e["name"] for e in missing_ins[:5]) + (" 외" if len(missing_ins) > 5 else ""),
+                           "dday": None, "link": None})
+
     # 7) 근속 기념 (이번 달) — 포상 검토
     for e in active:
         hd = to_date(e["hire_date"])

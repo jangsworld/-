@@ -593,6 +593,35 @@ def save_special(sid, data: dict) -> int:
     return new_id
 
 
+def list_insurances(employee_id=None) -> list[dict]:
+    sql = ("SELECT i.*, e.name, e.emp_no, e.department, e.resign_date FROM employee_insurances i "
+           "JOIN employees e ON e.id=i.employee_id")
+    params = []
+    if employee_id:
+        sql += " WHERE i.employee_id=?"
+        params.append(employee_id)
+    return query(sql + " ORDER BY COALESCE(i.end_date, '9999') DESC, i.id DESC", params)
+
+
+def save_insurance(data: dict, ins_id: int | None = None) -> int:
+    cols = ("employee_id", "product", "insurer", "joined_on", "start_date", "end_date", "policy_no", "premium", "note")
+    vals = [data.get(c) or None for c in cols]
+    if ins_id:
+        execute(f"UPDATE employee_insurances SET {', '.join(c + '=?' for c in cols)} WHERE id=?", vals + [ins_id])
+        audit("hr", "상해공제 수정", f"emp#{data['employee_id']}", data.get("product") or "")
+        return ins_id
+    new_id = execute(f"INSERT INTO employee_insurances({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", vals)
+    audit("hr", "상해공제 등록", f"emp#{data['employee_id']}", data.get("product") or "")
+    return new_id
+
+
+def delete_insurance(ins_id: int):
+    row = query_one("SELECT employee_id, product FROM employee_insurances WHERE id=?", (ins_id,))
+    execute("DELETE FROM employee_insurances WHERE id=?", (ins_id,))
+    if row:
+        audit("hr", "상해공제 삭제", f"emp#{row['employee_id']}", row["product"])
+
+
 def delete_special(sid: int):
     execute("DELETE FROM work_specials WHERE id=?", (sid,))
 
