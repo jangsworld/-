@@ -8,6 +8,34 @@
   <div class="col-6 col-md"><div class="card kpi h-100"><div class="kpi-label">월 고정비(환산)</div><div class="kpi-value">{{ sum.monthly|man_won }}원</div><div class="kpi-sub">연 {{ sum.yearly|man_won }}원</div></div></div>
   <div class="col-6 col-md"><div class="card kpi h-100"><div class="kpi-label">예치 보증금</div><div class="kpi-value">{{ sum.deposit|man_won }}원</div><div class="kpi-sub">반환 예정 자산</div></div></div>
 </div>
+{% if can_write and intake.enabled %}
+<div class="card mb-3 {{ 'border-warning' if drafts }}">
+  <div class="card-header d-flex align-items-center gap-2">
+    <span><i class="bi bi-folder-symlink me-1"></i>계약서 등록 초안</span>
+    {% if drafts %}<span class="st st-확인필요">초안생성 · 확인필요 {{ drafts|length }}건</span>{% endif %}
+    <span class="help ms-auto">{% if intake.error %}<span class="text-danger">{{ intake.error }}</span>{% else %}계약서 폴더 자동 확인 중{% if intake.last_scan %} · 마지막 {{ intake.last_scan[11:16] }}{% endif %}{% endif %}</span>
+    <form method="post" action="/ga/contract-drafts/scan"><button class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat"></i> 지금 확인</button></form>
+  </div>
+  {% if drafts %}
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th>서류 폴더</th><th>구분</th><th>상대방</th><th>계약기간</th><th class="num">금액</th><th class="num">보증금</th><th>서류</th><th>확인할 사항</th><th></th></tr></thead>
+    <tbody>{% for d in drafts %}<tr>
+      <td class="fw-semibold">{{ d.folder_name }}</td><td><span class="badge text-bg-light border">{{ d.fields.category or '-' }}</span></td>
+      <td>{{ d.fields.counterparty or '-' }}</td><td class="small text-nowrap">{{ d.fields.start_date or '?' }} ~ {{ d.fields.end_date or '?' }}</td>
+      <td class="num">{{ d.fields.amount|won if d.fields.amount else '-' }}{% if d.fields.pay_cycle %}<div class="small text-muted">/{{ d.fields.pay_cycle }}</div>{% endif %}</td>
+      <td class="num">{{ d.fields.deposit|won if d.fields.deposit else '' }}</td>
+      <td class="small">{% for x in d.files %}<div class="text-nowrap"><a href="/ga/contract-drafts/{{ d.id }}/file?name={{ x.name|urlencode }}" target="_blank" rel="noopener">{{ x.name }}</a>{% if x.status != '읽음' %} <span class="text-muted">({{ x.status }})</span>{% endif %}</div>{% endfor %}</td>
+      <td class="small">{% for c in d.checks %}<div class="text-warning-emphasis">· {{ c }}</div>{% else %}<span class="text-muted">-</span>{% endfor %}</td>
+      <td class="text-nowrap text-end">
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#draftModal" data-fill='{{ d.fill|tojson }}'>확인·등록</button>
+        <form method="post" action="/ga/contract-drafts/{{ d.id }}/delete" class="d-inline" data-confirm="{{ d.folder_name }} 초안을 삭제할까요?&#10;&#10;폴더와 서류는 그대로 둡니다. 폴더에 서류를 새로 넣거나 바꾸면 다시 만들어집니다.">
+          <button class="btn btn-sm btn-link text-danger p-0 ms-1" title="초안 삭제"><i class="bi bi-trash"></i> 삭제</button></form>
+        <form method="post" action="/ga/contract-drafts/{{ d.id }}/exclude" class="d-inline" data-confirm="이 폴더는 앞으로 초안을 만들지 않습니다. 제외할까요?">
+          <button class="btn btn-sm btn-link text-muted p-0 ms-1" title="계약 폴더가 아닌 경우">제외</button></form></td>
+    </tr>{% endfor %}</tbody></table></div>
+  {% else %}<div class="card-body py-2 small text-muted">확인할 초안이 없습니다. NAS <b>04. 총무 › bms › 계약서</b> 폴더 안에 계약마다 폴더(예: 2026 본사 임대차)를 만들고 계약서 PDF·스캔본을 넣으면 1분 안에 초안이 생깁니다. 폴더 이름이 계약명이 됩니다.</div>{% endif %}
+</div>
+{% endif %}
 <div class="card">
   <div class="card-header"><form class="row g-2 align-items-center" method="get">
     <div class="col-auto"><select class="form-select form-select-sm" name="category" data-autosubmit><option value="">구분 전체</option>{% for c in categories %}<option {% if f.category == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
@@ -18,7 +46,9 @@
   <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
     <thead><tr><th>구분</th><th>계약명</th><th>상대방</th><th>계약기간</th><th>만료</th><th class="num">금액</th><th class="num text-nowrap">월 환산</th><th class="num">보증금</th><th>갱신</th><th>해지·갱신 통보기한</th><th>상태</th><th>담당</th><th></th></tr></thead>
     <tbody>{% for c in rows %}<tr>
-      <td><span class="badge text-bg-light border">{{ c.category }}</span></td><td class="fw-semibold">{{ c.title }}<div class="small text-muted">{{ c.contract_no or '' }}</div></td>
+      <td><span class="badge text-bg-light border">{{ c.category }}</span></td><td class="fw-semibold">{{ c.title }}<div class="small text-muted">{{ c.contract_no or '' }}</div>
+        {% if c.files and can_write %}<div class="dropdown d-inline"><button class="btn btn-sm btn-link p-0 small" data-bs-toggle="dropdown" type="button"><i class="bi bi-folder2-open"></i> 서류 {{ c.files|length }}</button>
+          <ul class="dropdown-menu">{% for n in c.files %}<li><a class="dropdown-item small" href="/ga/contracts/{{ c.id }}/file?name={{ n|urlencode }}" target="_blank" rel="noopener">{{ n }}</a></li>{% endfor %}</ul></div>{% endif %}</td>
       <td>{{ c.counterparty }}</td><td class="small text-nowrap">{{ c.start_date or '' }} ~ {{ c.end_date or '' }}</td><td>{{ dday(c.dday, 60) }}</td>
       <td class="num" title="{{ c.amount|vatinfo(c.amount_vat) }}">{{ c.amount|won }}<div class="small text-muted">/{{ c.pay_cycle }}{% if c.amount_vat %} · {{ c.amount_vat }}{% endif %}</div></td><td class="num">{{ c.monthly|won }}</td><td class="num">{{ c.deposit|won if c.deposit else '' }}</td>
       <td class="small text-nowrap">{{ '자동' if c.auto_renew else '수동' }}</td>
@@ -33,6 +63,16 @@
 {% if can_write %}
 {% call modal('contractModal', '계약', '/ga/contracts/save') %}
   {{ field('category', '구분', opts=categories, blank=False) }}{{ field('title', '계약명', req=True, col='col-md-8', ph='본사 사무실 임대차, 복합기 렌탈 등') }}
+  {{ field('counterparty', '상대방', req=True) }}{{ field('contract_no', '계약번호') }}{{ field('manager_id', '담당자', opts=emp_opts) }}
+  {{ field('start_date', '시작일', 'date') }}{{ field('end_date', '종료일', 'date') }}{{ field('status', '상태', opts=statuses, blank=False) }}
+  {{ field('amount', '금액(원)', 'number') }}{{ field('amount_vat', '부가세 구분', opts=vat_types, blank=False) }}{{ field('pay_cycle', '지급주기', opts=cycles.keys()|list, blank=False) }}{{ field('deposit', '보증금(원)', 'number') }}
+  {{ field('auto_renew', '자동갱신', 'checkbox', ph='만료 시 자동 연장') }}{{ field('notice_days', '통보기한(만료 N일 전)', 'number', value=30) }}
+  {{ field('memo', '비고', 'textarea', col='col-12') }}
+{% endcall %}
+{% call modal('draftModal', '계약서 초안 확인 ·', '/ga/contract-drafts/confirm') %}
+  <input type="hidden" name="draft_id" value="">
+  <div class="col-12 help mb-1">계약서에서 읽은 값입니다. 원본과 다르면 고친 뒤 저장하세요. 저장하면 계약 목록에 등록되고, 계약 줄에서 폴더 서류를 바로 열 수 있습니다.</div>
+  {{ field('category', '구분', opts=categories, blank=False) }}{{ field('title', '계약명', req=True, col='col-md-8') }}
   {{ field('counterparty', '상대방', req=True) }}{{ field('contract_no', '계약번호') }}{{ field('manager_id', '담당자', opts=emp_opts) }}
   {{ field('start_date', '시작일', 'date') }}{{ field('end_date', '종료일', 'date') }}{{ field('status', '상태', opts=statuses, blank=False) }}
   {{ field('amount', '금액(원)', 'number') }}{{ field('amount_vat', '부가세 구분', opts=vat_types, blank=False) }}{{ field('pay_cycle', '지급주기', opts=cycles.keys()|list, blank=False) }}{{ field('deposit', '보증금(원)', 'number') }}

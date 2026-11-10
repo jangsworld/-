@@ -35,6 +35,7 @@ RULES = [
     (r"^/ga/seals/\d+/decide", ADMIN, ADMIN),
     (r"^/ga/events", GA_STAFF, GA_STAFF),
     (r"^/ga/(assets|contracts)/export\.csv", GA_STAFF, GA_STAFF),
+    (r"^/ga/(contract-drafts|contracts/\d+/file)", GA_STAFF, GA_STAFF),     # 계약서 원본·초안: 총무 담당자 이상
     (r"^/ga", ALL, GA_STAFF),
     (r"^/$", ALL, ALL),
 ]

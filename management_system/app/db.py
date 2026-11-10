@@ -465,6 +465,17 @@ CREATE TABLE IF NOT EXISTS ga_contracts (              -- 계약·임대차
     memo           TEXT
 );
 
+CREATE TABLE IF NOT EXISTS ga_contract_drafts (        -- 계약서 폴더에서 읽은 등록 초안
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    folder_name TEXT NOT NULL UNIQUE,
+    signature   TEXT,                                -- 폴더 파일 목록 해시 (바뀌면 다시 읽음)
+    data        TEXT,                                -- 암호화: 추출 항목·파일 목록
+    status      TEXT NOT NULL DEFAULT '확인필요',     -- 확인필요/등록완료/삭제/제외
+    contract_id INTEGER REFERENCES ga_contracts(id) ON DELETE SET NULL,
+    detected_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
 CREATE TABLE IF NOT EXISTS ga_event_rules (            -- 경조 규정
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     category    TEXT NOT NULL,                       -- 결혼/출산/사망/회갑·칠순/입원/기타
@@ -575,7 +586,7 @@ ADDED_COLUMNS = {
     "ga_assets": ["cost_vat", "photo", "qr_token"],
     "ga_asset_history": ["cost_vat"],
     "ga_vehicle_maint": ["cost_vat"],
-    "ga_contracts": ["amount_vat"],
+    "ga_contracts": ["amount_vat", "folder_name"],
     "ga_vehicle_logs": ["external_id", "external_updated", "external_purpose"],
 }
 

@@ -17,7 +17,7 @@ from app.config import APP_DIR, SYSTEM_CODE, SYSTEM_NAME, settings
 from app.db import audit, init_db, get_settings, set_setting, DEFAULT_SETTINGS
 from app.modules import MODULES
 from app import mailer
-from app.modules.ga import cartax
+from app.modules.ga import cartax, contract_intake
 from app.modules.ga.constants import ASSET_BEHAVIORS
 from app.modules.hr import intake, repo as hr_repo
 from app.modules.hr.routes import router as hr_router
@@ -80,9 +80,11 @@ async def lifespan(_app):
     log.info("BMS started on port %s", settings.port)
     intake.start_worker()
     cartax.start_worker()
+    contract_intake.start_worker()
     yield
     intake.stop_worker()
     cartax.stop_worker()
+    contract_intake.stop_worker()
 
 
 app = FastAPI(title=SYSTEM_NAME, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)

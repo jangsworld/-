@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from app.common import templates, today, to_date, vat_split
 from app.config import settings as cfg
 from app.db import audit, get_codes, get_settings, execute
-from app.modules.ga import cartax, photos, repo, services
+from app.modules.ga import cartax, contract_intake, photos, repo, services
 from app.modules.ga.constants import (
     ASSET_CATEGORIES, ASSET_STATUSES, VEHICLE_STATUSES, DRIVE_PURPOSES, PURPOSE_PENDING, DOC_STATUSES, SEAL_STATUSES,
     PAY_CYCLES, CONTRACT_STATUSES, EVENT_STATUSES, VAT_TYPES,
@@ -374,14 +374,99 @@ async def seal_decide(request: Request, sid: int):
 def contracts(request: Request, category: str = "", status: str = "유효"):
     services.roll_auto_renew()
     rows = [services.contract_view(c) for c in repo.list_contracts(category, status)]
+    for c in rows:
+        c["files"] = contract_intake.list_files(c.get("folder_name")) if c.get("folder_name") else []
     active = [services.contract_view(c) for c in repo.list_contracts(status="유효")]
+    can_write = request.state.user["role"] in ("admin", "hr", "ga")
+    drafts = []
+    if can_write and cfg.contract_root:
+        for d in contract_intake.list_drafts("확인필요"):
+            data = d["data"] or {}
+            fill = {"status": "유효", "pay_cycle": "월", "notice_days": 30, "amount_vat": "부가세별도",
+                    **data.get("fields", {}), "draft_id": d["id"]}
+            drafts.append({**d, "fields": data.get("fields", {}), "checks": data.get("checks", []),
+                           "files": data.get("files", []), "fill": fill})
     return _render(request, "ga/contracts.html", {
+        "drafts": drafts, "intake": {**contract_intake.state, "enabled": bool(cfg.contract_root)},
         "rows": rows, "f": {"category": category, "status": status}, "categories": get_codes("GA_CONTRACT"),
         "cycles": PAY_CYCLES, "statuses": CONTRACT_STATUSES,
         "sum": {"count": len(active), "monthly": sum(c["monthly"] for c in active),
                 "yearly": sum(c["monthly"] for c in active) * 12, "deposit": sum(c["deposit"] or 0 for c in active),
                 "soon": sum(1 for c in active if c["phase"] in ("만료임박", "통보임박", "통보경과"))},
     }, "ga.contracts")
+
+
+@router.post("/contract-drafts/scan")
+def contract_drafts_scan():
+    return _redirect("/ga/contracts", contract_intake.scan_once(force=True)["message"])
+
+
+def _pending_draft(did: int) -> dict | None:
+    d = contract_intake.get_draft(did)
+    return d if d and d["status"] == "확인필요" else None
+
+
+@router.post("/contract-drafts/confirm")
+async def contract_draft_confirm(request: Request):
+    """초안 확인 → 계약 등록. 폴더 이름을 계약에 남겨 서류를 계속 열어 볼 수 있게 합니다."""
+    f = dict(await request.form())
+    d = _pending_draft(int(f.get("draft_id") or 0))
+    if not d:
+        return _redirect("/ga/contracts", "이미 처리되었거나 삭제된 초안입니다")
+    if not (f.get("title") or "").strip() or not (f.get("counterparty") or "").strip():
+        return _redirect("/ga/contracts", "계약명과 상대방은 꼭 입력해 주세요")
+    f.setdefault("auto_renew", 0)
+    f["folder_name"] = d["folder_name"]
+    f.pop("id", None)
+    rid = repo.save("ga_contracts", None, f)
+    contract_intake.update_draft(d["id"], status="등록완료", contract_id=rid)
+    audit("ga", "계약 초안 등록", d["folder_name"], f"계약 #{rid}")
+    return _redirect("/ga/contracts", f"'{f['title']}' 계약을 등록했습니다")
+
+
+@router.post("/contract-drafts/{did}/delete")
+def contract_draft_delete(did: int):
+    d = _pending_draft(did)
+    if not d:
+        return _redirect("/ga/contracts", "이미 처리된 초안입니다")
+    contract_intake.update_draft(did, status="삭제", data={})
+    audit("ga", "계약 초안 삭제", d["folder_name"], "")
+    return _redirect("/ga/contracts", f"{d['folder_name']} 초안을 삭제했습니다. 폴더에 서류를 새로 넣거나 바꾸면 다시 만들어집니다")
+
+
+@router.post("/contract-drafts/{did}/exclude")
+def contract_draft_exclude(did: int):
+    d = _pending_draft(did)
+    if not d:
+        return _redirect("/ga/contracts", "이미 처리된 초안입니다")
+    contract_intake.update_draft(did, status="제외", data={})
+    audit("ga", "계약 초안 제외", d["folder_name"], "")
+    return _redirect("/ga/contracts", f"{d['folder_name']} 폴더는 앞으로 초안을 만들지 않습니다")
+
+
+def _folder_file(folder_name: str, name: str):
+    """폴더 안에 실제로 있는 파일만 열어 줍니다 (경로 조작 차단)."""
+    path = contract_intake.folder_path(folder_name)
+    if not path or name not in contract_intake.list_files(folder_name):
+        raise HTTPException(404, "파일을 찾을 수 없습니다")
+    audit("ga", "계약 서류 열람", folder_name, name)
+    return FileResponse(os.path.join(path, name), filename=name, content_disposition_type="inline")
+
+
+@router.get("/contract-drafts/{did}/file")
+def contract_draft_file(did: int, name: str):
+    d = contract_intake.get_draft(did)
+    if not d:
+        raise HTTPException(404, "초안을 찾을 수 없습니다")
+    return _folder_file(d["folder_name"], name)
+
+
+@router.get("/contracts/{cid}/file")
+def contract_file(cid: int, name: str):
+    c = repo.get("ga_contracts", cid)
+    if not c or not c.get("folder_name"):
+        raise HTTPException(404, "서류 폴더가 연결되지 않은 계약입니다")
+    return _folder_file(c["folder_name"], name)
 
 
 @router.get("/contracts/export.csv")

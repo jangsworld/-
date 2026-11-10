@@ -34,6 +34,7 @@ class Settings:
     log_dir: str = os.path.join(APP_DIR, "logs")
     employee_root: str = ""             # 임직원 서류 폴더 예: \\\\NAS\\공유폴더\\인사\\BMS
     intake_interval_sec: int = 60       # 새 폴더 확인 주기(초), 0 이면 자동 감지 끔
+    contract_root: str = ""             # 계약서 폴더 (계약별 하위 폴더 → 계약 등록 초안). 비우면 끔
     # [security]
     session_idle_minutes: int = 30
     session_max_hours: int = 10
