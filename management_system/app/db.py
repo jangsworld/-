@@ -265,6 +265,16 @@ CREATE TABLE IF NOT EXISTS hr_documents (
     updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
+-- 문서(증명서 등) 메일 발송 기록: 누구에게(인사기록카드/직접 입력) 언제 보냈는지
+CREATE TABLE IF NOT EXISTS hr_doc_mails (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id      INTEGER NOT NULL REFERENCES hr_documents(id) ON DELETE CASCADE,
+    target      TEXT NOT NULL,            -- 인사기록카드 / 직접입력
+    to_addr     TEXT NOT NULL,            -- 암호화
+    sent_by     TEXT,
+    sent_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
 -- 입사·퇴사 체크리스트 완료 기록 (항목은 구분값 설정의 ONBOARD/OFFBOARD)
 CREATE TABLE IF NOT EXISTS employee_checks (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -504,6 +514,7 @@ CREATE INDEX IF NOT EXISTS idx_vlogs ON ga_vehicle_logs(vehicle_id, drive_date);
 CREATE INDEX IF NOT EXISTS idx_ga_docs ON ga_docs(direction, doc_date);
 CREATE INDEX IF NOT EXISTS idx_salaries_year ON salaries(year);
 CREATE INDEX IF NOT EXISTS idx_docs_emp ON hr_documents(employee_id);
+CREATE INDEX IF NOT EXISTS idx_doc_mails ON hr_doc_mails(doc_id);
 CREATE INDEX IF NOT EXISTS idx_rewards_emp ON rewards(employee_id);
 CREATE INDEX IF NOT EXISTS idx_specials_emp ON work_specials(employee_id);
 """

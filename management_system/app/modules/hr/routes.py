@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import os
+import re
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File
@@ -10,7 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse, Response
 
 from app.common import templates, today, sanitize_html, add_months, days_until, to_date
-from app.db import batch, get_codes, get_settings, audit
+from app.db import batch, execute, get_codes, get_settings, audit
 from app import mailer
 from app.config import settings as cfg
 from app.modules.hr import intake, repo, rrn as rrn_util, services, signing
@@ -682,6 +683,7 @@ def document_editor(request: Request, doc_id: int):
         "d": d, "statuses": statuses, "params": json.loads(d["params"] or "{}"),
         "sign": sign, "sign_link": sign_link, "locked": bool(sign and sign["status"] == "완료"),
         "mail_ready": mailer.configured(),
+        "mails": [{**m, "to_masked": _mask_email(m["to_addr"])} for m in repo.list_doc_mails(doc_id)],
         "history": repo.list_documents(d["doc_group"], employee_id=d["employee_id"]),
     }, "hr.contracts" if d["doc_group"] == "contract" else "hr.certificates")
 
@@ -732,35 +734,72 @@ def document_sign_request(request: Request, doc_id: int):
     return _redirect(back, f"{error or '메일 서버 미설정'}: 화면의 서명 링크를 직원에게 전달하세요")
 
 
-@router.post("/documents/{doc_id}/email")
-def document_email(doc_id: int):
-    """발급한 증명서 등을 PDF 첨부로 직원 메일에 전송."""
+_EMAIL_RE = re.compile(r"^[^@\s,;<>\"']+@[^@\s,;<>\"']+\.[^@\s,;<>\"']{2,}$")
+
+
+def valid_email(v: str) -> bool:
+    return bool(_EMAIL_RE.match(v or ""))
+
+
+def email_document(doc_id: int, target: str = "employee", manual_to: str = "", note: str = "") -> tuple[bool, str]:
+    """발급 문서를 PDF 첨부로 메일 전송. target: employee(인사기록카드 이메일) / manual(직접 입력)."""
     from app import storage
+    from app.db import current_actor
     d = repo.get_document(doc_id)
     if not d:
-        raise HTTPException(404, "문서를 찾을 수 없습니다")
-    back = f"/hr/documents/{doc_id}"
+        return False, "문서를 찾을 수 없습니다"
     if not mailer.configured():
-        return _redirect(back, "메일 서버가 설정되지 않았습니다 (config/bms.toml [mail])")
-    if not d.get("email"):
-        return _redirect(back, "임직원 정보에 이메일이 없습니다")
-    if not d.get("pdf_path"):
-        ok, m = services.store_document_pdf(doc_id)
+        return False, "메일 서버가 설정되지 않았습니다 (회사정보·환경설정 → 메일)"
+    if target == "manual":
+        to, label = (manual_to or "").strip(), "직접입력"
+        if not valid_email(to):
+            return False, "받는 사람 메일 주소를 올바르게 입력하세요 (예: name@example.com, 한 명만)"
+    else:
+        to, label = (d.get("email") or "").strip(), "인사기록카드"
+        if not valid_email(to):
+            return False, "인사기록카드에 이메일이 없거나 형식이 맞지 않습니다. [직접 입력]으로 보내거나 인사기록카드를 고쳐 주세요"
+    if d["status"] in ("발급취소", "해지", "만료"):
+        return False, f"{d['status']} 상태의 문서는 보낼 수 없습니다"
+    if "ph-missing" in (d["content"] or ""):
+        return False, "비어 있는 항목([항목] 표시)이 있습니다. 문서를 완성·저장한 뒤 보내 주세요"
+    if not d.get("pdf_path") or (d.get("pdf_saved_at") or "") < (d.get("updated_at") or ""):
+        ok, m = services.store_document_pdf(doc_id)       # 고친 뒤 PDF 를 다시 만들어 최신본을 보냄
         if not ok:
-            return _redirect(back, m)
+            return False, m
         d = repo.get_document(doc_id)
     company = get_settings().get("company_name", "")
+    note = (note or "").strip()[:1000]
+    body = f"{d['name']}님, 요청하신 {d['category']}를 첨부해 보내드립니다."
+    if d.get("doc_no"):
+        body += f"\n발급번호: {d['doc_no']}"
+    if note:
+        body += f"\n\n{note}"
+    body += f"\n\n{company} 경영관리팀"
     try:
         pdf = storage.read_verified(d["pdf_path"], d["pdf_sha256"])
-        mailer.send(d["email"], f"[{company}] {d['title']}",
-                    f"{d['name']}님, 요청하신 문서를 첨부해 보내드립니다.\n\n{company} 경영관리팀",
-                    [(f"{d['category']}_{d['name']}.pdf", pdf)])
+        mailer.send(to, f"[{company}] {d['title']}", body, [(f"{d['category']}_{d['name']}.pdf", pdf)])
     except (storage.StorageError, mailer.MailError) as ex:
         audit("hr", "메일 전송 실패", f"doc#{doc_id}", str(ex)[:120])
-        return _redirect(back, str(ex))
-    repo.update_document(doc_id, emailed_at=signing._now())
-    audit("hr", "문서 메일 전송", f"doc#{doc_id}", d["title"])
-    return _redirect(back, "직원 메일로 전송했습니다")
+        return False, str(ex)
+    with batch():
+        execute("UPDATE hr_documents SET emailed_at=? WHERE id=?", (signing._now(), doc_id))  # 수정일은 그대로
+        repo.add_doc_mail(doc_id, label, to, current_actor.get()[1])
+        audit("hr", "문서 메일 전송", f"doc#{doc_id}", f"{d['title']} · {label}")   # 주소 원문은 기록하지 않음
+    return True, f"{_mask_email(to)} 로 전송했습니다"
+
+
+def _mask_email(v: str) -> str:
+    local, _, domain = (v or "").partition("@")
+    return (local[:2] + "***@" + domain) if domain else v
+
+
+@router.post("/documents/{doc_id}/email")
+async def document_email(doc_id: int, request: Request):
+    """발급한 증명서 등을 PDF 첨부로 메일 전송 (인사기록카드 이메일 또는 직접 입력한 주소)."""
+    f = await request.form()
+    ok, msg = await run_in_threadpool(email_document, doc_id, f.get("target") or "employee",
+                                      f.get("to") or "", f.get("note") or "")
+    return _redirect(f"/hr/documents/{doc_id}", msg)
 
 
 @router.get("/documents/{doc_id}/pdf")
@@ -900,6 +939,7 @@ def certificates(request: Request, q: str = ""):
         "docs": repo.list_documents("certificate", q=q), "q": q,
         "emps": repo.list_employees(status=""),
         "tpls": repo.list_templates("certificate", active_only=True),
+        "mail_ready": mailer.configured(),
     }, "hr.certificates")
 
 
@@ -917,9 +957,13 @@ async def certificate_create(request: Request):
         signed_date=today().isoformat(),
     )
     msg = f"{params['doc_no']} 발급되었습니다"
-    if cfg.pdf_on_signed:
+    mail_mode = f.get("mail_mode") or "none"
+    if cfg.pdf_on_signed or mail_mode in ("employee", "manual"):
         _, m = await run_in_threadpool(services.store_document_pdf, doc_id)
         msg += " · " + m
+    if mail_mode in ("employee", "manual"):
+        ok, m = await run_in_threadpool(email_document, doc_id, mail_mode, f.get("mail_to") or "", "")
+        msg += " · " + ("메일 " + m if ok else "메일은 보내지 못했습니다: " + m)
     return _redirect(f"/hr/documents/{doc_id}", msg)
 
 

@@ -410,3 +410,67 @@ def test_migration_adds_columns(tmp_path):
     assert "folder_name" in {r[1] for r in conn.execute("PRAGMA table_info(employees)")}
     assert "emailed_at" in {r[1] for r in conn.execute("PRAGMA table_info(hr_documents)")}
     conn.close()
+
+
+def _cert(client, emp, **extra):
+    tpl = repo.list_templates("certificate")[0]
+    r = client.post("/hr/certificates/new", data={"employee_id": emp["id"], "template_id": tpl["id"],
+                                                   "purpose": "제출용", **extra}, follow_redirects=False)
+    return int(r.headers["location"].split("/")[-1].split("?")[0]), r.headers["location"]
+
+
+def test_certificate_email_manual_address_and_log(client, mail, fake_pdf, root):
+    emp = next(e for e in repo.list_employees(status="재직(전체)") if e.get("email"))
+    doc_id, _ = _cert(client, emp)
+    n = len(mail.sent)
+    client.post(f"/hr/documents/{doc_id}/email", data={"target": "manual", "to": "bank-desk@example.com",
+                                                        "note": "원본은 경영관리팀에 요청하세요"})
+    assert len(mail.sent) == n + 1 and mail.sent[-1]["to"] == "bank-desk@example.com"
+    assert "원본은 경영관리팀" in mail.sent[-1]["body"] and mail.sent[-1]["attachments"]
+    logs = repo.list_doc_mails(doc_id)
+    assert logs[0]["target"] == "직접입력" and logs[0]["to_addr"] == "bank-desk@example.com"
+    raw = repo.query_one("SELECT to_addr FROM hr_doc_mails WHERE id=?", (logs[0]["id"],))
+    from app.db import tx
+    with tx() as conn:                                            # 주소는 암호화 저장
+        assert conn.execute("SELECT to_addr FROM hr_doc_mails WHERE id=?", (logs[0]["id"],)).fetchone()[0].startswith("enc:v1:")
+    assert raw["to_addr"] == "bank-desk@example.com"
+    page = client.get(f"/hr/documents/{doc_id}").text
+    assert "메일 발송 기록" in page and "bank-desk@example.com" in page
+    # 잘못된 주소·여러 명·헤더 주입은 거부
+    for bad in ["", "abc", "a@b.com, c@d.com", "a@b.com\r\nBcc: x@y.com"]:
+        client.post(f"/hr/documents/{doc_id}/email", data={"target": "manual", "to": bad})
+    assert len(mail.sent) == n + 1
+
+
+def test_certificate_email_on_issue_options(client, mail, fake_pdf, root):
+    emp = next(e for e in repo.list_employees(status="재직(전체)") if e.get("email"))
+    n = len(mail.sent)
+    doc_id, loc = _cert(client, emp, mail_mode="employee")
+    assert mail.sent[-1]["to"] == emp["email"] and len(mail.sent) == n + 1
+    assert repo.list_doc_mails(doc_id)[0]["target"] == "인사기록카드"
+    _cert(client, emp, mail_mode="manual", mail_to="hr-out@example.com")
+    assert mail.sent[-1]["to"] == "hr-out@example.com"
+    _cert(client, emp, mail_mode="none")
+    assert len(mail.sent) == n + 2
+    # 인사기록카드에 이메일이 없으면 발급은 되고 메일은 안내만
+    no_mail = next((e for e in repo.list_employees(status="") if not e.get("email")), None)
+    if no_mail:
+        doc2, loc2 = _cert(client, no_mail, mail_mode="employee")
+        assert repo.get_document(doc2)["status"] == "발급완료" and len(mail.sent) == n + 2
+    assert "bi-envelope-check" in client.get("/hr/certificates").text   # 대장에 메일 보낸 날 표시
+
+
+def test_email_sends_latest_pdf_and_blocks_incomplete(client, mail, fake_pdf, root):
+    emp = next(e for e in repo.list_employees(status="재직(전체)") if e.get("email"))
+    doc_id, _ = _cert(client, emp)
+    from app.db import execute
+    execute("UPDATE hr_documents SET pdf_saved_at='2000-01-01 00:00:00' WHERE id=?", (doc_id,))
+    client.post(f"/hr/api/documents/{doc_id}", json={"content": "<p>고친 증명서 최신본</p>"})
+    client.post(f"/hr/documents/{doc_id}/email", data={"target": "employee"})
+    assert "최신본".encode() in mail.sent[-1]["attachments"][0][1]   # 고친 내용으로 PDF 를 다시 만들어 보냄
+    n = len(mail.sent)
+    client.post(f"/hr/api/documents/{doc_id}", json={"content": '<p><span class="ph-missing">[용도]</span></p>'})
+    client.post(f"/hr/documents/{doc_id}/email", data={"target": "employee"})
+    client.post(f"/hr/api/documents/{doc_id}", json={"content": "<p>ok</p>", "status": "발급취소"})
+    client.post(f"/hr/documents/{doc_id}/email", data={"target": "employee"})
+    assert len(mail.sent) == n

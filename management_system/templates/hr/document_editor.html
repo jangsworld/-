@@ -35,8 +35,9 @@
           <button class="btn btn-warning btn-sm"><i class="bi bi-send"></i> {{ '서명 다시 요청' if sign and sign.status == '대기' else '직원에게 전자서명 요청' }}</button></form>
         {% endif %}
         {% if d.doc_group == 'certificate' or d.status == '체결완료' %}
-        <form method="post" action="/hr/documents/{{ d.id }}/email" class="d-grid" data-confirm="{{ d.name }}님 메일로 PDF 를 전송할까요?">
-          <button class="btn btn-outline-primary btn-sm" {{ 'disabled' if not mail_ready }}><i class="bi bi-envelope"></i> 직원 메일로 전송{% if d.emailed_at %} <span class="small opacity-75">({{ d.emailed_at[:10] }} 전송됨)</span>{% endif %}</button></form>
+        <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#mailModal" {{ 'disabled' if not mail_ready }}>
+          <i class="bi bi-envelope"></i> 메일로 보내기{% if d.emailed_at %} <span class="small opacity-75">({{ d.emailed_at[5:10] }} 보냄)</span>{% endif %}</button>
+        {% if not mail_ready %}<div class="help">메일 서버가 설정되지 않아 보낼 수 없습니다 (회사정보·환경설정)</div>{% endif %}
         {% endif %}
         <form method="post" action="/hr/documents/{{ d.id }}/regenerate" class="d-grid" data-confirm="편집한 내용이 사라지고 템플릿+최신 임직원 정보로 다시 작성됩니다. 계속할까요?">
           <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-repeat"></i> 최신 정보로 다시 작성</button></form>
@@ -56,6 +57,14 @@
       {% endif %}
       {% endif %}
     </div></div>
+    {% if mails %}
+    <div class="card mb-3"><div class="card-header small"><i class="bi bi-envelope-check"></i> 메일 발송 기록</div>
+      <ul class="list-group list-group-flush small">
+      {% for m in mails %}<li class="list-group-item">
+        <div class="d-flex"><span>{{ m.to_addr if perms.pii else m.to_masked }}</span><span class="badge text-bg-light border ms-auto">{{ m.target }}</span></div>
+        <div class="text-muted">{{ m.sent_at[:16] }}{% if m.sent_by %} · {{ m.sent_by }}{% endif %}</div></li>{% endfor %}
+      </ul></div>
+    {% endif %}
     <div class="card"><div class="card-header small">{{ d.name }}님의 문서 이력</div>
       <ul class="list-group list-group-flush small">
       {% for h in history %}<li class="list-group-item d-flex gap-2 {% if h.id == d.id %}bg-light{% endif %}">
@@ -64,6 +73,32 @@
       </ul></div>
   </div>
 </div>
+{% if d.doc_group == 'certificate' or d.status == '체결완료' %}
+<div class="modal fade no-print" id="mailModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/hr/documents/{{ d.id }}/email" id="mailForm">
+    <div class="modal-header"><h6 class="modal-title"><i class="bi bi-envelope"></i> {{ d.title }} 메일로 보내기</h6>
+      <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <div class="small text-muted mb-1">받는 사람</div>
+      <div class="form-check mb-1">
+        <input class="form-check-input" type="radio" name="target" value="employee" id="tgEmp" {{ 'checked' if d.email else 'disabled' }}>
+        <label class="form-check-label" for="tgEmp">인사기록카드 이메일
+          <span class="text-muted">{% if d.email %}({{ d.email if perms.pii else '등록됨' }}){% else %}(등록된 이메일 없음){% endif %}</span></label>
+      </div>
+      <div class="form-check mb-1">
+        <input class="form-check-input" type="radio" name="target" value="manual" id="tgManual" {{ '' if d.email else 'checked' }}>
+        <label class="form-check-label" for="tgManual">직접 입력</label>
+      </div>
+      <input class="form-control form-control-sm mb-2" type="email" name="to" id="mailTo" placeholder="받는 사람 메일 주소 (한 명)" autocomplete="off">
+      <label class="form-label small text-muted mb-1">덧붙일 말 (선택)</label>
+      <textarea class="form-control form-control-sm" name="note" rows="2" maxlength="1000" placeholder="예: 원본이 필요하시면 경영관리팀으로 연락 주세요"></textarea>
+      <div class="help mt-2"><i class="bi bi-shield-lock"></i> PDF 가 첨부됩니다. 주소를 한 번 더 확인하세요. 보낸 기록은 이 화면과 접속기록에 남습니다.</div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-sm btn-light" data-bs-dismiss="modal">닫기</button>
+      <button class="btn btn-sm btn-primary"><i class="bi bi-send"></i> 보내기</button></div>
+  </form>
+</div></div></div>
+{% endif %}
 {% endblock %}
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
@@ -84,5 +119,19 @@ document.getElementById('status').addEventListener('change', markDirty);
 document.getElementById('signed').addEventListener('change', markDirty);
 document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); } });
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+const mailForm = document.getElementById('mailForm');
+if (mailForm) {
+  const to = document.getElementById('mailTo');
+  const sync = () => { const manual = mailForm.target.value === 'manual'; to.disabled = !manual; to.required = manual; };
+  mailForm.querySelectorAll('[name=target]').forEach(r => r.addEventListener('change', () => { sync(); if (!to.disabled) to.focus(); }));
+  to.addEventListener('focus', () => { document.getElementById('tgManual').checked = true; sync(); });
+  sync();
+  mailForm.addEventListener('submit', e => {
+    if (dirty && !confirm('저장하지 않은 변경사항이 있습니다. 마지막으로 저장된 내용(PDF)이 보내집니다. 계속할까요?')) { e.preventDefault(); return; }
+    const who = mailForm.target.value === 'manual' ? to.value.trim() : '인사기록카드 이메일';
+    if (!confirm(who + ' 로 PDF 를 보낼까요?')) { e.preventDefault(); return; }
+    dirty = false;
+  });
+}
 </script>
 {% endblock %}

@@ -426,7 +426,7 @@ def delete_template(tid: int):
 def list_documents(doc_group="contract", employee_id=None, status="", category="", q="") -> list[dict]:
     sql = ("SELECT d.id, d.doc_group, d.employee_id, d.template_id, d.category, d.title, d.doc_no, "
            "d.purpose, d.start_date, d.end_date, d.annual_salary, d.weekly_hours, d.status, "
-           "d.signed_date, d.created_at, d.updated_at, e.name, e.emp_no, e.department, e.rank, "
+           "d.signed_date, d.created_at, d.updated_at, d.emailed_at, e.name, e.emp_no, e.department, e.rank, "
            "e.employment_type, e.resign_date FROM hr_documents d JOIN employees e ON e.id=d.employee_id "
            "WHERE d.doc_group=?")
     params = [doc_group]
@@ -472,6 +472,15 @@ def update_document(doc_id: int, **kw):
     kw = _enc_doc(kw)
     sets = ", ".join(f"{k}=?" for k in kw) + ", updated_at=datetime('now','localtime')"
     execute(f"UPDATE hr_documents SET {sets} WHERE id=?", list(kw.values()) + [doc_id])
+
+
+def add_doc_mail(doc_id: int, target: str, to_addr: str, sent_by: str = ""):
+    execute("INSERT INTO hr_doc_mails(doc_id, target, to_addr, sent_by) VALUES (?,?,?,?)",
+            (doc_id, target, enc(to_addr), sent_by))
+
+
+def list_doc_mails(doc_id: int) -> list[dict]:
+    return query("SELECT * FROM hr_doc_mails WHERE doc_id=? ORDER BY id DESC", (doc_id,))
 
 
 def delete_document(doc_id: int):
