@@ -13,7 +13,8 @@ from app.config import settings
 from app.db import current_actor
 from app.security import auth
 
-PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/favicon.ico", "/sign/")  # /sign/: 직원 전자서명 (토큰+본인확인)
+PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/favicon.ico", "/sign/",  # /sign/: 직원 전자서명 (토큰+본인확인)
+                   "/q/")                                                       # /q/: 자산 라벨 QR 기본 정보 (무작위 열쇠, 금액·이력 제외)
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 # 경로별 필요 권한 (위에서부터 첫 일치 규칙 적용)

@@ -233,11 +233,34 @@ def test_qr_uses_public_url(admin, ga):
     no = repo.get("ga_assets", aid)["asset_no"]
     assert f'data-text="{no}"' in ga.get(f"/ga/assets/{aid}").text
     set_setting("public_url", "https://bms.test")
-    assert f'data-text="https://bms.test/ga/a/{no}"' in ga.get(f"/ga/assets/{aid}").text
+    token = repo.asset_qr_token(aid)
+    assert f'data-text="https://bms.test/q/{token}"' in ga.get(f"/ga/assets/{aid}").text
+    assert f'data-text="https://bms.test/q/{token}"' in ga.get("/ga/assets/labels").text
     set_setting("public_url", "")
-    r = ga.get(f"/ga/a/{no}", follow_redirects=False)
+    r = ga.get(f"/ga/a/{no}", follow_redirects=False)                  # 예전 라벨 주소도 그대로 (로그인 필요)
     assert r.headers["location"] == f"/ga/assets/{aid}"
     assert TestClient(app).get(f"/ga/a/{no}", follow_redirects=False).headers["location"].startswith("/login")
+
+
+def test_qr_public_page_shows_basic_info_only(admin, ga):
+    aid = _asset(ga)
+    a = repo.get("ga_assets", aid)
+    execute("UPDATE ga_assets SET serial_no='SN-SECRET-1', cost=1234567 WHERE id=?", (aid,))
+    token = repo.asset_qr_token(aid)
+    assert repo.asset_qr_token(aid) == token and len(token) >= 16                 # 한 번 정하면 그대로, 짐작 어려운 길이
+    anon = TestClient(app)
+    page = anon.get(f"/q/{token}")
+    assert page.status_code == 200 and a["asset_no"] in page.text and a["name"] in page.text
+    assert "SN-SECRET-1" not in page.text and "1,234,567" not in page.text and "1234567" not in page.text
+    assert "담당자 로그인" in page.text
+    assert anon.get(f"/ga/assets/{aid}", follow_redirects=False).headers["location"].startswith("/login")
+    assert anon.get(f"/q/{a['asset_no']}").status_code == 404                    # 자산번호로는 열리지 않음
+    assert anon.get("/q/zzzzzzzzzzzzzzzzzzzzzzzz").status_code == 404
+
+
+def test_mask_name():
+    from app.modules.ga.routes import _mask_name
+    assert _mask_name("홍길동") == "홍*동" and _mask_name("남궁길동") == "남**동" and _mask_name("홍길") == "홍*" and _mask_name(None) == ""
 
 
 CARS = [{"carNumber": "12가 3456", "modelName": "쏘나타", "fuel": "휘발유", "fuelEconomy": 0, "totalDistance": 100}]

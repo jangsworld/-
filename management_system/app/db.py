@@ -572,7 +572,7 @@ ADDED_COLUMNS = {
     "hr_documents": ["emailed_at"],
     "codes": ["behavior"],
     "employee_qualifications": ["expires_on"],
-    "ga_assets": ["cost_vat", "photo"],
+    "ga_assets": ["cost_vat", "photo", "qr_token"],
     "ga_asset_history": ["cost_vat"],
     "ga_vehicle_maint": ["cost_vat"],
     "ga_contracts": ["amount_vat"],
@@ -586,6 +586,8 @@ def _add_columns(conn):
         for col in cols:
             if have and col not in have:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+    if "qr_token" in {r[1] for r in conn.execute("PRAGMA table_info(ga_assets)")}:
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_qr ON ga_assets(qr_token)")
     if "external_id" in {r[1] for r in conn.execute("PRAGMA table_info(ga_vehicle_logs)")}:
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_vlog_external ON ga_vehicle_logs(external_id)")
 

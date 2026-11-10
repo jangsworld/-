@@ -123,6 +123,31 @@ def list_assets(category="", status="", holder_id=None, q="") -> list[dict]:
     return query(sql + " ORDER BY a.asset_no", p)
 
 
+def asset_qr_token(asset_id: int) -> str:
+    """자산 라벨 QR 에 넣는 무작위 열쇠 (자산번호만으로는 다른 자산을 짐작해 열 수 없게)."""
+    import secrets
+    row = query_one("SELECT qr_token FROM ga_assets WHERE id=?", (asset_id,))
+    if row and row["qr_token"]:
+        return row["qr_token"]
+    token = secrets.token_urlsafe(12)
+    execute("UPDATE ga_assets SET qr_token=? WHERE id=? AND (qr_token IS NULL OR qr_token='')", (token, asset_id))
+    return query_one("SELECT qr_token FROM ga_assets WHERE id=?", (asset_id,))["qr_token"]
+
+
+def ensure_qr_tokens():
+    for r in query("SELECT id FROM ga_assets WHERE qr_token IS NULL OR qr_token=''"):
+        asset_qr_token(r["id"])
+
+
+def asset_by_qr(token: str) -> dict | None:
+    """QR 공개 화면용: 기본 정보만 (금액·시리얼·이력 제외)."""
+    if not token or len(token) > 40:
+        return None
+    return query_one("SELECT a.id, a.asset_no, a.category, a.name, a.model, a.status, a.location, a.acquired_date, "
+                     "a.warranty_end, e.name holder_name, e.department holder_dept FROM ga_assets a "
+                     "LEFT JOIN employees e ON e.id=a.holder_id WHERE a.qr_token=?", (token,))
+
+
 def asset_history(asset_id: int) -> list[dict]:
     return query("SELECT h.*, e.name holder_name FROM ga_asset_history h LEFT JOIN employees e ON e.id=h.holder_id "
                  "WHERE h.asset_id=? ORDER BY h.event_date DESC, h.id DESC", (asset_id,))

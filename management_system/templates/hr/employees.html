@@ -54,9 +54,10 @@
 {% endif %}
 
 <div class="card">
-  <div class="card-header d-flex">조회 결과 <span class="badge text-bg-secondary ms-2">{{ rows|length }}명</span></div>
+  <div class="card-header d-flex align-items-center">조회 결과 <span class="badge text-bg-secondary ms-2" data-excel-count>{{ rows|length }}명</span>
+    <span class="help ms-auto">머리글의 ▾ 를 누르면 엑셀처럼 정렬·필터할 수 있습니다</span></div>
   <div class="table-responsive">
-    <table class="table table-hover table-sm align-middle mb-0">
+    <table class="table table-hover table-sm align-middle mb-0" data-excel data-excel-unit="명">
       <thead><tr>
         <th>사번</th><th>성명</th><th>부서</th><th>직급</th><th>직책</th><th>고용형태</th><th>입사일</th><th>근속</th>
         {% if perms.salary %}<th class="num">현재연봉</th><th>계약서</th>{% endif %}<th>상태</th>{% if perms.pii %}<th>연락처</th>{% endif %}</tr></thead>
@@ -64,12 +65,12 @@
       {% for e in rows %}
         <tr data-href="/hr/employees/{{ e.id }}">
           <td class="text-muted">{{ e.emp_no }}</td>
-          <td class="fw-semibold">{{ e.name }}{% if e.gender %} <span class="text-muted small">({{ e.gender }})</span>{% endif %}</td>
+          <td class="fw-semibold" data-v="{{ e.name }}">{{ e.name }}{% if e.gender %} <span class="text-muted small">({{ e.gender }})</span>{% endif %}</td>
           <td>{{ e.department or '' }}</td><td>{{ e.rank or '' }}</td><td>{{ e.title or '' }}</td>
           <td>{{ e.employment_type }}</td><td>{{ e.hire_date }}</td>
-          <td class="small">{{ e.hire_date|service(e.resign_date) }}</td>
-          {% if perms.salary %}<td class="num">{{ e.annual_salary|won }}</td>
-          <td>{% if e.status == '퇴사' %}-{% elif e.has_contract %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<span class="badge text-bg-danger">미체결</span>{% endif %}</td>{% endif %}
+          <td class="small" data-v="{{ e.hire_date|service(e.resign_date) }}">{{ e.hire_date|service(e.resign_date) }}</td>
+          {% if perms.salary %}<td class="num" data-v="{{ e.annual_salary or '' }}">{{ e.annual_salary|won }}</td>
+          <td data-v="{{ '퇴사' if e.status == '퇴사' else ('체결' if e.has_contract else '미체결') }}">{% if e.status == '퇴사' %}-{% elif e.has_contract %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<span class="badge text-bg-danger">미체결</span>{% endif %}</td>{% endif %}
           <td><span class="st st-{{ e.status }}">{{ e.status }}</span></td>
           {% if perms.pii %}<td class="small text-muted">{{ e.phone or '' }}</td>{% endif %}
         </tr>

@@ -62,6 +62,35 @@ def test_csv_duplicate_emp_no_in_file_rejected():
     assert "겹침" in msg and _count("파하가") == 0
 
 
+def test_csv_adds_new_codes_automatically(client):
+    from app.db import get_codes
+    assert "가상신설팀" not in get_codes("DEPT")
+    msg = import_employees_csv(HEAD + ",하나둘,2026-06-01,파견직,가상신설팀,,,\n")
+    assert "신규 1명" in msg and "가상신설팀" in msg and "파견직" in msg
+    assert "가상신설팀" in get_codes("DEPT") and "파견직" in get_codes("EMPLOYMENT_TYPE")
+    assert get_codes("DEPT").count("가상신설팀") == 1
+    import_employees_csv(HEAD + ",하나셋,2026-06-01,,가상신설팀,,,\n")              # 이미 있으면 다시 추가 안 함
+    assert get_codes("DEPT").count("가상신설팀") == 1
+    page = client.get("/hr/salaries").text                                       # 연봉현황 부서 목록에도 보임
+    assert "<option >가상신설팀</option>" in page or ">가상신설팀</option>" in page
+
+
+def test_codes_with_used_and_backfill_once(client):
+    from app.db import execute, get_codes, set_setting
+    emp = repo.list_employees(status="")[0]
+    execute("UPDATE employees SET department='목록밖부서' WHERE id=?", (emp["id"],))   # 예전 자료: 구분값에 없는 부서
+    assert "목록밖부서" not in get_codes("DEPT") and "목록밖부서" in repo.codes_with_used("DEPT")
+    set_setting("codes_backfill_v1", "")
+    assert "목록밖부서" in repo.backfill_employee_codes_once().get("DEPT", [])
+    assert "목록밖부서" in get_codes("DEPT") and repo.backfill_employee_codes_once() == {}   # 한 번만
+
+
+def test_employee_table_has_excel_filter(client):
+    page = client.get("/hr/employees").text
+    assert "data-excel" in page and "/static/js/tablefilter.js" in page and "data-excel-count" in page
+    assert client.get("/static/js/tablefilter.js").status_code == 200
+
+
 def test_csv_route_runs_and_reports(client):
     r = client.post("/hr/employees/import", files={"file": ("x.csv", ("﻿" + HEAD + ",마바사,2026-05-01,,,,,\n").encode("utf-8"), "text/csv")},
                     follow_redirects=False)

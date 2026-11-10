@@ -3,10 +3,10 @@
 {% block page_title %}<a href="/ga/assets" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> 자산 라벨 인쇄{% endblock %}
 {% block content %}
 <div class="d-flex gap-2 mb-3 no-print"><button class="btn btn-sm btn-primary" data-print><i class="bi bi-printer"></i> 인쇄</button>
-  <span class="help align-self-center">A4 라벨지(3열)에 맞춰 인쇄됩니다. {{ 'QR을 휴대폰으로 찍으면 로그인 후 자산 상세가 열립니다.' if public_url else 'QR에는 자산번호만 들어 있습니다. 설정에 직원 접속 주소를 넣으면 찍었을 때 자산 상세가 열립니다.' }}</span></div>
+  <span class="help align-self-center">A4 라벨지(3열)에 맞춰 인쇄됩니다. {{ 'QR을 휴대폰으로 찍으면 로그인 없이 기본 정보(품명·상태·위치·사용 부서)가 보이고, 담당자는 로그인해 상세를 볼 수 있습니다. 금액·시리얼·이력은 로그인해야 보입니다.' if public_url else 'QR에는 자산번호만 들어 있습니다. 설정에 직원 접속 주소를 넣으면 찍었을 때 자산 정보가 열립니다.' }}</span></div>
 <div class="label-sheet">
 {% for a in rows if a.status != '폐기' %}
-  <div class="asset-label"><div class="qr" data-text="{{ (public_url ~ '/ga/a/' ~ a.asset_no) if public_url else a.asset_no }}"></div>
+  <div class="asset-label"><div class="qr" data-text="{{ a.qr_text }}"></div>
     <div><div class="small text-muted">{{ company() }} 자산</div><div class="fw-bold">{{ a.asset_no }}</div><div class="small">{{ a.name }}</div><div class="small text-muted">{{ a.acquired_date or '' }}</div></div></div>
 {% endfor %}
 </div>

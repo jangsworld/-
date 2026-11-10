@@ -22,7 +22,7 @@ from app.modules.ga.constants import ASSET_BEHAVIORS
 from app.modules.hr import intake, repo as hr_repo
 from app.modules.hr.routes import router as hr_router
 from app.modules.hr.signing import router as sign_router
-from app.modules.ga.routes import router as ga_router
+from app.modules.ga.routes import router as ga_router, public_router as ga_public_router
 from app.modules.ga import repo as ga_repo
 from app.security import auth
 from app.security.middleware import SecurityMiddleware
@@ -69,6 +69,14 @@ async def lifespan(_app):
         seed_ga_sample()
     _bootstrap_admin()
     auth.purge_expired()
+    try:
+        from app.modules.hr import repo as hr_repo
+        filled = hr_repo.backfill_employee_codes_once()
+        if filled:
+            log.info("구분값 자동 추가(기존 자료): %s", {g: len(v) for g, v in filled.items()})
+        ga_repo.ensure_qr_tokens()
+    except Exception:   # 정리 작업 실패로 시스템이 안 뜨는 일은 없게
+        log.exception("시작 시 자료 정리 실패")
     log.info("BMS started on port %s", settings.port)
     intake.start_worker()
     cartax.start_worker()
@@ -85,6 +93,7 @@ app.include_router(auth_router)
 app.include_router(hr_router)
 app.include_router(sign_router)
 app.include_router(ga_router)
+app.include_router(ga_public_router)
 
 templates.env.globals["MODULES"] = MODULES
 templates.env.globals["SYSTEM_CODE"] = SYSTEM_CODE

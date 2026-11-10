@@ -47,8 +47,8 @@ def _redirect(url: str, msg: str = "") -> RedirectResponse:
 
 def _codes() -> dict:
     return {
-        "depts": get_codes("DEPT"), "ranks": get_codes("RANK"), "titles": get_codes("TITLE"),
-        "locations": get_codes("LOCATION"), "employment_types": get_codes("EMPLOYMENT_TYPE"),
+        "depts": repo.codes_with_used("DEPT"), "ranks": repo.codes_with_used("RANK"), "titles": repo.codes_with_used("TITLE"),
+        "locations": repo.codes_with_used("LOCATION"), "employment_types": get_codes("EMPLOYMENT_TYPE"),
         "emergency_relations": get_codes("EMERGENCY_RELATION"), "edu_levels": get_codes("EDU_LEVEL"),
         "qualification_kinds": QUALIFICATION_KINDS, "qualification_grades": get_codes("QUAL_GRADE"),
     }
@@ -235,8 +235,15 @@ def import_employees_csv(text: str, filename: str = "") -> str:
             else:
                 repo.create_employee(data)
         added = sum(1 for p in plan if p[0] == "create")
+        new_codes = {g: repo.add_missing_codes(g, [p[2].get(f) for p in plan])     # 목록에 없던 부서·직급 등은 구분값에 추가
+                     for f, g in repo.EMPLOYEE_CODE_FIELDS.items()}
         audit("hr", "임직원 일괄등록", filename, f"신규 {added} / 수정 {len(plan) - added}")
     note = f" (고용형태가 비어 있던 {defaulted}명은 '{CSV_DEFAULT_EMPLOYMENT}'으로 등록)" if defaulted else ""
+    group_names = {"DEPT": "부서", "RANK": "직급", "TITLE": "직책", "LOCATION": "근무지", "EMPLOYMENT_TYPE": "고용형태",
+                   "EDU_LEVEL": "학력", "EMERGENCY_RELATION": "비상연락처 관계"}
+    codes_note = ", ".join(f"{group_names[g]} {', '.join(v)}" for g, v in new_codes.items() if v)
+    if codes_note:
+        note += f" · 구분값에 새로 추가: {codes_note}"
     return f"일괄등록 완료: 신규 {added}명 / 수정 {len(plan) - added}명{note}"
 
 
@@ -855,7 +862,7 @@ def salaries(request: Request, year: int | None = None, department: str = ""):
         ov["rows"] = [r for r in ov["rows"] if r["employee"]["department"] == department]
     return _render(request, "hr/salaries.html", {
         "ov": ov, "years": years, "year": year, "trend": services.salary_trend(),
-        "department": department, "depts": get_codes("DEPT"), "reasons": get_codes("SALARY_REASON"),
+        "department": department, "depts": repo.codes_with_used("DEPT"), "reasons": get_codes("SALARY_REASON"),
         "settings": get_settings(),
     }, "hr.salaries")
 

@@ -608,6 +608,48 @@ def add_code(group, name):
                      (group, name, mx))
 
 
+# 임직원 칸 → 구분값 그룹. CSV 일괄등록 때 목록에 없는 값은 구분값에 자동으로 추가합니다.
+EMPLOYEE_CODE_FIELDS = {"department": "DEPT", "rank": "RANK", "title": "TITLE", "work_location": "LOCATION",
+                        "employment_type": "EMPLOYMENT_TYPE", "edu_level": "EDU_LEVEL",
+                        "emergency_relation": "EMERGENCY_RELATION"}
+
+
+def add_missing_codes(group: str, values) -> list[str]:
+    """목록에 없는 값을 구분값 끝에 추가하고, 추가한 이름을 돌려줍니다."""
+    from app.db import get_codes
+    have, added = set(get_codes(group)), []
+    for v in values:
+        v = (v or "").strip()
+        if v and v not in have and v not in added:
+            add_code(group, v)
+            added.append(v)
+    if added:
+        audit("system", "구분값 자동 추가", group, ", ".join(added))
+    return added
+
+
+def codes_with_used(group: str) -> list[str]:
+    """구분값 목록 + 자료에 쓰였지만 목록에 없는 값 (조회 필터에서 빠지지 않게)."""
+    from app.db import get_codes
+    names = get_codes(group)
+    for table, col in CODE_USAGE.get(group, []):
+        for r in query(f"SELECT DISTINCT {col} v FROM {table} WHERE {col} IS NOT NULL AND {col} != '' ORDER BY {col}"):
+            if r["v"] not in names:
+                names.append(r["v"])
+    return names
+
+
+def backfill_employee_codes_once() -> dict:
+    """한 번만: 이미 등록된 임직원 자료에 있는데 구분값에 없는 값을 추가 (자동 추가 기능 도입 전 자료 정리)."""
+    from app.db import get_settings, set_setting
+    if get_settings().get("codes_backfill_v1"):
+        return {}
+    emps = list_employees(status="")
+    added = {g: add_missing_codes(g, [e.get(f) for e in emps]) for f, g in EMPLOYEE_CODE_FIELDS.items()}
+    set_setting("codes_backfill_v1", today().isoformat())
+    return {g: v for g, v in added.items() if v}
+
+
 def delete_code(cid: int):
     execute("DELETE FROM codes WHERE id=?", (cid,))
 

@@ -17,6 +17,7 @@ from app.modules.ga.constants import (
 from app.modules.hr.routes import _csv_response, _redirect
 
 router = APIRouter(prefix="/ga")
+public_router = APIRouter()      # 로그인 없이 열리는 화면 (자산 라벨 QR)
 
 KINDS = {  # URL 구분 → 테이블 (화이트리스트)
     "assets": "ga_assets", "vehicles": "ga_vehicles", "vlogs": "ga_vehicle_logs", "maint": "ga_vehicle_maint",
@@ -72,7 +73,32 @@ def assets(request: Request, category: str = "", status: str = "", q: str = ""):
 def asset_labels(request: Request, ids: str = ""):
     sel = {int(x) for x in ids.split(",") if x.strip().isdigit()}
     rows = [a for a in repo.list_assets() if not sel or a["id"] in sel]
-    return _render(request, "ga/asset_labels.html", {"rows": rows, "public_url": _public_url()}, "ga.assets")
+    public = _public_url()
+    for a in rows:
+        a["qr_text"] = _qr_text(a, public)
+    return _render(request, "ga/asset_labels.html", {"rows": rows, "public_url": public}, "ga.assets")
+
+
+def _qr_text(a: dict, public: str) -> str:
+    """라벨 QR 내용: 직원 접속 주소가 있으면 로그인 없이 기본 정보를 보는 주소, 없으면 자산번호."""
+    return f"{public}/q/{repo.asset_qr_token(a['id'])}" if public else a["asset_no"]
+
+
+def _mask_name(name: str | None) -> str:
+    if not name:
+        return ""
+    return name[0] + "*" if len(name) == 2 else name[0] + "*" * (len(name) - 2) + name[-1]
+
+
+@public_router.get("/q/{token}", response_class=HTMLResponse)
+def asset_public(request: Request, token: str):
+    """자산 라벨 QR: 로그인 없이 기본 정보만 (금액·시리얼·이력·사진 제외, 사용자 이름은 가림)."""
+    a = repo.asset_by_qr(token)
+    if not a:
+        return templates.TemplateResponse(request, "ga/asset_public.html", {"a": None}, status_code=404)
+    a["holder_masked"] = _mask_name(a["holder_name"])
+    return templates.TemplateResponse(request, "ga/asset_public.html",
+                                      {"a": a, "logged_in": bool(request.state.user)})
 
 
 @router.get("/assets/export.csv")
@@ -110,7 +136,7 @@ def asset_detail(request: Request, aid: int):
     public = _public_url()
     return _render(request, "ga/asset_detail.html", {
         "a": a, "history": repo.asset_history(aid), "events": get_codes("ASSET_EVENT"),
-        "qr_text": f"{public}/ga/a/{a['asset_no']}" if public else a["asset_no"], "qr_is_url": bool(public),
+        "qr_text": _qr_text(a, public), "qr_is_url": bool(public),
         "categories": ASSET_CATEGORIES, "statuses": ASSET_STATUSES, "locations": get_codes("ASSET_LOC"),
     }, "ga.assets")
 

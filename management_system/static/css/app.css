@@ -146,3 +146,11 @@ body { background: var(--bg); font-family: "Pretendard", "Malgun Gothic", "Apple
 .code-groups .list-group-item { font-size: .88rem; padding: .5rem .8rem; }
 .code-groups .list-group-item.active { background: var(--brand); border-color: var(--brand); }
 .code-name:not(:focus):not(:hover) { border-color: transparent; background: transparent; }
+
+/* 엑셀식 정렬·필터 (tablefilter.js) */
+th.xf-th { white-space: nowrap; }
+.xf-btn { border: 1px solid transparent; background: none; color: #8a94a6; font-size: .75rem; line-height: 1; padding: 2px 4px; margin-left: 4px; border-radius: 4px; cursor: pointer; }
+.xf-btn:hover { border-color: #c7cfdb; background: #fff; color: #2d5a8c; }
+.xf-btn.on { background: #2d5a8c; color: #fff; }
+.xf-pop { position: absolute; z-index: 1080; width: 260px; }
+.xf-pop .xf-vals { max-height: 240px; overflow-y: auto; border: 1px solid #e3e7ee; border-radius: 4px; padding: 4px 6px; }
