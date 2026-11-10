@@ -31,8 +31,14 @@ async function postJSON(url, body) {
 
 // 삭제 등 확인이 필요한 폼: <form data-confirm="메시지">
 document.addEventListener('submit', (e) => {
-  const msg = e.target.dataset.confirm;
+  const msg = e.submitter?.dataset.confirm || e.target.dataset.confirm;   // 버튼별 확인 문구가 있으면 그것을
   if (msg && !confirm(msg)) e.preventDefault();
+});
+// 모두 선택/해제: <input type="checkbox" data-check-all="이름">
+document.addEventListener('change', (e) => {
+  const name = e.target.dataset?.checkAll;
+  if (!name) return;
+  (e.target.form || document).querySelectorAll(`input[type=checkbox][name="${name}"]`).forEach(c => { c.checked = e.target.checked; });
 });
 
 // 오래 걸리는 폼: <form data-busy="진행 문구"> → 응답이 올 때까지 버튼을 잠가 중복 제출을 막음

@@ -49,8 +49,9 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
   if (!name) return alert('템플릿명을 입력하세요');
   const r = await postJSON('/hr/api/templates', { id: {{ t.id }}, doc_group: grp.value, category: cat.value, name,
     content: paper.innerHTML, is_active: document.getElementById('active').checked });
-  dirty = false; toast(r.message);
-  if (!{{ t.id }}) location.href = '/hr/templates/' + r.id;
+  if (!r.ok) return toast(r.message || '저장하지 못했습니다');
+  dirty = false;
+  location.href = '/hr/templates?msg=' + encodeURIComponent(`'${name}' ${r.message}`);   // 저장 후 목록으로 (안내 문구 표시)
 });
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 </script>

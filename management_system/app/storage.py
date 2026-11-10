@@ -63,8 +63,9 @@ def target_path(doc: dict) -> str:
 def _paper_css() -> str:
     with open(os.path.join(APP_DIR, "static", "css", "app.css"), encoding="utf-8") as f:
         css = f.read()
+    from app.common import doc_font_css
     return css + "\nbody{background:#fff;margin:0}.paper{box-shadow:none;margin:0;padding:0;width:auto;min-height:auto}" \
-                 ".ph-missing{background:none;color:#111}.sign-table{page-break-inside:avoid}"
+                 ".ph-missing{background:none;color:#111}.sign-table{page-break-inside:avoid}" + doc_font_css()
 
 
 def render_pdf(content_html: str, title: str) -> bytes:

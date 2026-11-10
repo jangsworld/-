@@ -11,6 +11,10 @@
         <div class="{{ 'col-12' if k == 'company_address' else 'col-md-6' }}"><label class="form-label small">{{ label }}</label>
           <input class="form-control form-control-sm" name="{{ k }}" value="{{ s[k] or '' }}"></div>
         {% endfor %}
+        <div class="col-md-6"><label class="form-label small">계약서·증명서 기본 글꼴</label>
+          <select class="form-select form-select-sm" name="doc_font">
+            {% for f in DOC_FONTS %}<option {% if (s.doc_font or '맑은 고딕') == f %}selected{% endif %}>{{ f }}</option>{% endfor %}</select>
+          <div class="help">문서 편집 화면·PDF 전체에 적용. 일부 글자만 바꾸려면 편집 화면의 글꼴 메뉴를 쓰세요</div></div>
         <div class="col-12 help">최저임금은 매년 8월 고용노동부 고시 후 1월 1일부터 적용됩니다. 연도 변경 시 갱신하세요.</div>
       </div>
       <div class="card-footer text-end"><button class="btn btn-sm btn-primary"><i class="bi bi-save"></i> 저장</button></div>

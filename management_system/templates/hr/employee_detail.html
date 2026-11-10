@@ -77,7 +77,13 @@
   </tbody></table></div>
 
 {% elif tab == 'contract' %}
-<div class="card mb-3"><div class="card-header d-flex">근로계약서 <a class="btn btn-sm btn-primary ms-auto" href="/hr/contracts/new?employee_id={{ e.id }}"><i class="bi bi-plus"></i> 새 계약서</a></div>
+<div class="card mb-3"><div class="card-header d-flex align-items-center gap-2">근로계약서
+  {% if not e.has_contract and e.status != '퇴사' %}
+  <form method="post" action="/hr/employees/{{ e.id }}/paper-contract" class="ms-auto d-flex align-items-center gap-1" data-confirm="기존 서면계약 체결로 처리할까요? (계약서 본문은 만들지 않고 체결완료로 기록)">
+    <span class="small text-muted">계약 종료일(기간제만)</span><input type="date" class="form-control form-control-sm" style="width:auto" name="end_date">
+    <button class="btn btn-sm btn-outline-success"><i class="bi bi-check2-circle"></i> 기존 서면계약 체결 처리</button></form>
+  {% endif %}
+  <a class="btn btn-sm btn-primary {{ '' if not e.has_contract and e.status != '퇴사' else 'ms-auto' }}" href="/hr/contracts/new?employee_id={{ e.id }}"><i class="bi bi-plus"></i> 새 계약서</a></div>
   <table class="table table-sm table-hover mb-0"><thead><tr><th>구분</th><th>제목</th><th>계약기간</th><th class="num">연봉</th><th>상태</th><th>체결일</th><th>수정일</th></tr></thead><tbody>
   {% for d in contracts %}<tr data-href="/hr/documents/{{ d.id }}"><td>{{ d.category }}</td><td>{{ d.title }}</td>
     <td>{{ d.start_date or '' }} ~ {{ d.end_date or '정함없음' }}</td><td class="num">{{ d.annual_salary|won }}</td>

@@ -300,6 +300,9 @@ async def employee_create(request: Request):
         return _redirect("/hr/employees/new", str(ex))
     except Exception as ex:  # 사번 중복 등
         return _redirect("/hr/employees/new", f"저장 실패: {ex}")
+    if raw.get("paper_contract") == "1":                  # 기존 직원: 서면 계약 체결 완료로 바로 기록
+        record_paper_contract(repo.get_employee(emp_id), raw.get("hire_date"), raw.get("paper_contract_end"))
+        return _redirect(f"/hr/employees/{emp_id}", "임직원이 등록되었습니다 (근로계약: 기존 서면계약 체결)")
     return _redirect(f"/hr/employees/{emp_id}", "임직원이 등록되었습니다")
 
 
@@ -368,6 +371,8 @@ async def draft_confirm(request: Request, draft_id: int):
         if s["year"] != hire_year:
             repo.upsert_salary(emp_id, s["year"], s["amount"], s["date"], "조정", "입사서류 연봉계약서")
     repo.update_draft(draft_id, status="등록완료", employee_id=emp_id)
+    if raw.get("paper_contract") == "1":
+        record_paper_contract(repo.get_employee(emp_id), raw.get("hire_date"), raw.get("paper_contract_end"))
     return _redirect(f"/hr/employees/{emp_id}", "초안을 확인해 임직원으로 등록했습니다")
 
 
@@ -402,6 +407,7 @@ def draft_delete(draft_id: int):
 @router.get("/employees/{emp_id}", response_class=HTMLResponse)
 def employee_detail(request: Request, emp_id: int, tab: str = "info"):
     e = _emp_or_404(emp_id)
+    e["has_contract"] = emp_id in repo.valid_contract_ids()
     if request.state.user["role"] not in ("admin", "hr") and tab in ("salary", "contract", "reward", "special", "files", "check"):
         tab = "info"
     audit("hr", "인사기록 열람", f"{e['emp_no']} {e['name']}", tab)  # 개인정보 접속기록
@@ -597,6 +603,53 @@ async def contract_bulk(request: Request):
     return _redirect("/hr/contracts?status=작성중", f"{n}건의 근로계약서 초안이 생성되었습니다")
 
 
+PAPER_CONTRACT_HTML = ("<p>BMS 도입 전에 서면(종이·외부 전자계약)으로 체결한 근로계약입니다.</p>"
+                       "<p>계약서 원본은 임직원 서류 폴더(인사기록카드의 입사서류 탭)에서 확인하세요.</p>")
+
+
+def record_paper_contract(emp: dict, start_date: str | None = None, end_date: str | None = None) -> int | None:
+    """기존 서면 계약을 '체결완료' 근로계약으로 기록 (계약서 본문은 만들지 않음). 이미 유효한 계약이 있으면 건너뜀."""
+    if emp["id"] in repo.valid_contract_ids():
+        return None
+    start = (to_date(start_date) or to_date(emp.get("hire_date")) or today()).isoformat()
+    end = to_date(end_date).isoformat() if to_date(end_date) else None
+    doc_id = repo.create_document(
+        doc_group="contract", employee_id=emp["id"], template_id=None, category=services.suggest_template_category(emp),
+        title=f"근로계약서(기존 서면) - {emp['name']}", start_date=start, end_date=end,
+        content=PAPER_CONTRACT_HTML, status="체결완료", signed_date=start,
+        params=json.dumps({"source": "기존 서면계약"}, ensure_ascii=False))
+    audit("hr", "기존 서면계약 체결 처리", emp["name"], f"{start}~{end or ''}")
+    return doc_id
+
+
+@router.post("/contracts/paper")
+async def contract_paper(request: Request):
+    """미체결 재직자 중 선택한 인원을 '기존 서면계약 체결'로 한 번에 처리 (입사일부터, 기간 정함 없음)."""
+    form = await request.form()
+    ids = [int(x) for x in form.getlist("employee_ids")]
+
+    def apply() -> int:
+        n = 0
+        with batch():
+            for emp_id in ids:
+                emp = repo.get_employee(emp_id)
+                if emp and record_paper_contract(emp):
+                    n += 1
+        return n
+
+    n = await run_in_threadpool(apply)
+    return _redirect("/hr/contracts", f"{n}명을 기존 서면계약 체결로 처리했습니다. 기간제 등 종료일이 있는 계약은 목록에서 열어 종료일을 넣어 주세요")
+
+
+@router.post("/employees/{emp_id}/paper-contract")
+async def employee_paper_contract(request: Request, emp_id: int):
+    emp = _emp_or_404(emp_id)
+    f = dict(await request.form())
+    doc_id = record_paper_contract(emp, f.get("start_date"), f.get("end_date"))
+    msg = "기존 서면계약 체결로 처리했습니다" if doc_id else "이미 유효한 근로계약이 있습니다"
+    return _redirect(f"/hr/employees/{emp_id}?tab=contract", msg)
+
+
 def _contract_bulk(ids: list[int]) -> int:
     tpls = {t["category"]: t for t in repo.list_templates("contract", active_only=True)}
     n = 0
@@ -781,26 +834,47 @@ async def template_import(file: UploadFile = File(...)):
     """회사 양식 PDF(또는 스캔 이미지) → 템플릿 초안(미사용). 올린 파일은 저장하지 않습니다."""
     from app.modules.hr import template_import as ti
     name = os.path.basename(file.filename or "")
-    if os.path.splitext(name)[1].lower() not in ti.SUPPORTED:
-        return _redirect("/hr/templates", "PDF 또는 스캔 이미지(jpg·png) 파일을 올려 주세요")
+    ext = os.path.splitext(name)[1].lower()
+    if ext not in ti.SUPPORTED:
+        return _redirect("/hr/templates", "한글(.hwp·.hwpx), PDF 또는 스캔 이미지(jpg·png) 파일을 올려 주세요")
     raw = await file.read(ti.MAX_UPLOAD_MB * 1024 * 1024 + 1)
     if len(raw) > ti.MAX_UPLOAD_MB * 1024 * 1024:
         return _redirect("/hr/templates", f"파일이 너무 큽니다 (최대 {ti.MAX_UPLOAD_MB}MB)")
 
     def work():
         import tempfile
-        fd, path = tempfile.mkstemp(suffix=os.path.splitext(name)[1].lower())
+        from app.modules.hr import hwp_reader
+        fd, path = tempfile.mkstemp(suffix=ext)
         try:
             with os.fdopen(fd, "wb") as fh:
                 fh.write(raw)
-            lines, ocr = ti.read_lines(path, name)
-        except Exception as ex:          # 손상된 PDF 등: 오류 화면 대신 안내
-            return None, f"파일을 읽지 못했습니다 ({ex.__class__.__name__}). 다른 PDF로 시도해 주세요"
+            if ext in ti.HWP_EXT:
+                blocks = hwp_reader.read(path, name)
+            else:
+                lines, ocr = ti.read_lines(path, name)
+        except hwp_reader.HwpError as ex:
+            return None, str(ex)
+        except Exception as ex:          # 손상된 파일 등: 오류 화면 대신 안내
+            return None, f"파일을 읽지 못했습니다 ({ex.__class__.__name__}). 다른 파일로 시도해 주세요"
         finally:
             try:
                 os.remove(path)
             except OSError:
                 pass
+        if ext in ti.HWP_EXT:                    # 한글 원본: 양식마다 템플릿 하나 (정렬·표 유지)
+            results = ti.convert_hwp(blocks, get_settings())
+            if not results:
+                return None, "한글 파일에서 본문을 찾지 못했습니다"
+            ids = []
+            with batch():
+                for res in results:
+                    ids.append(repo.save_template(None, res["doc_group"], res["category"], res["name"],
+                                                  sanitize_html(res["html"]), 0))
+                audit("hr", "템플릿 한글 가져오기", name, f"{len(results)}개")
+            if len(ids) == 1:
+                return ids[0], ti.summary(results[0], False, "한글 문서")
+            return -1, (f"한글 문서에서 양식 {len(ids)}개를 찾아 템플릿 {len(ids)}개를 만들었습니다 (모두 미사용 상태): "
+                        + ", ".join(r["name"] for r in results) + ". 필요한 것만 열어 확인한 뒤 [사용]을 체크하세요")
         if not lines:
             return None, "파일에서 글자를 읽지 못했습니다. 스캔이 흐리면 더 선명한 PDF로 시도해 주세요"
         result = ti.convert(lines, get_settings())
@@ -810,7 +884,7 @@ async def template_import(file: UploadFile = File(...)):
         return tid, ti.summary(result, ocr)
 
     tid, msg = await run_in_threadpool(work)
-    return _redirect(f"/hr/templates/{tid}" if tid else "/hr/templates", msg)
+    return _redirect(f"/hr/templates/{tid}" if tid and tid > 0 else "/hr/templates", msg)
 
 
 @router.post("/templates/{tid}/delete")

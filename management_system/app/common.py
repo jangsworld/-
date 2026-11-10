@@ -143,7 +143,24 @@ def pct(v, digits=1) -> str:
 _ALLOWED_TAGS = {"p", "br", "b", "strong", "i", "em", "u", "s", "strike", "span", "div", "font", "h1", "h2", "h3",
                  "h4", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "hr", "sub", "sup", "blockquote"}
 _ALLOWED_ATTRS = {"*": {"class", "style", "align"}, "td": {"colspan", "rowspan"}, "th": {"colspan", "rowspan"},
-                  "font": {"size", "color"}}
+                  "font": {"size", "color", "face"}}
+
+# 계약서·증명서 글꼴. 화면은 PC 의 글꼴(맑은 고딕 등), 서버 PDF 는 같은 계열의 서버 글꼴(Noto)로 그려집니다.
+DOC_FONTS = {
+    "맑은 고딕": "'Malgun Gothic','맑은 고딕','Noto Sans CJK KR','Noto Sans KR',sans-serif",
+    "바탕": "'Batang','바탕','Noto Serif CJK KR','Nanum Myeongjo',serif",
+    "굴림": "'Gulim','굴림','Noto Sans CJK KR',sans-serif",
+    "돋움": "'Dotum','돋움','Noto Sans CJK KR',sans-serif",
+    "나눔고딕": "'NanumGothic','나눔고딕','Noto Sans CJK KR',sans-serif",
+}
+
+
+def doc_font_css(name: str | None = None) -> str:
+    """문서 글꼴 CSS (설정값 → 글꼴 목록). 알 수 없는 값이면 맑은 고딕."""
+    if name is None:
+        from app.db import get_settings
+        name = get_settings().get("doc_font")
+    return f".paper{{font-family:{DOC_FONTS.get(name or '', DOC_FONTS['맑은 고딕'])}}}"
 
 
 def sanitize_html(html: str) -> str:
@@ -192,3 +209,5 @@ templates.env.filters["dday"] = days_until
 templates.env.globals["today"] = today
 templates.env.globals["timedelta"] = timedelta
 templates.env.globals["now"] = datetime.now
+templates.env.globals["doc_font_css"] = doc_font_css
+templates.env.globals["DOC_FONTS"] = DOC_FONTS

@@ -6,9 +6,9 @@
   <div class="card-body py-2">
     <form method="post" action="/hr/templates/import" enctype="multipart/form-data" class="d-flex flex-wrap align-items-center gap-2" data-busy="읽는 중… (스캔본은 1분쯤 걸립니다)">
       <span class="fw-semibold small"><i class="bi bi-file-earmark-arrow-up"></i> 쓰던 양식으로 만들기</span>
-      <input class="form-control form-control-sm" style="max-width:320px" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required>
-      <button class="btn btn-sm btn-primary">PDF로 템플릿 만들기</button>
-      <span class="help">회사에서 쓰던 근로계약서 PDF(작성된 것도 됨)를 올리면 이름·날짜·임금 같은 칸을 치환자로 바꾼 템플릿이 만들어집니다. 올린 파일은 저장하지 않습니다.</span>
+      <input class="form-control form-control-sm" style="max-width:320px" type="file" name="file" accept=".hwp,.hwpx,.pdf,.jpg,.jpeg,.png" required>
+      <button class="btn btn-sm btn-primary">템플릿 만들기</button>
+      <span class="help"><b>한글 원본(.hwp)을 올리면 가장 정확합니다</b> (글자·정렬·표 그대로, 한 파일에 양식이 여러 개면 양식마다 만듦). PDF도 되지만 스캔본은 글자를 판독하므로 오타가 생길 수 있습니다. 이름·날짜·임금 칸은 치환자로 바뀌고, 올린 파일은 저장하지 않습니다.</span>
     </form>
   </div>
 </div>

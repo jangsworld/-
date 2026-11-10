@@ -519,6 +519,7 @@ DEFAULT_SETTINGS = {
     "monthly_std_hours": "209",       # 주 40시간 기준 월 소정근로시간(유급주휴 포함)
     "alert_days": "60",               # 만료·복직 등 사전 알림 기간(일)
     "doc_prefix": "총무",             # 발신 문서번호 접두어 (예: 총무-2026-0001)
+    "doc_font": "맑은 고딕",          # 계약서·증명서 기본 글꼴 (app/common.py DOC_FONTS)
 }
 
 ASSET_EVENT_BEHAVIOR = {"지급": "지급", "반납": "반납", "수리": "수리", "수리완료": "수리완료", "폐기": "폐기"}
