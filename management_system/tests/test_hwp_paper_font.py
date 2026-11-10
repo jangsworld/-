@@ -151,6 +151,15 @@ def test_doc_font_setting(client):
     assert ".paper{font-family:'Malgun Gothic'" in client.get("/hr/templates").text
 
 
+def test_doc_font_css_works_without_master_key(monkeypatch):
+    """서버 점검(bms-selftest)처럼 암호화 키 없이 PDF 를 만들 때도 글꼴 CSS 가 실패하지 않아야 함."""
+    from app.security import crypto
+    set_setting("mail_password_test_only", crypto.enc("secret"))
+    monkeypatch.setattr(crypto, "_key", None, raising=False)
+    monkeypatch.setattr(crypto, "dec", lambda v: (_ for _ in ()).throw(RuntimeError("암호화 키가 로드되지 않았습니다")), raising=False)
+    assert "Malgun Gothic" in doc_font_css()
+
+
 def test_paper_contract_bulk_single_and_new(client):
     ids = []
     for n in ("서면일", "서면이"):

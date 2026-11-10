@@ -157,9 +157,13 @@ DOC_FONTS = {
 
 def doc_font_css(name: str | None = None) -> str:
     """문서 글꼴 CSS (설정값 → 글꼴 목록). 알 수 없는 값이면 맑은 고딕."""
-    if name is None:
-        from app.db import get_settings
-        name = get_settings().get("doc_font")
+    if name is None:   # 글꼴 값만 읽음 (다른 설정은 암호화돼 있어 키 없이 읽으면 실패). 못 읽으면 기본 글꼴
+        try:
+            from app.db import query_one
+            row = query_one("SELECT value FROM settings WHERE key='doc_font'")
+            name = row["value"] if row else None
+        except Exception:
+            name = None
     return f".paper{{font-family:{DOC_FONTS.get(name or '', DOC_FONTS['맑은 고딕'])}}}"
 
 
