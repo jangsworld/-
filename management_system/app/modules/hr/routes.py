@@ -10,7 +10,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse, Response
 
 from app.common import templates, today, sanitize_html, add_months, days_until, to_date
-from app.db import get_codes, get_settings, audit
+from app.db import batch, get_codes, get_settings, audit
 from app import mailer
 from app.config import settings as cfg
 from app.modules.hr import intake, repo, rrn as rrn_util, services, signing
@@ -155,28 +155,89 @@ async def employees_import(file: UploadFile = File(...)):
             continue
     else:
         return _redirect("/hr/employees", "파일 인코딩을 확인해주세요 (UTF-8 또는 CP949)")
+    # 저장 작업은 작업 스레드에서: 여러 명을 저장하는 동안 다른 사람의 화면이 멈추지 않게
+    return _redirect("/hr/employees", await run_in_threadpool(import_employees_csv, text, file.filename or ""))
+
+
+CSV_DATE_FIELDS = ("birth_date", "hire_date", "probation_end", "resign_date")
+CSV_DEFAULT_EMPLOYMENT = "정규직"          # 새 직원의 고용형태가 비어 있을 때 (등록 화면 기본값과 같음)
+
+
+def import_employees_csv(text: str, filename: str = "") -> str:
+    """CSV 일괄등록. 모든 줄을 먼저 확인하고, 하나라도 틀리면 아무것도 저장하지 않습니다(일부만 들어가는 일 없음).
+    기존 직원(사번, 사번이 없으면 성명+입사일로 찾음)은 CSV 에 값이 있는 칸만 고칩니다. 빈 칸은 기존 값을 지우지 않습니다."""
     label_to_field = {k: f for f, k in CSV_COLUMNS}
-    added = updated = skipped = 0
-    for row in csv.DictReader(io.StringIO(text)):
-        data = {label_to_field[k.strip()]: (v or "").strip() for k, v in row.items() if k and k.strip() in label_to_field}
-        if not data.get("name") or not data.get("hire_date"):
-            skipped += 1
-            continue
-        for dk in ("birth_date", "hire_date", "probation_end", "resign_date"):
+    labels = dict(CSV_COLUMNS)
+    try:
+        rows = list(csv.DictReader(io.StringIO(text)))
+    except csv.Error as ex:
+        return f"CSV 파일을 읽을 수 없습니다 ({ex}). 아무것도 저장하지 않았습니다"
+    if rows and not any(k and k.strip() in label_to_field for k in rows[0]):
+        return "CSV 첫 줄(제목)이 양식과 다릅니다. [양식 받기]로 받은 파일에 입력해 주세요. 아무것도 저장하지 않았습니다"
+
+    current = repo.list_employees(status="")
+    by_no = {e["emp_no"]: e for e in current}
+    by_name_hire: dict[tuple, list] = {}
+    for e in current:
+        by_name_hire.setdefault((e["name"], e["hire_date"]), []).append(e)
+
+    plan, errors, seen_no, defaulted = [], [], {}, 0
+    for line, row in enumerate(rows, start=2):                   # 1행은 제목
+        data = {label_to_field[k.strip()]: (v or "").strip() for k, v in row.items()
+                if k and k.strip() in label_to_field and isinstance(v, str)}
+        if not any(data.values()):
+            continue                                              # 빈 줄
+        problems = []
+        for dk in CSV_DATE_FIELDS:
             if data.get(dk):
                 d = to_date(data[dk])
-                data[dk] = d.isoformat() if d else None
-        existing = None
+                if d:
+                    data[dk] = d.isoformat()
+                else:
+                    problems.append(f"{labels[dk]} '{data[dk]}' 날짜 형식 오류 (예: 2026-03-02)")
+        if not data.get("name"):
+            problems.append("성명 없음")
+        existing = by_no.get(data.get("emp_no")) if data.get("emp_no") else None
+        if not existing and not data.get("emp_no") and data.get("name") and data.get("hire_date"):
+            same = by_name_hire.get((data["name"], data["hire_date"]), [])
+            existing = same[0] if len(same) == 1 else None        # 사번 없이 다시 올려도 같은 사람이 두 번 생기지 않게
+        if not existing and not data.get("hire_date"):
+            problems.append("입사일 없음 (새 직원은 필수)")
         if data.get("emp_no"):
-            existing = next((e for e in repo.list_employees(status="") if e["emp_no"] == data["emp_no"]), None)
+            if data["emp_no"] in seen_no:
+                problems.append(f"사번 {data['emp_no']}이(가) {seen_no[data['emp_no']]}행과 겹침")
+            seen_no.setdefault(data["emp_no"], line)
+        if problems:
+            errors.append(f"{line}행({data.get('name') or '이름 없음'}): " + ", ".join(problems))
+            continue
         if existing:
-            repo.update_employee(existing["id"], data)
-            updated += 1
+            changes = {k: v for k, v in data.items() if v != ""}
+            edu = ("edu_level", "edu_school", "edu_major", "edu_grad_year")
+            if any(k in changes for k in edu):                    # 학력 요약이 일부 칸만으로 다시 만들어지지 않게
+                changes = {**{k: existing.get(k) for k in edu}, **changes}
+            plan.append(("update", existing["id"], changes))
         else:
-            repo.create_employee(data)
-            added += 1
-    audit("hr", "임직원 일괄등록", file.filename or "", f"신규 {added} / 수정 {updated}")
-    return _redirect("/hr/employees", f"일괄등록 완료: 신규 {added}명 / 수정 {updated}명 / 제외 {skipped}건")
+            if not data.get("employment_type"):
+                data["employment_type"] = CSV_DEFAULT_EMPLOYMENT
+                defaulted += 1
+            plan.append(("create", None, data))
+
+    if errors:
+        more = f" 외 {len(errors) - 5}건" if len(errors) > 5 else ""
+        return f"일괄등록을 하지 않았습니다. 고칠 곳 {len(errors)}건: " + " / ".join(errors[:5]) + more + \
+               " — 고쳐서 다시 올려 주세요 (아무것도 바뀌지 않았습니다)"
+    if not plan:
+        return "등록할 내용이 없습니다 (빈 파일)"
+    with batch():                                                 # 한 번에 저장: 중간 오류 시 전부 취소
+        for kind, emp_id, data in plan:
+            if kind == "update":
+                repo.update_employee(emp_id, data)
+            else:
+                repo.create_employee(data)
+        added = sum(1 for p in plan if p[0] == "create")
+        audit("hr", "임직원 일괄등록", filename, f"신규 {added} / 수정 {len(plan) - added}")
+    note = f" (고용형태가 비어 있던 {defaulted}명은 '{CSV_DEFAULT_EMPLOYMENT}'으로 등록)" if defaulted else ""
+    return f"일괄등록 완료: 신규 {added}명 / 수정 {len(plan) - added}명{note}"
 
 
 @router.get("/employees/new", response_class=HTMLResponse)
@@ -256,7 +317,11 @@ def draft_scan():
 
 @router.get("/drafts/{draft_id}", response_class=HTMLResponse)
 def draft_review(request: Request, draft_id: int):
-    d = _draft_or_404(draft_id)
+    d = repo.get_draft(draft_id)
+    if d and d["status"] == "등록완료" and d["employee_id"]:     # 오래된 화면·링크: 오류 대신 등록된 직원으로 안내
+        return _redirect(f"/hr/employees/{d['employee_id']}", "이미 임직원으로 등록된 초안입니다")
+    if not d or d["status"] != "확인필요":
+        return _redirect("/hr/employees", "이미 처리되었거나 삭제된 초안입니다")
     data = d["data"] or {}
     fields = data.get("fields", {})
     salaries = data.get("salaries", [])
@@ -313,6 +378,18 @@ def draft_exclude(draft_id: int):
     repo.update_draft(draft_id, status="제외")
     audit("hr", "등록초안 제외", d["folder_name"], "")
     return _redirect("/hr/employees", "초안을 제외했습니다. 해당 폴더는 다시 초안으로 만들지 않습니다")
+
+
+@router.post("/drafts/{draft_id}/delete")
+def draft_delete(draft_id: int):
+    """초안 삭제: 읽어 둔 내용(개인정보 포함)을 지웁니다. 폴더·서류는 그대로이며,
+    서류가 바뀌면(추가·교체) 다시 초안을 만듭니다. 같은 서류로는 다시 만들지 않습니다."""
+    d = repo.get_draft(draft_id)
+    if not d or d["status"] != "확인필요":
+        return _redirect("/hr/employees", "이미 처리된 초안입니다")
+    repo.update_draft(draft_id, status="삭제", data={})
+    audit("hr", "등록초안 삭제", d["folder_name"], "")
+    return _redirect("/hr/employees", f"{d['folder_name']} 초안을 삭제했습니다. 폴더에 서류를 새로 넣거나 바꾸면 다시 만들어집니다")
 
 
 @router.get("/employees/{emp_id}", response_class=HTMLResponse)
@@ -509,17 +586,25 @@ async def contract_bulk(request: Request):
     """미체결자 일괄 자동작성: 고용형태에 맞는 템플릿 + 현재 연봉으로 초안 생성."""
     form = await request.form()
     ids = [int(x) for x in form.getlist("employee_ids")]
+    n = await run_in_threadpool(_contract_bulk, ids)
+    return _redirect("/hr/contracts?status=작성중", f"{n}건의 근로계약서 초안이 생성되었습니다")
+
+
+def _contract_bulk(ids: list[int]) -> int:
     tpls = {t["category"]: t for t in repo.list_templates("contract", active_only=True)}
     n = 0
-    for emp_id in ids:
-        emp = repo.get_employee(emp_id)
-        cat = services.suggest_template_category(emp)
-        tpl = tpls.get(cat) or tpls.get("정규직")
-        if not tpl:
-            continue
-        _create_contract(emp, tpl, services.default_contract_params(emp, cat))
-        n += 1
-    return _redirect("/hr/contracts?status=작성중", f"{n}건의 근로계약서 초안이 생성되었습니다")
+    with batch():
+        for emp_id in ids:
+            emp = repo.get_employee(emp_id)
+            if not emp:
+                continue
+            cat = services.suggest_template_category(emp)
+            tpl = tpls.get(cat) or tpls.get("정규직")
+            if not tpl:
+                continue
+            _create_contract(emp, tpl, services.default_contract_params(emp, cat))
+            n += 1
+    return n
 
 
 @router.get("/documents/{doc_id}", response_class=HTMLResponse)
@@ -684,6 +769,43 @@ async def template_save(request: Request):
     return {"ok": True, "id": tid, "message": "템플릿이 저장되었습니다"}
 
 
+@router.post("/templates/import")
+async def template_import(file: UploadFile = File(...)):
+    """회사 양식 PDF(또는 스캔 이미지) → 템플릿 초안(미사용). 올린 파일은 저장하지 않습니다."""
+    from app.modules.hr import template_import as ti
+    name = os.path.basename(file.filename or "")
+    if os.path.splitext(name)[1].lower() not in ti.SUPPORTED:
+        return _redirect("/hr/templates", "PDF 또는 스캔 이미지(jpg·png) 파일을 올려 주세요")
+    raw = await file.read(ti.MAX_UPLOAD_MB * 1024 * 1024 + 1)
+    if len(raw) > ti.MAX_UPLOAD_MB * 1024 * 1024:
+        return _redirect("/hr/templates", f"파일이 너무 큽니다 (최대 {ti.MAX_UPLOAD_MB}MB)")
+
+    def work():
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=os.path.splitext(name)[1].lower())
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(raw)
+            lines, ocr = ti.read_lines(path, name)
+        except Exception as ex:          # 손상된 PDF 등: 오류 화면 대신 안내
+            return None, f"파일을 읽지 못했습니다 ({ex.__class__.__name__}). 다른 PDF로 시도해 주세요"
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        if not lines:
+            return None, "파일에서 글자를 읽지 못했습니다. 스캔이 흐리면 더 선명한 PDF로 시도해 주세요"
+        result = ti.convert(lines, get_settings())
+        tid = repo.save_template(None, result["doc_group"], result["category"],
+                                 result["name"] or os.path.splitext(name)[0], sanitize_html(result["html"]), 0)
+        audit("hr", "템플릿 PDF 가져오기", result["name"], f"치환 {sum(result['changes'].values())}곳")
+        return tid, ti.summary(result, ocr)
+
+    tid, msg = await run_in_threadpool(work)
+    return _redirect(f"/hr/templates/{tid}" if tid else "/hr/templates", msg)
+
+
 @router.post("/templates/{tid}/delete")
 def template_delete(tid: int):
     repo.delete_template(tid)
@@ -766,10 +888,15 @@ def salary_bulk_preview(year: int, rate: float, round_unit: int = 10000, only_mi
 async def salary_bulk_apply(request: Request):
     b = await request.json()
     year = int(b["year"])
-    for r in b["rows"]:
-        repo.upsert_salary(int(r["employee_id"]), year, int(r["new"]), f"{year}-01-01",
-                           b.get("reason") or "정기인상", f"일괄인상 {b.get('rate')}%")
-    audit("hr", "연봉 일괄인상", str(year), f"{len(b['rows'])}명 {b.get('rate')}%")
+
+    def apply():
+        with batch():                                   # 전원 한 번에 반영 (중간 오류 시 아무도 바뀌지 않음)
+            for r in b["rows"]:
+                repo.upsert_salary(int(r["employee_id"]), year, int(r["new"]), f"{year}-01-01",
+                                   b.get("reason") or "정기인상", f"일괄인상 {b.get('rate')}%")
+            audit("hr", "연봉 일괄인상", str(year), f"{len(b['rows'])}명 {b.get('rate')}%")
+
+    await run_in_threadpool(apply)
     return {"ok": True, "message": f"{len(b['rows'])}명의 {year}년 연봉이 반영되었습니다"}
 
 

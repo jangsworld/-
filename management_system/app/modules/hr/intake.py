@@ -513,16 +513,20 @@ def scan_once(force: bool = False) -> dict:
             except OSError as ex:
                 log.warning("폴더 읽기 실패 %s: %s", name, ex)
                 continue
-            if draft:
-                repo.update_draft(draft["id"], signature=sig, data=data)
-                updated += 1
+            if draft:                       # 확인필요 초안 갱신, 또는 삭제했던 초안이 서류가 바뀌어 다시 생김
+                if draft["status"] == "삭제":
+                    audit("hr", "등록초안 생성", name, f"서류 변경으로 다시 만듦 · 서류 {len(data['files'])}건")
+                    created += 1
+                else:
+                    updated += 1
+                repo.update_draft(draft["id"], signature=sig, data=data, status="확인필요")
             else:
                 repo.create_draft(name, sig, data)
                 created += 1
                 audit("hr", "등록초안 생성", name, f"서류 {len(data['files'])}건")
         names = {e.name for e in folders}
         for name, draft in drafts.items():
-            if name not in names and draft["status"] == "확인필요":
+            if name not in names and draft["status"] in ("확인필요", "삭제"):
                 repo.delete_draft(draft["id"])
         state["last_scan"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         return {"ok": True, "pending": pending,

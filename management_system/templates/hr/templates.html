@@ -2,6 +2,16 @@
 {% block title %}문서 템플릿{% endblock %}
 {% block page_title %}<i class="bi bi-file-earmark-ruled me-2"></i>문서 템플릿 관리{% endblock %}
 {% block content %}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="post" action="/hr/templates/import" enctype="multipart/form-data" class="d-flex flex-wrap align-items-center gap-2" data-busy="읽는 중… (스캔본은 1분쯤 걸립니다)">
+      <span class="fw-semibold small"><i class="bi bi-file-earmark-arrow-up"></i> 쓰던 양식으로 만들기</span>
+      <input class="form-control form-control-sm" style="max-width:320px" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required>
+      <button class="btn btn-sm btn-primary">PDF로 템플릿 만들기</button>
+      <span class="help">회사에서 쓰던 근로계약서 PDF(작성된 것도 됨)를 올리면 이름·날짜·임금 같은 칸을 치환자로 바꾼 템플릿이 만들어집니다. 올린 파일은 저장하지 않습니다.</span>
+    </form>
+  </div>
+</div>
 <div class="card">
   <div class="card-header d-flex align-items-center">근로계약서 · 증명서 템플릿
     <span class="help ms-2">고용형태(구분)별로 템플릿을 두면 계약서 작성 시 자동 선택됩니다</span>

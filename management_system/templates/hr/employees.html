@@ -38,13 +38,15 @@
   </div>
   {% if drafts %}
   <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
-    <thead><tr><th>성명</th><th>서류 폴더</th><th>입사일</th><th>생년월일</th><th>연락처</th><th>서류</th><th>확인할 사항</th><th>상태</th></tr></thead>
+    <thead><tr><th>성명</th><th>서류 폴더</th><th>입사일</th><th>생년월일</th><th>연락처</th><th>서류</th><th>확인할 사항</th><th>상태</th><th></th></tr></thead>
     <tbody>{% for d in drafts %}
       <tr data-href="/hr/drafts/{{ d.id }}">
         <td class="fw-semibold">{{ d.fields.name }}</td><td class="small text-muted">{{ d.folder_name }}</td>
         <td>{{ d.fields.hire_date or '-' }}</td><td>{{ d.fields.birth_date or '-' }}</td><td class="small">{{ d.fields.phone or '-' }}</td>
         <td class="small">{{ d.files|length }}건</td><td class="small">{{ d.checks|length }}건</td>
         <td><span class="st st-확인필요">확인필요</span></td>
+        <td class="text-end"><form method="post" action="/hr/drafts/{{ d.id }}/delete" data-confirm="{{ d.folder_name }} 초안을 삭제할까요?&#10;&#10;폴더와 서류는 그대로 둡니다. 폴더에 서류를 새로 넣거나 바꾸면 초안이 다시 만들어집니다.">
+          <button class="btn btn-sm btn-link text-danger p-0" title="초안 삭제"><i class="bi bi-trash"></i> 삭제</button></form></td>
       </tr>{% endfor %}
     </tbody></table></div>
   {% else %}<div class="card-body py-2 small text-muted">확인할 초안이 없습니다. 서류 폴더에 임직원 이름으로 폴더를 만들고 입사서류를 넣으면 자동으로 초안이 생깁니다.</div>{% endif %}
