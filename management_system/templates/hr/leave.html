@@ -2,6 +2,10 @@
 {% block title %}연차 관리{% endblock %}
 {% block page_title %}<i class="bi bi-calendar-check me-2"></i>연차 관리 <span class="text-muted small">회계연도 기준</span>{% endblock %}
 {% block content %}
+{% if notice %}
+<div class="alert alert-warning d-flex align-items-center gap-2"><i class="bi bi-bell-fill"></i><div>{{ notice.text }}</div>
+  <a class="btn btn-sm btn-warning ms-auto text-nowrap" href="/hr/leave/review?year={{ year }}&round={{ notice.round }}">{{ notice.round }}차 명단 확인</a></div>
+{% endif %}
 <div class="row g-3 mb-3">
   <div class="col-lg-7"><div class="card h-100"><div class="card-body">
     <div class="d-flex align-items-center mb-2">
@@ -51,8 +55,6 @@
   </div></div>
 {% endif %}
 
-<form method="post" action="/hr/leave/promote" id="promoForm">
-<input type="hidden" name="year" value="{{ year }}">
 <div class="card">
   <div class="card-header d-flex flex-wrap gap-2 align-items-center">
     <select class="form-select form-select-sm" style="width:auto" data-nav="year">
@@ -62,21 +64,17 @@
     <span class="small text-muted ms-2" data-excel-count>{{ rows|length }}명</span>
     <span class="small ms-2">발생 {{ '%g'|format(totals.granted) }} · 사용 {{ '%g'|format(totals.used) }} · 잔여 <b>{{ '%g'|format(totals.remaining) }}</b>일</span>
     <div class="ms-auto d-flex gap-2">
-      <button type="button" class="btn btn-sm btn-outline-secondary" data-pick="target">잔여 있는 미촉진자 선택</button>
-      <button class="btn btn-sm btn-warning" {{ 'disabled' if not mail_ready }}
-              data-confirm="선택한 직원에게 {{ year }}년 1차 연차 사용 촉진 메일(잔여 통보 + 사용 날짜 회신 링크)을 보냅니다. 회신 기한은 오늘부터 10일입니다. 계속할까요?">
-        <i class="bi bi-send"></i> 선택 인원 1차 촉진 메일</button>
+      <a class="btn btn-sm btn-outline-warning" href="/hr/leave/review?year={{ year }}&round=1"><i class="bi bi-list-check"></i> 1차 촉진 명단</a>
+      <a class="btn btn-sm btn-outline-dark" href="/hr/leave/review?year={{ year }}&round=2"><i class="bi bi-list-check"></i> 2차 지정 명단</a>
     </div>
   </div>
   <div class="table-responsive">
   <table class="table table-sm table-hover mb-0 align-middle" data-excel data-excel-unit="명">
-    <thead><tr><th data-nofilter><input type="checkbox" class="form-check-input" data-check-all="emp_ids"></th>
-      <th>사번</th><th>성명</th><th>부서</th><th>입사일</th><th class="text-end">발생</th><th class="text-end">사용</th>
+    <thead><tr><th>사번</th><th>성명</th><th>부서</th><th>입사일</th><th class="text-end">발생</th><th class="text-end">사용</th>
       <th class="text-end">잔여</th><th class="text-end">사용률</th><th class="text-end">계획</th><th class="text-end">미계획</th><th>촉진</th></tr></thead>
     <tbody>
     {% for r in rows %}{% set e = r.emp %}
-    <tr data-href="/hr/leave/{{ e.id }}?year={{ year }}" data-target="{{ '1' if r.remaining > 0 and not r.promo.label and not r.ent.first_year else '' }}">
-      <td data-no-href><input type="checkbox" class="form-check-input" name="emp_ids" value="{{ e.id }}"></td>
+    <tr data-href="/hr/leave/{{ e.id }}?year={{ year }}">
       <td>{{ e.emp_no }}</td><td class="fw-semibold">{{ e.name }}{% if r.ent.first_year %} <span class="badge text-bg-info">1년 미만</span>{% endif %}</td>
       <td>{{ e.department or '' }}</td><td>{{ e.hire_date }}</td>
       <td class="text-end">{{ '%g'|format(r.granted) }}</td><td class="text-end">{{ '%g'|format(r.used) }}</td>
@@ -86,13 +84,12 @@
       <td class="text-end">{{ '%g'|format(r.unplanned) if r.unplanned else '' }}</td>
       <td>{% if r.promo.label %}<span class="badge text-bg-{{ r.promo.cls }}">{{ r.promo.label }}</span>{% endif %}</td>
     </tr>
-    {% else %}<tr><td colspan="12" class="text-center text-muted p-4">대상 직원이 없습니다</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="11" class="text-center text-muted p-4">대상 직원이 없습니다</td></tr>{% endfor %}
     </tbody>
   </table></div>
   <div class="card-footer help">발생 = 회계연도 기준 계산(+조정), 사용 = 올린 엑셀의 승인된 연차(+조정). 메일플러그 숫자와 다르면 직원을 눌러 조정하세요.
-    계획 = 직원이 회신했거나 회사가 지정한 날 중 아직 쓰지 않은 일수. 이메일과 생년월일이 있어야 촉진 메일을 보낼 수 있습니다.</div>
+    계획 = 직원이 회신했거나 회사가 지정한 날 중 아직 쓰지 않은 일수. 촉진은 [1차 촉진 명단]·[2차 지정 명단]에서 대상과 일수를 확인한 뒤 일괄 발송합니다.</div>
 </div>
-</form>
 
 {% if imports %}
 <div class="card mt-3"><div class="card-header small">최근 올린 파일</div>
@@ -107,11 +104,5 @@
 document.querySelectorAll('[data-nav]').forEach(sel => sel.addEventListener('change', () => {
   const u = new URL(location.href); u.searchParams.set(sel.dataset.nav, sel.value); u.searchParams.delete('msg'); location.href = u;
 }));
-document.querySelector('[data-pick=target]').addEventListener('click', () => {
-  document.querySelectorAll('tr[data-target]').forEach(tr => {
-    const cb = tr.querySelector('input[name=emp_ids]'); if (cb && tr.offsetParent) cb.checked = tr.dataset.target === '1';
-  });
-});
-document.querySelectorAll('[data-no-href]').forEach(td => td.addEventListener('click', e => e.stopPropagation()));
 </script>
 {% endblock %}

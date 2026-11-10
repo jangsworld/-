@@ -89,7 +89,14 @@ def dashboard(request: Request):
         d["charts"]["salary_trend"] = []
         for k in ("avg_salary", "payroll", "contract_missing"):
             d["kpi"][k] = 0
-    return _render(request, "hr/dashboard.html", {"d": d}, "hr.dashboard")
+        notice = None
+    else:                                                  # 연차 촉진 기간 알림 (인사 담당자만)
+        from app.modules.hr import leave
+        try:
+            notice = leave.stage_notice(today().year)
+        except Exception:                                  # 알림 계산 실패가 대시보드를 막지 않도록
+            notice = None
+    return _render(request, "hr/dashboard.html", {"d": d, "leave_notice": notice}, "hr.dashboard")
 
 
 # ════════════════════════════════════════════════════════════════════════

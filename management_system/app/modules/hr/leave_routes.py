@@ -72,6 +72,7 @@ def leave_home(request: Request, year: int | None = None, department: str = ""):
         "last_month": (t.month if year == t.year else 12), "sch": sch, "stage": stage,
         "unmatched": leave.unmatched(), "imports": query("SELECT * FROM leave_imports ORDER BY id DESC LIMIT 8"),
         "mail_ready": mailer.configured(), "years": list(range(t.year + 1, t.year - 4, -1)),
+        "notice": leave.stage_notice(year) if year == t.year else None,
         "employees": query("SELECT id, name, emp_no, department, resign_date FROM employees ORDER BY name"),
         "totals": {"granted": sum(r["granted"] for r in rows), "used": sum(r["used"] for r in rows),
                    "remaining": sum(r["remaining"] for r in rows)},
@@ -134,7 +135,7 @@ async def leave_link(request: Request):
     return _redirect("/hr/leave", f"'{name}'을(를) 연결했습니다")
 
 
-@router.get("/{emp_id}", response_class=HTMLResponse)
+@router.get("/{emp_id:int}", response_class=HTMLResponse)
 def leave_detail(request: Request, emp_id: int, year: int | None = None):
     year = _year(year)
     emp = repo.get_employee(emp_id)
@@ -168,7 +169,7 @@ async def leave_adjust(request: Request, emp_id: int):
 
 
 # ── 1차 촉진: 잔여 통보 + 사용 시기 회신 요청 ──────────────────────────
-def _notice_html(s: dict, year: int, deadline: str, company: str) -> str:
+def _notice_html(s: dict, year: int, deadline: str, company: str, days: float) -> str:
     e, esc = s["emp"], html.escape
     return (
         '<h1 class="doc-title">연차휴가 사용 촉진 통보서 (1차)</h1>'
@@ -176,7 +177,7 @@ def _notice_html(s: dict, year: int, deadline: str, company: str) -> str:
         f'<tr><th>성명</th><td>{esc(e["name"])}</td><th>소속</th><td>{esc(e.get("department") or "")}</td></tr>'
         f'<tr><th>입사일</th><td>{esc(e["hire_date"])}</td><th>대상 연도</th><td>{year}년 (회계연도)</td></tr>'
         f'<tr><th>발생 연차</th><td>{_fmt(s["granted"])}일</td><th>사용 (통보일 기준)</th><td>{_fmt(s["used"])}일</td></tr>'
-        f'<tr><th>미사용 잔여</th><td><b>{_fmt(s["remaining"])}일</b></td><th>사용 기한</th><td>{year}-12-31</td></tr>'
+        f'<tr><th>미사용 잔여</th><td><b>{_fmt(days)}일</b></td><th>사용 기한</th><td>{year}-12-31</td></tr>'
         f'<tr><th>통보일</th><td>{today().isoformat()}</td><th>회신 기한</th><td><b>{deadline}</b></td></tr>'
         '</table>'
         f'<p>근로기준법 제61조 제1항 제1호에 따라 귀하의 미사용 연차휴가 일수를 알려 드립니다. '
@@ -195,7 +196,8 @@ def _make_doc(emp: dict, category: str, title: str, content: str) -> int:
     return doc_id
 
 
-def send_first(emp_ids: list[int], year: int, base: str) -> dict:
+def send_first(emp_ids: list[int], year: int, base: str, days_override: dict | None = None) -> dict:
+    """1차 촉진 일괄 발송. days_override: 담당자가 고친 촉진 일수 {직원 id: 일수}."""
     company = get_settings().get("company_name", "")
     deadline = (today() + timedelta(days=REPLY_DAYS)).isoformat()
     res = {"sent": [], "link_only": [], "skipped": []}
@@ -204,7 +206,8 @@ def send_first(emp_ids: list[int], year: int, base: str) -> dict:
         if not emp:
             continue
         s = leave.summary(emp, year)
-        if s["remaining"] <= 0:
+        days = (days_override or {}).get(emp_id, s["remaining"])
+        if days <= 0:
             res["skipped"].append(f"{emp['name']}(잔여 없음)")
             continue
         if s["ent"]["first_year"]:          # 월차는 입사 1년이 되는 날 소멸 → 일정이 달라 일괄 통보하지 않음
@@ -215,20 +218,20 @@ def send_first(emp_ids: list[int], year: int, base: str) -> dict:
             continue
         token = secrets.token_urlsafe(32)
         link = f"{base}/leave-plan/{token}"
-        content = _notice_html(s, year, deadline, company)
+        content = _notice_html(s, year, deadline, company, days)
         with batch():
             execute("UPDATE leave_promotions SET status='취소' WHERE employee_id=? AND year=? AND round=1 "
                     "AND status='회신대기'", (emp_id, year))
             pid = execute("INSERT INTO leave_promotions(employee_id, year, round, remaining, deadline, to_addr, token_hash, "
                           "token, status, sent_by) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                          (emp_id, year, 1, s["remaining"], deadline, enc(emp["email"]), _hash(token), enc(token),
+                          (emp_id, year, 1, days, deadline, enc(emp["email"]), _hash(token), enc(token),
                            "회신대기", current_actor.get()[1]))
         doc_id = _make_doc(emp, "연차촉진1차", f"{year}년 연차 사용 촉진 통보(1차) - {emp['name']}", content)
         execute("UPDATE leave_promotions SET doc_id=? WHERE id=?", (doc_id, pid))
         mailed = False
         if mailer.configured():
             body = (f"{emp['name']}님, 안녕하세요.\n\n근로기준법 제61조에 따라 {year}년 미사용 연차휴가를 알려 드립니다.\n\n"
-                    f"  · 미사용 잔여: {_fmt(s['remaining'])}일 (사용 기한 {year}-12-31)\n"
+                    f"  · 미사용 잔여: {_fmt(days)}일 (사용 기한 {year}-12-31)\n"
                     f"  · 회신 기한: {deadline}\n\n"
                     f"아래 링크에서 생년월일 6자리로 본인 확인 후, 연차를 사용할 날짜를 골라 보내 주세요.\n{link}\n\n"
                     "기한까지 회신이 없으면 회사가 사용 시기를 정해 알려 드립니다. "
@@ -242,7 +245,7 @@ def send_first(emp_ids: list[int], year: int, base: str) -> dict:
             except mailer.MailError as ex:
                 res.setdefault("errors", []).append(str(ex))
         (res["sent"] if mailed else res["link_only"]).append(emp["name"])
-        audit("hr", "연차 촉진 1차", f"emp#{emp_id}", f"{year}년 잔여 {_fmt(s['remaining'])}일 · " + ("메일" if mailed else "링크만"))
+        audit("hr", "연차 촉진 1차", f"emp#{emp_id}", f"{year}년 잔여 {_fmt(days)}일" + ("(담당자 수정)" if days != s["remaining"] else "") + " · " + ("메일" if mailed else "링크만"))
     return res
 
 
@@ -262,9 +265,18 @@ async def leave_promote(request: Request):
     f = await request.form()
     year = _year(f.get("year"))
     ids = [int(v) for v in f.getlist("emp_ids") if str(v).isdigit()]
+    back = f"/hr/leave/review?year={year}&round=1" if f.get("from_review") else f"/hr/leave?year={year}"
     if not ids:
-        return _redirect(f"/hr/leave?year={year}", "촉진 메일을 보낼 직원을 고르세요")
-    res = await run_in_threadpool(send_first, ids, year, base_url(request))
+        return _redirect(back, "촉진 메일을 보낼 직원을 고르세요")
+    override = {}
+    for i in ids:
+        v = f.get(f"days_{i}")
+        if v not in (None, ""):
+            d = _days(v)
+            if d is None:
+                return _redirect(back, f"촉진 일수는 0.25일 단위 숫자로 입력하세요 ({v}) — 아무에게도 보내지 않았습니다")
+            override[i] = d
+    res = await run_in_threadpool(send_first, ids, year, base_url(request), override)
     parts = []
     if res["sent"]:
         parts.append(f"{len(res['sent'])}명에게 1차 촉진 메일을 보냈습니다")
@@ -275,6 +287,30 @@ async def leave_promote(request: Request):
     if res.get("errors"):
         parts.append("메일 오류: " + res["errors"][0])
     return _redirect(f"/hr/leave?year={year}", " / ".join(parts) or "보낼 대상이 없습니다")
+
+
+def _days(v) -> float | None:
+    try:
+        d = float(str(v).strip())
+    except ValueError:
+        return None
+    return d if 0 <= d <= 40 and (d * 4) == int(d * 4) else None
+
+
+@router.get("/review", response_class=HTMLResponse)
+def leave_review(request: Request, year: int | None = None, round: int = 1):
+    """촉진 대상 명단 확인: 자동으로 고른 대상과 일수(2차는 제안 날짜)를 담당자가 보고 고친 뒤 일괄 발송."""
+    year = _year(year)
+    rnd = 2 if round == 2 else 1
+    rows = leave.first_candidates(year) if rnd == 1 else leave.second_candidates(year)
+    for r in rows:
+        if rnd == 2:
+            r["suggest_text"] = ", ".join(d + ("" if p == "종일" else f" {p}") for d, p in r["suggest"])
+    audit("hr", f"연차 촉진 {rnd}차 명단 열람", f"{year}년", f"{len(rows)}명")
+    return _render(request, "hr/leave_review.html", {
+        "year": year, "rnd": rnd, "rows": rows, "sch": leave.schedule(year), "mail_ready": mailer.configured(),
+        "deadline": (today() + timedelta(days=REPLY_DAYS)).isoformat(),
+    })
 
 
 @router.post("/promotions/{pid}/cancel")
@@ -312,6 +348,67 @@ def parse_plan_rows(dates: list, parts: list, year: int, min_date: str) -> tuple
     return sorted(rows), ""
 
 
+def parse_date_text(text: str, year: int) -> tuple[list[tuple[str, str]], str]:
+    """'2026-11-03, 2026-11-17 오후' → [(날짜, 구분)]."""
+    dates, parts = [], []
+    for tok in re.split(r"[,\n;]+", text or ""):
+        tok = tok.strip()
+        if not tok:
+            continue
+        m = re.match(r"^(\d{4}-\d{2}-\d{2})\s*(종일|오전|오후)?$", tok)
+        if not m:
+            return [], f"'{tok}' — 날짜는 2026-11-03 또는 2026-11-03 오후 처럼 적어 주세요"
+        dates.append(m.group(1))
+        parts.append(m.group(2) or "종일")
+    return parse_plan_rows(dates, parts, year, today().isoformat())
+
+
+def designate_one(emp: dict, year: int, rows: list[tuple[str, str]]) -> tuple[bool, str]:
+    """2차: 회사가 사용 시기를 지정해 통보 (통보서 PDF + 메일)."""
+    total = sum(leave.PARTS[p] for _, p in rows)
+    company = get_settings().get("company_name", "")
+    esc = html.escape
+    lines = "".join(f"<tr><td>{d}</td><td>{p}</td></tr>" for d, p in rows)
+    content = (
+        '<h1 class="doc-title">연차휴가 사용 시기 지정 통보서 (2차)</h1>'
+        '<table class="doc-table">'
+        f'<tr><th>성명</th><td>{esc(emp["name"])}</td><th>소속</th><td>{esc(emp.get("department") or "")}</td></tr>'
+        f'<tr><th>대상 연도</th><td>{year}년</td><th>지정 일수</th><td>{_fmt(total)}일</td></tr>'
+        f'<tr><th>통보일</th><td>{today().isoformat()}</td><th>사용 기한</th><td>{year}-12-31</td></tr></table>'
+        f'<table class="doc-table"><tr><th>지정일</th><th>구분</th></tr>{lines}</table>'
+        '<p>근로기준법 제61조 제1항 제2호에 따라, 1차 촉진 후 사용 시기를 통보하지 않은 미사용 연차휴가의 사용 시기를 '
+        '위와 같이 지정하여 통보합니다. 지정일에 연차휴가를 사용하시기 바랍니다.</p>'
+        f'<p class="text-end">{today().strftime("%Y년 %m월 %d일")}<br><b>{esc(company)}</b></p>'
+    )
+    with batch():
+        pid = execute("INSERT INTO leave_promotions(employee_id, year, round, remaining, to_addr, status, sent_by) "
+                      "VALUES (?,?,?,?,?,?,?)", (emp["id"], year, 2, total, enc(emp.get("email") or ""),
+                                                  "지정통보", current_actor.get()[1]))
+        for d, p in rows:
+            execute("INSERT INTO leave_plans(employee_id, year, plan_date, part, source, promotion_id) VALUES (?,?,?,?,?,?)",
+                    (emp["id"], year, d, p, "회사지정", pid))
+    doc_id = _make_doc(emp, "연차촉진2차", f"{year}년 연차 사용 시기 지정 통보(2차) - {emp['name']}", content)
+    execute("UPDATE leave_promotions SET doc_id=? WHERE id=?", (doc_id, pid))
+    mailed = False
+    if mailer.configured() and emp.get("email"):
+        body = (f"{emp['name']}님, 안녕하세요.\n\n근로기준법 제61조 제1항 제2호에 따라 {year}년 미사용 연차휴가의 사용 시기를 "
+                "아래와 같이 지정하여 알려 드립니다.\n\n" + "\n".join(f"  · {d} {p}" for d, p in rows) +
+                "\n\n지정일에 메일플러그 근태에서 휴가를 신청해 주세요. 통보서 사본(PDF)을 첨부합니다.\n\n"
+                f"{company} 경영관리팀")
+        try:
+            mailer.send(emp["email"], f"[{company}] {year}년 연차휴가 사용 시기 지정 통보 (2차)", body, _attach(doc_id))
+            execute("UPDATE leave_promotions SET mailed=1 WHERE id=?", (pid,))
+            mailed = True
+        except mailer.MailError:
+            pass
+    audit("hr", "연차 촉진 2차", f"emp#{emp['id']}", f"{year}년 {_fmt(total)}일 지정" + ("" if mailed else " · 메일 미발송"))
+    return mailed, f"{emp['name']} {_fmt(total)}일"
+
+
+def _late_note(year: int) -> str:
+    return f" · 주의: 2차 지정 기한({year}-10-31)이 지났습니다" if today() > leave.schedule(year)["second_by"] else ""
+
+
 @router.post("/{emp_id}/designate")
 async def leave_designate(request: Request, emp_id: int):
     f = await request.form()
@@ -323,55 +420,40 @@ async def leave_designate(request: Request, emp_id: int):
     rows, err = parse_plan_rows(f.getlist("plan_date"), f.getlist("plan_part"), year, today().isoformat())
     if err or not rows:
         return _redirect(back, err or "지정할 날짜를 입력하세요")
-    s = leave.summary(emp, year)
-    total = sum(leave.PARTS[p] for _, p in rows)
-    if total > s["remaining"]:
-        return _redirect(back, f"지정 일수({_fmt(total)}일)가 잔여({_fmt(s['remaining'])}일)보다 많습니다")
-    company = get_settings().get("company_name", "")
-    esc = html.escape
-    lines = "".join(f"<tr><td>{d}</td><td>{p}</td></tr>" for d, p in rows)
-    content = (
-        '<h1 class="doc-title">연차휴가 사용 시기 지정 통보서 (2차)</h1>'
-        '<table class="doc-table">'
-        f'<tr><th>성명</th><td>{esc(emp["name"])}</td><th>소속</th><td>{esc(emp.get("department") or "")}</td></tr>'
-        f'<tr><th>대상 연도</th><td>{year}년</td><th>미사용 잔여</th><td>{_fmt(s["remaining"])}일</td></tr>'
-        f'<tr><th>지정 일수</th><td>{_fmt(total)}일</td><th>통보일</th><td>{today().isoformat()}</td></tr></table>'
-        f'<table class="doc-table"><tr><th>지정일</th><th>구분</th></tr>{lines}</table>'
-        '<p>근로기준법 제61조 제1항 제2호에 따라, 1차 촉진 후 사용 시기를 통보하지 않은 미사용 연차휴가의 사용 시기를 '
-        '위와 같이 지정하여 통보합니다. 지정일에 연차휴가를 사용하시기 바랍니다.</p>'
-        f'<p class="text-end">{today().strftime("%Y년 %m월 %d일")}<br><b>{esc(company)}</b></p>'
-    )
+    mailed, label = await run_in_threadpool(designate_one, emp, year, rows)
+    msg = f"{label} 지정 · " + ("메일 발송" if mailed else "메일 미발송 — 통보서를 출력해 전달하세요")
+    return _redirect(back, msg + _late_note(year))
+
+
+@router.post("/designate-bulk")
+async def leave_designate_bulk(request: Request):
+    f = await request.form()
+    year = _year(f.get("year"))
+    back = f"/hr/leave/review?year={year}&round=2"
+    ids = [int(v) for v in f.getlist("emp_ids") if str(v).isdigit()]
+    if not ids:
+        return _redirect(back, "지정 통보할 직원을 고르세요")
+    jobs = []
+    for i in ids:                                   # 먼저 모두 검사: 하나라도 틀리면 아무에게도 보내지 않음
+        emp = repo.get_employee(i)
+        if not emp:
+            continue
+        rows, err = parse_date_text(f.get(f"dates_{i}") or "", year)
+        if err or not rows:
+            return _redirect(back, f"{emp['name']}: {err or '날짜가 비어 있습니다'} — 아무에게도 보내지 않았습니다")
+        jobs.append((emp, rows))
 
     def work():
-        with batch():
-            pid = execute("INSERT INTO leave_promotions(employee_id, year, round, remaining, to_addr, status, sent_by) "
-                          "VALUES (?,?,?,?,?,?,?)", (emp_id, year, 2, s["remaining"], enc(emp.get("email") or ""),
-                                                      "지정통보", current_actor.get()[1]))
-            for d, p in rows:
-                execute("INSERT INTO leave_plans(employee_id, year, plan_date, part, source, promotion_id) VALUES (?,?,?,?,?,?)",
-                        (emp_id, year, d, p, "회사지정", pid))
-        doc_id = _make_doc(emp, "연차촉진2차", f"{year}년 연차 사용 시기 지정 통보(2차) - {emp['name']}", content)
-        execute("UPDATE leave_promotions SET doc_id=? WHERE id=?", (doc_id, pid))
-        msg = f"사용 시기 {len(rows)}일을 지정했습니다"
-        if mailer.configured() and emp.get("email"):
-            body = (f"{emp['name']}님, 안녕하세요.\n\n근로기준법 제61조 제1항 제2호에 따라 {year}년 미사용 연차휴가의 사용 시기를 "
-                    "아래와 같이 지정하여 알려 드립니다.\n\n" + "\n".join(f"  · {d} {p}" for d, p in rows) +
-                    "\n\n지정일에 메일플러그 근태에서 휴가를 신청해 주세요. 통보서 사본(PDF)을 첨부합니다.\n\n"
-                    f"{company} 경영관리팀")
-            try:
-                mailer.send(emp["email"], f"[{company}] {year}년 연차휴가 사용 시기 지정 통보 (2차)", body, _attach(doc_id))
-                execute("UPDATE leave_promotions SET mailed=1 WHERE id=?", (pid,))
-                msg += " · 메일 발송"
-            except mailer.MailError as ex:
-                msg += f" · 메일 실패({ex}) — 통보서를 출력해 전달하세요"
-        else:
-            msg += " · 메일 미발송 — 통보서를 출력해 전달하세요"
-        if today() > leave.schedule(year)["second_by"]:
-            msg += f" · 주의: 2차 지정 기한({year}-10-31)이 지났습니다"
-        audit("hr", "연차 촉진 2차", f"emp#{emp_id}", f"{year}년 {_fmt(total)}일 지정")
-        return msg
+        sent, unsent = [], []
+        for emp, rows in jobs:
+            mailed, label = designate_one(emp, year, rows)
+            (sent if mailed else unsent).append(label)
+        msg = f"{len(sent)}명에게 2차 지정 통보를 보냈습니다"
+        if unsent:
+            msg += f" / 메일 미발송 {len(unsent)}명({', '.join(unsent[:5])}) — 통보서를 출력해 전달하세요"
+        return msg + _late_note(year)
 
-    return _redirect(back, await run_in_threadpool(work))
+    return _redirect(f"/hr/leave?year={year}", await run_in_threadpool(work))
 
 
 # ════════════════════════════════════════════════════════════════════════

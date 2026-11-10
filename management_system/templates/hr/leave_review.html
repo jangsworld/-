@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ rnd }}차 촉진 명단{% endblock %}
+{% block page_title %}<a href="/hr/leave?year={{ year }}" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> {{ year }}년 연차 사용 촉진 {{ rnd }}차 — 대상 명단 확인{% endblock %}
+{% block content %}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><a class="nav-link {{ 'active' if rnd == 1 }}" href="/hr/leave/review?year={{ year }}&round=1">1차 잔여 통보 <span class="small text-muted">{{ sch.first_from.strftime('%m/%d') }}~{{ sch.first_to.strftime('%m/%d') }}</span></a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if rnd == 2 }}" href="/hr/leave/review?year={{ year }}&round=2">2차 사용 시기 지정 <span class="small text-muted">~{{ sch.second_by.strftime('%m/%d') }}</span></a></li>
+</ul>
+
+<div class="alert alert-light border small">
+{% if rnd == 1 %}
+  <b>자동으로 고른 대상</b>: {{ year }}년 연차가 남아 있고 아직 1차를 받지 않은 재직자입니다(입사 1년 미만은 일정이 달라 제외).
+  <b>촉진 일수</b>는 계산된 잔여가 들어가 있으니 메일플러그와 다르면 고친 뒤 보내세요. 보내면 직원마다 통보서 PDF가 첨부되고, 회신 기한은 <b>{{ deadline }}</b>(10일)입니다.
+{% else %}
+  <b>자동으로 고른 대상</b>: 1차 회신 기한이 지났는데 회신하지 않았거나, 촉진 일수보다 적게 회신한 직원입니다.
+  <b>지정 날짜</b>는 11~12월 평일에 고르게 나눠 제안했습니다(이미 쓴 날·계획한 날·공휴일 제외). 쉼표로 구분해 고치세요 — 예: <code>2026-11-03, 2026-11-17 오후</code>.
+  일수는 날짜 수로 자동 계산됩니다.
+{% endif %}
+</div>
+
+<form method="post" action="{{ '/hr/leave/promote' if rnd == 1 else '/hr/leave/designate-bulk' }}" id="reviewForm">
+<input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="from_review" value="1">
+<div class="card">
+  <div class="card-header d-flex align-items-center gap-2">
+    <span class="small"><b id="pickCount">0</b> / {{ rows|length }}명 선택 · 합계 <b id="pickDays">0</b>일</span>
+    <button class="btn btn-sm {{ 'btn-warning' if rnd == 1 else 'btn-dark' }} ms-auto" {{ 'disabled' if not rows or (rnd == 1 and not mail_ready) }}
+            data-confirm="선택한 직원에게 {{ rnd }}차 {{ '촉진 메일' if rnd == 1 else '사용 시기 지정 통보' }}을 한꺼번에 보냅니다. 보낸 뒤에는 되돌릴 수 없습니다. 계속할까요?">
+      <i class="bi bi-send"></i> 선택 인원 일괄 발송</button>
+  </div>
+  <div class="table-responsive">
+  <table class="table table-sm align-middle mb-0" data-excel data-excel-unit="명">
+    <thead><tr><th data-nofilter><input type="checkbox" class="form-check-input" data-check-all="emp_ids" checked></th>
+      <th>성명</th><th>부서</th><th>입사일</th><th class="text-end">발생</th><th class="text-end">사용</th><th class="text-end">계산 잔여</th>
+      {% if rnd == 1 %}<th data-nofilter style="width:130px">촉진 일수</th><th>비고</th>
+      {% else %}<th>사유</th><th data-nofilter style="min-width:340px">지정 날짜</th><th data-nofilter class="text-end">일수</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for r in rows %}{% set e = r.emp %}
+    <tr>
+      <td><input type="checkbox" class="form-check-input" name="emp_ids" value="{{ e.id }}" {{ '' if r.problem else 'checked' }} {{ 'disabled' if r.problem }}></td>
+      <td class="fw-semibold"><a href="/hr/leave/{{ e.id }}?year={{ year }}" target="_blank">{{ e.name }}</a></td>
+      <td>{{ e.department or '' }}</td><td>{{ e.hire_date }}</td>
+      <td class="text-end">{{ '%g'|format(r.granted) }}</td><td class="text-end">{{ '%g'|format(r.used) }}</td><td class="text-end">{{ '%g'|format(r.remaining) }}</td>
+      {% if rnd == 1 %}
+      <td><div class="input-group input-group-sm"><input class="form-control text-end" name="days_{{ e.id }}" type="number" step="0.25" min="0" value="{{ '%g'|format(r.days) }}" data-days><span class="input-group-text">일</span></div></td>
+      <td class="small">{% if r.problem %}<span class="text-danger">{{ r.problem }} — 인사기록카드를 채워야 보낼 수 있습니다</span>{% endif %}</td>
+      {% else %}
+      <td class="small">{{ r.reason }}</td>
+      <td><textarea class="form-control form-control-sm" name="dates_{{ e.id }}" rows="{{ (r.suggest|length // 5) + 1 }}" data-dates>{{ r.suggest_text }}</textarea></td>
+      <td class="text-end" data-sum>{{ '%g'|format(r.days) }}</td>
+      {% endif %}
+    </tr>
+    {% else %}<tr><td colspan="10" class="text-center text-muted p-4">지금 {{ rnd }}차 대상자가 없습니다</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const form = document.getElementById('reviewForm');
+  const val = {'종일': 1, '오전': 0.5, '오후': 0.5};
+  const daysOf = tr => {
+    const n = tr.querySelector('[data-days]'); if (n) return parseFloat(n.value) || 0;
+    const t = tr.querySelector('[data-dates]'); if (!t) return 0;
+    let s = 0; t.value.split(/[,\n;]+/).map(x => x.trim()).filter(Boolean).forEach(x => { const m = x.match(/(종일|오전|오후)$/); s += m ? val[m[1]] : 1; });
+    tr.querySelector('[data-sum]').textContent = s; return s;
+  };
+  const recalc = () => {
+    let c = 0, d = 0;
+    form.querySelectorAll('tbody tr').forEach(tr => { const cb = tr.querySelector('input[name=emp_ids]'); const x = tr.querySelector('[data-days],[data-dates]') ? daysOf(tr) : 0;
+      if (cb && cb.checked) { c++; d += x; } });
+    document.getElementById('pickCount').textContent = c; document.getElementById('pickDays').textContent = d;
+  };
+  form.addEventListener('input', recalc); form.addEventListener('change', recalc); recalc();
+})();
+</script>
+{% endblock %}

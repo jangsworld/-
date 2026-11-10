@@ -345,3 +345,88 @@ def first_year_schedule(hire) -> dict | None:
     exp = add_years(h, 1)
     return {"expires": exp, "first": add_months(exp, -3), "second": add_months(exp, -1),
             "late_first": add_months(exp, -1), "late_second": exp - timedelta(days=10)}
+
+
+# ── 촉진 대상 자동 선정 · 2차 날짜 제안 ─────────────────────────────────
+FIXED_HOLIDAYS = ("01-01", "03-01", "05-05", "06-06", "08-15", "10-03", "10-09", "12-25")   # 양력 공휴일 (설·추석은 연말과 무관)
+
+
+def first_candidates(year: int) -> list[dict]:
+    """1차 대상: 그 해 잔여가 있고, 입사 1년 미만이 아니며, 아직 1차를 보내지 않은 재직자."""
+    out = []
+    for s in overview(year):
+        e = s["emp"]
+        if e.get("resign_date") or s["ent"]["first_year"] or s["remaining"] <= 0 or s["promo"]["p1"]:
+            continue
+        full = query_one("SELECT email, birth_date FROM employees WHERE id=?", (e["id"],))
+        s["problem"] = "" if full and full.get("email") and full.get("birth_date") else "이메일·생년월일 없음"
+        s["days"] = s["remaining"]
+        out.append(s)
+    return out
+
+
+def second_candidates(year: int) -> list[dict]:
+    """2차 대상: 1차 회신 기한이 지났거나 회신했는데, 아직 계획이 없는 연차가 남은 사람 (2차 미발송)."""
+    t = today().isoformat()
+    out = []
+    for s in overview(year):
+        p1, p2 = s["promo"]["p1"], s["promo"]["p2"]
+        if not p1 or p2 or s["emp"].get("resign_date"):
+            continue
+        if p1["status"] == "회신대기" and (p1["deadline"] or "") >= t:
+            continue                                      # 아직 회신 기한 안
+        replied = sum(PARTS.get(p["part"], 1) for p in s["plans"] if p["source"] == "직원회신")
+        days = min(s["unplanned"], max(0.0, p1["remaining"] - replied))
+        days = math.ceil(days * 2) / 2                    # 지정은 반일 단위
+        if days <= 0:
+            continue
+        s["days"] = days
+        s["reason"] = "회신 없음" if p1["status"] == "회신대기" else f"일부 회신({replied:g}일)"
+        out.append(s)
+    for i, s in enumerate(out):
+        s["suggest"] = suggest_dates(s, year, s["days"], i, len(out))
+    return out
+
+
+def _workdays(start: date, end: date) -> list[date]:
+    out, d = [], start
+    while d <= end:
+        if d.weekday() < 5 and d.strftime("%m-%d") not in FIXED_HOLIDAYS:
+            out.append(d)
+        d += timedelta(days=1)
+    return out
+
+
+def suggest_dates(s: dict, year: int, days: float, idx: int = 0, n: int = 1) -> list[tuple[str, str]]:
+    """11~12월 평일에 고르게 나눠 제안. 이미 쓴 날·계획한 날은 피하고, 사람마다 시작을 조금씩 어긋나게 합니다."""
+    t = today()
+    start = max(t + timedelta(days=7), date(year, 11, 1)) if t <= date(year, 10, 24) else t + timedelta(days=7)
+    taken = set(s.get("used_dates") or ()) | {p["plan_date"] for p in s.get("plans") or ()}
+    pool = [d for d in _workdays(start, date(year, 12, 31)) if d.isoformat() not in taken]
+    count = math.ceil(days)
+    if not pool or count <= 0:
+        return []
+    count = min(count, len(pool))
+    step = len(pool) / count
+    shift = (idx * step / max(n, 1)) % step if n > 1 else 0
+    picks = sorted({pool[min(len(pool) - 1, int(i * step + shift))] for i in range(count)})
+    out = [(d.isoformat(), "종일") for d in picks]
+    if days != int(days) and out:
+        out[-1] = (out[-1][0], "오후")
+    return out
+
+
+def stage_notice(year: int) -> dict | None:
+    """촉진 기간이면 담당자에게 보여줄 알림 (대시보드·연차 화면)."""
+    t, sch = today(), schedule(year)
+    if sch["first_from"] <= t <= sch["first_to"]:
+        n = len(first_candidates(year))
+        if n:
+            return {"round": 1, "count": n, "text": f"1차 연차 사용 촉진 기간입니다 ({sch['first_from']:%m/%d}~{sch['first_to']:%m/%d}). "
+                                                      f"대상 {n}명 명단을 확인하고 보내세요."}
+    if sch["first_to"] < t <= sch["second_by"]:
+        n = len(second_candidates(year))
+        if n:
+            return {"round": 2, "count": n, "text": f"2차 사용 시기 지정 대상 {n}명이 있습니다 ({sch['second_by']:%m/%d}까지). "
+                                                      "제안 날짜를 확인하고 보내세요."}
+    return None

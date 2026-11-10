@@ -203,3 +203,63 @@ def test_first_year_skipped_in_bulk_promotion(client, mail):
                                 "birth_date": "1999-01-01", "employment_type": "정규직"})
     res = send_first([eid], 2026, "http://testserver")
     assert not res["sent"] and "1년 미만" in res["skipped"][0]
+
+
+# ── 명단 확인 후 일괄 발송 ──────────────────────────────────────────────
+def test_review_first_round_with_edited_days(client, mail, monkeypatch):
+    others = [e for e in repo.list_employees(status="재직(전체)") if e.get("email") and e.get("birth_date")
+              and e["hire_date"] < "2024-01-01" and not query_one(
+                  "SELECT 1 x FROM leave_promotions WHERE employee_id=? AND year=2026 AND status<>'취소'", (e["id"],))]
+    assert len(others) >= 2
+    page = client.get("/hr/leave/review?year=2026&round=1").text
+    assert others[0]["name"] in page and "촉진 일수" in page
+    assert "1차 연차 사용 촉진 기간" in client.get("/hr/dashboard").text         # 7/2: 발송 기간 알림
+    a, b = others[0], others[1]
+    n = len(mail.sent)
+    r = client.post("/hr/leave/promote", data={"year": 2026, "from_review": "1", "emp_ids": [a["id"], b["id"]],
+                                               f"days_{a['id']}": "7.5", f"days_{b['id']}": ""})
+    assert len(mail.sent) == n + 2
+    pa = query_one("SELECT remaining FROM leave_promotions WHERE employee_id=? AND round=1 AND status<>'취소'", (a["id"],))
+    assert pa["remaining"] == 7.5                                                   # 담당자가 고친 일수로 통보
+    assert any("7.5일" in m["body"] for m in mail.sent[n:])
+    # 잘못된 일수면 아무에게도 안 보냄
+    c = others[2] if len(others) > 2 else None
+    if c:
+        client.post("/hr/leave/promote", data={"year": 2026, "from_review": "1", "emp_ids": [c["id"]], f"days_{c['id']}": "abc"})
+        assert len(mail.sent) == n + 2
+    assert a["name"] not in client.get("/hr/leave/review?year=2026&round=1").text.split("<tbody>")[1]   # 보낸 사람은 명단에서 빠짐
+
+
+def test_review_second_round_suggest_and_bulk(client, mail, monkeypatch):
+    p = query_one("SELECT * FROM leave_promotions WHERE round=1 AND status='회신대기' AND year=2026 ORDER BY id LIMIT 1")
+    assert p
+    emp = repo.get_employee(p["employee_id"])
+    monkeypatch.setenv("BMS_TODAY", "2026-07-20")                                  # 회신 기한(7/12) 지남
+    rows = leave.second_candidates(2026)
+    me = next(r for r in rows if r["emp"]["id"] == emp["id"])
+    assert me["reason"] == "회신 없음" and me["days"] > 0
+    dates = [d for d, _ in me["suggest"]]
+    assert dates and all(d >= "2026-11-01" for d in dates) and "2026-12-25" not in dates
+    assert all(date.fromisoformat(d).weekday() < 5 for d in dates)
+    assert len(me["suggest"]) == int(-(-me["days"] // 1))
+    assert "2차 사용 시기 지정 대상" in client.get("/hr/dashboard").text
+    page = client.get("/hr/leave/review?year=2026&round=2").text
+    assert emp["name"] in page and dates[0] in page
+    n = len(mail.sent)
+    # 날짜를 고쳐서 보냄 (형식 틀리면 아무에게도 안 보냄)
+    client.post("/hr/leave/designate-bulk", data={"year": 2026, "emp_ids": [emp["id"]], f"dates_{emp['id']}": "11월3일"})
+    assert len(mail.sent) == n
+    client.post("/hr/leave/designate-bulk", data={"year": 2026, "emp_ids": [emp["id"]],
+                                                   f"dates_{emp['id']}": "2026-11-03, 2026-11-04 오후"})
+    assert len(mail.sent) == n + 1 and "2026-11-04 오후" in mail.sent[-1]["body"]
+    assert {(x["plan_date"], x["part"]) for x in leave.plans(emp["id"], 2026) if x["source"] == "회사지정"} >= \
+        {("2026-11-03", "종일"), ("2026-11-04", "오후")}
+    assert all(r["emp"]["id"] != emp["id"] for r in leave.second_candidates(2026))
+
+
+def test_parse_date_text():
+    from app.modules.hr.leave_routes import parse_date_text
+    rows, err = parse_date_text("2026-11-03, 2026-11-04 오전\n2026-11-05", 2026)
+    assert not err and rows == [("2026-11-03", "종일"), ("2026-11-04", "오전"), ("2026-11-05", "종일")]
+    assert parse_date_text("2026-11-07", 2026)[1]                  # 토요일
+    assert parse_date_text("2026-11-03, 2026-11-03", 2026)[1]      # 중복
