@@ -374,6 +374,27 @@ def test_cartax_logs_are_read_only(admin, monkeypatch):
     set_setting("cartax_api_key", "")
 
 
+def test_batch_commits_once_and_other_readers_still_work():
+    """대량 저장은 한 트랜잭션: 저장 도중에도 다른 연결이 읽을 수 있고, 오류 나면 통째로 취소."""
+    import threading
+    from app.db import batch, query
+    before = query("SELECT COUNT(*) c FROM audit_logs")[0]["c"]
+    seen_by_other = []
+    with batch():
+        for i in range(50):
+            execute("INSERT INTO audit_logs(module, action) VALUES ('test', ?)", (f"batch {i}",))
+        t = threading.Thread(target=lambda: seen_by_other.append(query("SELECT COUNT(*) c FROM audit_logs")[0]["c"]))
+        t.start(); t.join(10)
+    assert seen_by_other == [before]                                             # 다른 화면: 막히지 않고 커밋 전 값
+    assert query("SELECT COUNT(*) c FROM audit_logs")[0]["c"] == before + 50
+    with pytest.raises(RuntimeError):
+        with batch():
+            execute("INSERT INTO audit_logs(module, action) VALUES ('test', 'rolled back')")
+            raise RuntimeError
+    assert not query_one("SELECT 1 FROM audit_logs WHERE action='rolled back'")
+    execute("DELETE FROM audit_logs WHERE module='test'")
+
+
 def test_cartax_busy_is_not_failure(admin):
     set_setting("cartax_api_key", "secret-key")
     assert cartax._lock.acquire(blocking=False)

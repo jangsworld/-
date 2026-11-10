@@ -2,6 +2,7 @@
 import contextvars
 import os
 import sqlite3
+import threading
 from contextlib import contextmanager
 
 from app.config import APP_DIR as BASE_DIR, settings
@@ -14,9 +15,16 @@ SCHEMA_VERSION = "6"
 current_actor: contextvars.ContextVar[tuple] = contextvars.ContextVar("bms_actor", default=(None, "system", ""))
 
 
+# 다른 쪽이 쓰는 중이면 실패하지 않고 기다리는 시간(초). 기본 5초는 대량 저장 중 화면 오류(database is locked)를 냄
+BUSY_TIMEOUT_SEC = 30
+
+# 같은 스레드에서 batch() 안에 있으면 query/execute 가 그 트랜잭션 하나를 함께 씁니다
+_local = threading.local()
+
+
 def get_connection() -> sqlite3.Connection:
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=BUSY_TIMEOUT_SEC)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -24,7 +32,12 @@ def get_connection() -> sqlite3.Connection:
 
 @contextmanager
 def tx():
-    """트랜잭션 컨텍스트: 정상 종료 시 commit, 예외 시 rollback."""
+    """트랜잭션 컨텍스트: 정상 종료 시 commit, 예외 시 rollback.
+    batch() 안에서 부르면 바깥 트랜잭션에 합류합니다(커밋은 batch 가 끝날 때 한 번)."""
+    shared = getattr(_local, "conn", None)
+    if shared is not None:
+        yield shared
+        return
     conn = get_connection()
     try:
         yield conn
@@ -34,6 +47,20 @@ def tx():
         raise
     finally:
         conn.close()
+
+
+@contextmanager
+def batch():
+    """여러 건 저장을 한 번에 커밋합니다(대량 동기화용). 건마다 커밋하면 그동안 다른 화면이 DB 를 못 읽습니다."""
+    if getattr(_local, "conn", None) is not None:      # 이미 batch 안
+        yield _local.conn
+        return
+    with tx() as conn:
+        _local.conn = conn
+        try:
+            yield conn
+        finally:
+            _local.conn = None
 
 
 def query(sql: str, params=()) -> list[dict]:

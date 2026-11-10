@@ -17,7 +17,7 @@ from collections import Counter
 from datetime import datetime, timedelta
 
 from app.common import today
-from app.db import audit, execute, get_settings, query, query_one, set_setting
+from app.db import audit, batch, execute, get_settings, query, query_one, set_setting
 from app.modules.ga import repo
 from app.modules.ga.constants import ODOMETER_SUSPECT_KM, PURPOSE_PENDING
 
@@ -185,32 +185,38 @@ def sync(start: str, end: str) -> str:
     if not _lock.acquire(blocking=False):
         raise CartaxBusy("이전 동기화가 진행 중입니다. 잠시 후 새로고침하면 결과가 표시됩니다")
     try:
-        plates, car_added = _ensure_vehicles(_call("/cars", key))
+        cars = _call("/cars", key)
+        with batch():
+            plates, car_added = _ensure_vehicles(cars)
         drivers = _driver_index()
         added = updated = 0
         skipped, purposes, seen = Counter(), Counter(), set()
         for a, b in _windows(start, end):
-            for row in _call("/drivings", key, {"startDate": a, "endDate": b}):
-                seen.add(f"cartax:{row.get('id')}")
-                vehicle_id = plates.get(_plate(row.get("carNumber")))
-                if not vehicle_id:
-                    skipped[f"카택스 차량 목록에 없음({row.get('carNumber') or '번호 없음'})"] += 1
-                    continue
-                values = _log_values(row, vehicle_id, drivers)
-                if not values["drive_date"]:
-                    skipped["운행일 없음"] += 1
-                    continue
-                purposes[values["external_purpose"]] += 1
-                old = query_one("SELECT id, external_updated, external_purpose FROM ga_vehicle_logs WHERE external_id=?",
-                                (values["external_id"],))
-                if not old:
-                    repo.save("ga_vehicle_logs", None, values, quiet=True)
-                    added += 1
-                elif old["external_updated"] != values["external_updated"] or not old["external_purpose"]:
-                    repo.save("ga_vehicle_logs", old["id"], values, quiet=True)
-                    updated += 1
-        removed = _remove_missing(seen, start, end) if seen else 0     # 응답이 비면 오류일 수 있어 지우지 않음
-        linked, suspect, pending = relink_drivers(drivers), suspect_count(start, end), pending_count(start, end)
+            rows = _call("/drivings", key, {"startDate": a, "endDate": b})   # 네트워크 호출은 트랜잭션 밖에서
+            with batch():                                                    # 기간(최대 100일)마다 한 번에 커밋
+                for row in rows:
+                    seen.add(f"cartax:{row.get('id')}")
+                    vehicle_id = plates.get(_plate(row.get("carNumber")))
+                    if not vehicle_id:
+                        skipped[f"카택스 차량 목록에 없음({row.get('carNumber') or '번호 없음'})"] += 1
+                        continue
+                    values = _log_values(row, vehicle_id, drivers)
+                    if not values["drive_date"]:
+                        skipped["운행일 없음"] += 1
+                        continue
+                    purposes[values["external_purpose"]] += 1
+                    old = query_one("SELECT id, external_updated, external_purpose FROM ga_vehicle_logs WHERE external_id=?",
+                                    (values["external_id"],))
+                    if not old:
+                        repo.save("ga_vehicle_logs", None, values, quiet=True)
+                        added += 1
+                    elif old["external_updated"] != values["external_updated"] or not old["external_purpose"]:
+                        repo.save("ga_vehicle_logs", old["id"], values, quiet=True)
+                        updated += 1
+        with batch():
+            removed = _remove_missing(seen, start, end) if seen else 0     # 응답이 비면 오류일 수 있어 지우지 않음
+            linked = relink_drivers(drivers)
+        suspect, pending = suspect_count(start, end), pending_count(start, end)
         result = f"카택스 동기화: 운행기록 신규 {added}건, 수정 {updated}건" + (f", 삭제 {removed}건" if removed else "") + \
                  (f", 차량 {car_added}대 등록" if car_added else "") + \
                  (f", 운전자 연결 {linked}건" if linked else "") + (f", 주행거리 확인 필요 {suspect}건" if suspect else "") + \
