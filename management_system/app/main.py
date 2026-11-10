@@ -22,6 +22,7 @@ from app.modules.ga.constants import ASSET_BEHAVIORS
 from app.modules.hr import intake, repo as hr_repo
 from app.modules.hr.routes import router as hr_router
 from app.modules.hr.signing import router as sign_router
+from app.modules.hr.leave_routes import router as leave_router, public_router as leave_public_router
 from app.modules.ga.routes import router as ga_router, public_router as ga_public_router
 from app.modules.ga import repo as ga_repo
 from app.security import auth
@@ -92,6 +93,8 @@ app.add_middleware(SecurityMiddleware)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 app.mount("/static", StaticFiles(directory=os.path.join(APP_DIR, "static")), name="static")
 app.include_router(auth_router)
+app.include_router(leave_router)
+app.include_router(leave_public_router)
 app.include_router(hr_router)
 app.include_router(sign_router)
 app.include_router(ga_router)

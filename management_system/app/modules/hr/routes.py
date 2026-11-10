@@ -685,7 +685,7 @@ def document_editor(request: Request, doc_id: int):
         "mail_ready": mailer.configured(),
         "mails": [{**m, "to_masked": _mask_email(m["to_addr"])} for m in repo.list_doc_mails(doc_id)],
         "history": repo.list_documents(d["doc_group"], employee_id=d["employee_id"]),
-    }, "hr.contracts" if d["doc_group"] == "contract" else "hr.certificates")
+    }, {"contract": "hr.contracts", "leave": "hr.leave"}.get(d["doc_group"], "hr.certificates"))
 
 
 @router.post("/api/documents/{doc_id}")

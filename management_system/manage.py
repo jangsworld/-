@@ -44,7 +44,8 @@ def backup(dest=None):
     print(f"백업 완료: {path}\n※ 마스터키({key_path()})는 이 백업과 다른 장소에 별도 보관하세요.")
 
 
-BUSINESS_TABLES = ("employee_rrn", "employee_qualifications", "employee_drafts", "appointments", "employee_checks",
+BUSINESS_TABLES = ("leave_plans", "leave_promotions", "leave_adjust", "leave_name_map", "leave_records",
+                   "leave_imports", "employee_rrn", "employee_qualifications", "employee_drafts", "appointments", "employee_checks",
                    "hr_sign_requests", "hr_doc_mails", "hr_documents", "salaries", "rewards", "work_specials", "employees",
                    "ga_asset_history", "ga_assets", "ga_vehicle_logs", "ga_vehicle_maint", "ga_vehicles",
                    "ga_docs", "ga_seal_logs", "ga_contract_drafts", "ga_contracts", "ga_events")

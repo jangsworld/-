@@ -14,7 +14,8 @@ from app.db import current_actor
 from app.security import auth
 
 PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/favicon.ico", "/sign/",  # /sign/: 직원 전자서명 (토큰+본인확인)
-                   "/q/")                                                       # /q/: 자산 라벨 QR 기본 정보 (무작위 열쇠, 금액·이력 제외)
+                   "/q/",            # /q/: 자산 라벨 QR 기본 정보 (무작위 열쇠, 금액·이력 제외)
+                   "/leave-plan/")   # /leave-plan/: 직원 연차 사용계획 회신 (토큰+생년월일)
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 # 경로별 필요 권한 (위에서부터 첫 일치 규칙 적용)
@@ -28,7 +29,7 @@ RULES = [
     (r"^/account", ALL, ALL),
     (r"^/logout", ALL, ALL),
     # 연봉·계약서·증명서·상벌·근로특이사항(건강·가족정보)·내보내기: 조회자 접근 불가
-    (r"^/hr/(salaries|contracts|documents|templates|certificates|rewards|specials|drafts|technicians|api)", WRITERS, WRITERS),
+    (r"^/hr/(leave|salaries|contracts|documents|templates|certificates|rewards|specials|drafts|technicians|api)", WRITERS, WRITERS),
     (r"^/hr/employees/(new|import|export\.csv|template\.csv|\d+/(edit|file|checks))", WRITERS, WRITERS),
     (r"^/hr", ALL, WRITERS),
     # 총무: 관인 승인은 관리자, 경조사(가족 사망·질병 등)는 총무 담당자 이상만 열람

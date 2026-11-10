@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}{{ e.name }} 연차{% endblock %}
+{% block page_title %}<a href="/hr/leave?year={{ year }}" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> {{ e.name }} <span class="text-muted small">{{ e.emp_no }} · {{ e.department or '' }} · 입사 {{ e.hire_date }}</span> · {{ year }}년 연차{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-xl-8">
+    <div class="row g-2 mb-3">
+      {% for label, val, cls in [('발생', s.granted, ''), ('사용', s.used, ''), ('잔여', s.remaining, 'text-primary'), ('계획(남은)', s.upcoming, ''), ('미계획', s.unplanned, 'text-danger' if s.unplanned else '')] %}
+      <div class="col"><div class="card"><div class="card-body py-2 text-center"><div class="small text-muted">{{ label }}</div>
+        <div class="fs-5 fw-semibold {{ cls }}">{{ '%g'|format(val) }}일</div></div></div></div>
+      {% endfor %}
+    </div>
+    <div class="small text-muted mb-3">
+      발생 내역: 정기 {{ '%g'|format(s.ent.annual) }}일{% if s.ent.note %} ({{ s.ent.note }}){% endif %}
+      {% if s.ent.monthly %} + 1년 미만 월차 {{ '%g'|format(s.ent.monthly) }}일 (입사 1년 되는 {{ s.ent.monthly_expires }} 소멸){% endif %}
+      {% if s.adj.days %} + 조정 {{ '%+g'|format(s.adj.days) }}일{% endif %}
+      {% if s.adj.used_before %} · 사용에 올리기 전 사용분 {{ '%g'|format(s.adj.used_before) }}일 포함{% endif %}
+    </div>
+
+    <div class="card mb-3"><div class="card-header small"><i class="bi bi-calendar2-week"></i> 사용 내역 (메일플러그)</div>
+      <table class="table table-sm small mb-0"><thead><tr><th>기간</th><th>신청시간</th><th class="text-end">일수</th><th>종류</th><th>상태</th><th>문서번호</th></tr></thead><tbody>
+      {% for r in s.records %}<tr><td>{{ r.start_date }}{% if r.end_date != r.start_date %} ~ {{ r.end_date }}{% endif %}</td><td>{{ r.time_text }}</td>
+        <td class="text-end">{{ '%g'|format(r.days) }}</td><td>{{ r.leave_type }}</td><td>{{ r.status }}</td><td class="text-muted">{{ r.doc_no }}</td></tr>
+      {% else %}<tr><td colspan="6" class="text-center text-muted p-3">올린 엑셀에 {{ year }}년 연차 사용 기록이 없습니다</td></tr>{% endfor %}
+      </tbody></table></div>
+
+    <div class="card mb-3"><div class="card-header small"><i class="bi bi-calendar-event"></i> 사용 계획 (직원 회신·회사 지정)</div>
+      <table class="table table-sm small mb-0"><thead><tr><th>날짜</th><th>구분</th><th>출처</th><th>실제 사용</th></tr></thead><tbody>
+      {% for p in s.plans %}<tr><td>{{ p.plan_date }}</td><td>{{ p.part }}</td><td>{{ p.source }}</td>
+        <td>{% if p.plan_date in s.used_dates %}<span class="text-success">사용</span>{% elif p.plan_date < today().isoformat() %}<span class="text-danger">기록 없음</span>{% else %}<span class="text-muted">예정</span>{% endif %}</td></tr>
+      {% else %}<tr><td colspan="4" class="text-center text-muted p-3">계획이 없습니다</td></tr>{% endfor %}
+      </tbody></table></div>
+
+    <div class="card"><div class="card-header small"><i class="bi bi-megaphone"></i> 촉진 기록</div>
+      <table class="table table-sm small mb-0"><thead><tr><th>차수</th><th>보낸 날</th><th class="text-end">잔여</th><th>회신 기한</th><th>상태</th><th>메일</th><th></th></tr></thead><tbody>
+      {% for p in promos %}<tr><td>{{ p.round }}차</td><td>{{ p.sent_at[:16] }}</td><td class="text-end">{{ '%g'|format(p.remaining) }}</td>
+        <td>{{ p.deadline or '' }}</td>
+        <td>{{ p.status }}{% if p.opened_at and p.status == '회신대기' %} <span class="text-muted">(열람 {{ p.opened_at[5:16] }})</span>{% endif %}{% if p.responded_at %} <span class="text-muted">({{ p.responded_at[5:16] }})</span>{% endif %}</td>
+        <td>{{ '보냄' if p.mailed else '안 보냄' }}</td>
+        <td class="text-end">{% if p.doc_id %}<a href="/hr/documents/{{ p.doc_id }}" class="btn btn-sm btn-link py-0">통보서</a>{% endif %}
+          {% if p.status == '회신대기' %}<form method="post" action="/hr/leave/promotions/{{ p.id }}/cancel" class="d-inline" data-confirm="이 촉진 기록을 취소하고 링크를 막을까요?"><button class="btn btn-sm btn-link text-danger py-0">취소</button></form>{% endif %}</td></tr>
+        {% if p.link and not p.mailed %}<tr><td colspan="7"><div class="small text-muted">메일이 가지 않았습니다. 이 링크를 직원에게 전달하세요:</div><input class="form-control form-control-sm" readonly value="{{ p.link }}"></td></tr>{% endif %}
+      {% else %}<tr><td colspan="7" class="text-center text-muted p-3">촉진 기록이 없습니다</td></tr>{% endfor %}
+      </tbody></table></div>
+  </div>
+
+  <div class="col-xl-4">
+    {% if fy %}
+    <div class="alert alert-info small"><b>입사 1년 미만</b> — 월차는 {{ fy.expires }}에 소멸합니다. 촉진 시기:
+      1차 {{ fy.first }}(10일 내 회신) · 2차 {{ fy.second }}까지 지정. 나중에 생긴 2일분은 1차 {{ fy.late_first }}(5일 내) · 2차 {{ fy.late_second }}까지.</div>
+    {% endif %}
+    <div class="card mb-3"><div class="card-header small"><i class="bi bi-sliders"></i> 조정 (메일플러그와 맞추기)</div><div class="card-body">
+      <form method="post" action="/hr/leave/{{ e.id }}/adjust">
+        <input type="hidden" name="year" value="{{ year }}">
+        <label class="form-label small">발생 가감 (일) <span class="text-muted">이월 +, 차감 −</span></label>
+        <input class="form-control form-control-sm mb-2" name="days" type="number" step="0.25" value="{{ '%g'|format(s.adj.days or 0) }}">
+        <label class="form-label small">엑셀로 올리지 않은 기간의 사용 (일)</label>
+        <input class="form-control form-control-sm mb-2" name="used_before" type="number" step="0.25" min="0" value="{{ '%g'|format(s.adj.used_before or 0) }}">
+        <label class="form-label small">메모</label>
+        <input class="form-control form-control-sm mb-2" name="note" maxlength="200" value="{{ s.adj.note or '' }}" placeholder="예: 메일플러그 연차현황 기준 맞춤">
+        <button class="btn btn-sm btn-outline-primary w-100">저장</button>
+      </form></div></div>
+
+    <div class="card"><div class="card-header small"><i class="bi bi-calendar-plus"></i> 2차: 회사가 사용 시기 지정</div><div class="card-body">
+      <form method="post" action="/hr/leave/{{ e.id }}/designate" id="desForm"
+            data-confirm="{{ e.name }}님에게 지정한 날짜로 2차 통보(메일·통보서 PDF)를 합니다. 계속할까요?">
+        <input type="hidden" name="year" value="{{ year }}">
+        <div id="desRows"></div>
+        <button type="button" class="btn btn-sm btn-light border w-100 mb-2" id="desAdd"><i class="bi bi-plus"></i> 날짜 추가</button>
+        <div class="small mb-2">지정 합계 <b id="desSum">0</b>일 / 미계획 {{ '%g'|format(s.unplanned) }}일</div>
+        <button class="btn btn-sm btn-dark w-100" {{ 'disabled' if s.remaining <= 0 }}><i class="bi bi-send"></i> 지정 통보</button>
+      </form>
+      <div class="help mt-2">1차 촉진 후 회신하지 않았거나 일부만 회신한 경우, {{ sch.second_by }}까지 남은 연차의 사용 날짜를 회사가 정해 알립니다.</div>
+    </div></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const box = document.getElementById('desRows'), sum = document.getElementById('desSum');
+  const val = {'종일': 1, '오전': 0.5, '오후': 0.5};
+  const recalc = () => { let t = 0; box.querySelectorAll('.row').forEach(r => { if (r.querySelector('input').value) t += val[r.querySelector('select').value]; }); sum.textContent = t; };
+  const add = () => {
+    const r = document.createElement('div'); r.className = 'row g-1 mb-1';
+    r.innerHTML = `<div class="col-7"><input type="date" class="form-control form-control-sm" name="plan_date" min="{{ min_date }}" max="{{ max_date }}"></div>
+      <div class="col-4"><select class="form-select form-select-sm" name="plan_part"><option>종일</option><option>오전</option><option>오후</option></select></div>
+      <div class="col-1"><button type="button" class="btn btn-sm btn-link text-danger p-0">✕</button></div>`;
+    r.querySelector('button').addEventListener('click', () => { r.remove(); recalc(); });
+    r.addEventListener('change', recalc); box.appendChild(r);
+  };
+  document.getElementById('desAdd').addEventListener('click', add); add();
+})();
+</script>
+{% endblock %}

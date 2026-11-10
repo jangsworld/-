@@ -1,0 +1,42 @@
+{% extends "sign/_base.html" %}
+{% block title %}연차 사용 계획{% endblock %}
+{% block content %}
+<div class="card mx-auto" style="max-width:560px"><div class="card-body p-4">
+  <h5 class="mb-1">{{ name }}님, {{ p.year }}년 연차 사용 날짜를 알려 주세요</h5>
+  <div class="text-muted small mb-3">미사용 잔여 <b class="text-primary">{{ '%g'|format(remaining) }}일</b> · 회신 기한 <b>{{ p.deadline }}</b> · 사용 기한 {{ p.year }}-12-31</div>
+  {% if plans %}<div class="alert alert-success small py-2">이미 회신하셨습니다 ({{ plans|length }}일). 기한까지 아래에서 고쳐 다시 보낼 수 있습니다.</div>{% endif %}
+  {% if error %}<div class="alert alert-danger small py-2">{{ error }}</div>{% endif %}
+  <form method="post" action="/leave-plan/{{ token }}/submit" id="planForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div id="rows"></div>
+    <button type="button" class="btn btn-sm btn-light border w-100 mb-2" id="addRow"><i class="bi bi-plus"></i> 날짜 추가</button>
+    <div class="d-flex mb-3 small"><span>고른 일수</span><span class="ms-auto"><b id="sum">0</b> / {{ '%g'|format(remaining) }}일</span></div>
+    <button class="btn btn-primary w-100">회신 보내기</button>
+  </form>
+  <div class="help mt-3">주말은 고를 수 없습니다. 이 회신은 사용 계획이며, 실제 휴가는 해당 날짜에 맞춰 <b>메일플러그 근태</b>에서 신청해 주세요.
+    회신하지 않으면 회사가 사용 날짜를 정해 알려 드립니다(근로기준법 제61조).</div>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const box = document.getElementById('rows'), sum = document.getElementById('sum'), max = {{ remaining }};
+  const val = {'종일': 1, '오전': 0.5, '오후': 0.5};
+  const recalc = () => { let t = 0; box.querySelectorAll('.row').forEach(r => { if (r.querySelector('input').value) t += val[r.querySelector('select').value]; });
+    sum.textContent = t; sum.className = t > max ? 'text-danger' : ''; };
+  const add = (d = '', part = '종일') => {
+    const r = document.createElement('div'); r.className = 'row g-1 mb-1';
+    r.innerHTML = `<div class="col-7"><input type="date" class="form-control" name="plan_date" min="{{ min_date }}" max="{{ max_date }}"></div>
+      <div class="col-4"><select class="form-select" name="plan_part">{% for x in parts %}<option>{{ x }}</option>{% endfor %}</select></div>
+      <div class="col-1"><button type="button" class="btn btn-link text-danger p-0" aria-label="삭제">✕</button></div>`;
+    r.querySelector('input').value = d; r.querySelector('select').value = part;
+    r.querySelector('button').addEventListener('click', () => { r.remove(); recalc(); });
+    r.addEventListener('change', recalc); box.appendChild(r);
+  };
+  {% for x in plans %}add('{{ x.plan_date }}', '{{ x.part }}');{% endfor %}
+  if (!box.children.length) add();
+  document.getElementById('addRow').addEventListener('click', () => add());
+  recalc();
+})();
+</script>
+{% endblock %}

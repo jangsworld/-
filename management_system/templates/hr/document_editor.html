@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ d.title }}{% endblock %}
-{% block page_title %}<a href="{{ '/hr/contracts' if d.doc_group == 'contract' else '/hr/certificates' }}" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> {{ d.title }}{% endblock %}
+{% block page_title %}<a href="{{ '/hr/contracts' if d.doc_group == 'contract' else ('/hr/leave/' ~ d.employee_id) if d.doc_group == 'leave' else '/hr/certificates' }}" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> {{ d.title }}{% endblock %}
 {% block content %}
 <div class="row g-3">
   <div class="col-xl-9 print-col">

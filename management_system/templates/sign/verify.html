@@ -1,6 +1,6 @@
 {% extends "sign/_base.html" %}
 {% block content %}
-<form method="post" action="/sign/{{ token }}/verify" class="card mx-auto" style="max-width:420px">
+<form method="post" action="{{ verify_action or '/sign/' ~ token ~ '/verify' }}" class="card mx-auto" style="max-width:420px">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="card-body p-4">
     <h5 class="mb-3">본인 확인</h5>

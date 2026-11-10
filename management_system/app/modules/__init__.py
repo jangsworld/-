@@ -15,6 +15,7 @@ MODULES = [
             {"key": "hr.rewards", "restricted": True, "name": "상벌현황", "icon": "bi-award", "url": "/hr/rewards"},
             {"key": "hr.technicians", "restricted": True, "name": "기술자 현황", "icon": "bi-tools", "url": "/hr/technicians"},
             {"key": "hr.specials", "restricted": True, "name": "근로특이사항", "icon": "bi-calendar-heart", "url": "/hr/specials"},
+            {"key": "hr.leave", "restricted": True, "name": "연차 관리", "icon": "bi-calendar-check", "url": "/hr/leave"},
             {"key": "hr.certificates", "restricted": True, "name": "증명서 발급", "icon": "bi-patch-check", "url": "/hr/certificates"},
             {"key": "hr.templates", "restricted": True, "name": "문서 템플릿", "icon": "bi-file-earmark-ruled", "url": "/hr/templates"},
         ],

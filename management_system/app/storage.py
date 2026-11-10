@@ -15,7 +15,7 @@ from datetime import datetime
 
 from app.config import APP_DIR, settings
 
-GROUP_FOLDER = {"contract": "근로계약서", "certificate": "증명서"}
+GROUP_FOLDER = {"contract": "근로계약서", "certificate": "증명서", "leave": "연차촉진"}
 
 
 class StorageError(Exception):

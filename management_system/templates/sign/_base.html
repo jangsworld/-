@@ -12,7 +12,7 @@
 </head>
 <body class="bg-light">
 <div class="container py-4" style="max-width:900px">
-  <div class="text-center mb-3"><div class="fs-5 fw-bold">{{ company() }}</div><div class="small text-muted">전자서명</div></div>
+  <div class="text-center mb-3"><div class="fs-5 fw-bold">{{ company() }}</div><div class="small text-muted">{{ subtitle or '전자서명' }}</div></div>
   {% block content %}{% endblock %}
 </div>
 {% block scripts %}{% endblock %}

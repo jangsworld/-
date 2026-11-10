@@ -275,6 +275,82 @@ CREATE TABLE IF NOT EXISTS hr_doc_mails (
     sent_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
+-- ── 인사: 연차 (메일플러그 휴가 내역 엑셀 → 현황·촉진) ──────────────
+-- 메일플러그 휴가 문서 (연차 종류만 보관, 사유·보건휴가는 저장하지 않음)
+CREATE TABLE IF NOT EXISTS leave_records (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_no      TEXT NOT NULL UNIQUE,     -- 메일플러그 문서번호
+    employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+    mp_name     TEXT NOT NULL,            -- 메일플러그 이름 (직원 연결 전 표시용)
+    mp_dept     TEXT,
+    mp_rank     TEXT,
+    leave_type  TEXT NOT NULL,
+    start_date  TEXT NOT NULL,
+    end_date    TEXT NOT NULL,
+    time_text   TEXT,                     -- 1d (8h) / 오후 (4h)
+    days        REAL NOT NULL,
+    status      TEXT NOT NULL,
+    import_id   INTEGER,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS leave_imports (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename    TEXT NOT NULL,
+    period_from TEXT NOT NULL,
+    period_to   TEXT NOT NULL,
+    total       INTEGER, added INTEGER, changed INTEGER, removed INTEGER, skipped INTEGER,
+    imported_by TEXT,
+    imported_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+-- 메일플러그 이름 ↔ 임직원 (동명이인·영문 이름 등 담당자가 한 번 연결)
+CREATE TABLE IF NOT EXISTS leave_name_map (
+    mp_name     TEXT PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE
+);
+-- 직원·연도별 조정 (올리기 전 사용분, 이월, 메일플러그와 차이 등)
+CREATE TABLE IF NOT EXISTS leave_adjust (
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    year        INTEGER NOT NULL,
+    days        REAL NOT NULL DEFAULT 0,  -- 발생 가감 (+이월, -조정)
+    used_before REAL NOT NULL DEFAULT 0,  -- 엑셀로 올리지 않은 기간의 사용일수
+    note        TEXT,
+    PRIMARY KEY (employee_id, year)
+);
+-- 연차 사용 촉진 (근로기준법 제61조): 1차 = 잔여 통보 + 사용시기 회신 요청, 2차 = 회사 지정 통보
+CREATE TABLE IF NOT EXISTS leave_promotions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id     INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    year            INTEGER NOT NULL,
+    round           INTEGER NOT NULL,      -- 1 / 2
+    remaining       REAL NOT NULL,
+    deadline        TEXT,                  -- 1차: 회신 기한
+    to_addr         TEXT,                  -- 암호화
+    mailed          INTEGER NOT NULL DEFAULT 0,
+    token_hash      TEXT UNIQUE,
+    token           TEXT,                  -- 암호화 (담당자 재안내용)
+    fail_count      INTEGER NOT NULL DEFAULT 0,
+    session_hash    TEXT,
+    session_expires TEXT,
+    opened_at       TEXT,
+    responded_at    TEXT,
+    responder_ip    TEXT,
+    status          TEXT NOT NULL,         -- 회신대기/회신완료/취소/지정통보
+    doc_id          INTEGER REFERENCES hr_documents(id) ON DELETE SET NULL,
+    sent_by         TEXT,
+    sent_at         TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+-- 사용 계획 (직원 회신 또는 회사 지정)
+CREATE TABLE IF NOT EXISTS leave_plans (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id  INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    year         INTEGER NOT NULL,
+    plan_date    TEXT NOT NULL,
+    part         TEXT NOT NULL DEFAULT '종일',   -- 종일/오전/오후
+    source       TEXT NOT NULL,                  -- 직원회신/회사지정
+    promotion_id INTEGER REFERENCES leave_promotions(id) ON DELETE SET NULL,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
 -- 입사·퇴사 체크리스트 완료 기록 (항목은 구분값 설정의 ONBOARD/OFFBOARD)
 CREATE TABLE IF NOT EXISTS employee_checks (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -515,6 +591,9 @@ CREATE INDEX IF NOT EXISTS idx_ga_docs ON ga_docs(direction, doc_date);
 CREATE INDEX IF NOT EXISTS idx_salaries_year ON salaries(year);
 CREATE INDEX IF NOT EXISTS idx_docs_emp ON hr_documents(employee_id);
 CREATE INDEX IF NOT EXISTS idx_doc_mails ON hr_doc_mails(doc_id);
+CREATE INDEX IF NOT EXISTS idx_leave_emp ON leave_records(employee_id, start_date);
+CREATE INDEX IF NOT EXISTS idx_leave_promo ON leave_promotions(employee_id, year);
+CREATE INDEX IF NOT EXISTS idx_leave_plans ON leave_plans(employee_id, year);
 CREATE INDEX IF NOT EXISTS idx_rewards_emp ON rewards(employee_id);
 CREATE INDEX IF NOT EXISTS idx_specials_emp ON work_specials(employee_id);
 """
