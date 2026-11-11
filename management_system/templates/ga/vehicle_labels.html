@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}차량 QR 라벨{% endblock %}
+{% block page_title %}<a href="/ga/vehicles" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> 차량 QR 라벨 인쇄{% endblock %}
+{% block content %}
+<div class="d-flex gap-2 mb-3 no-print"><button class="btn btn-sm btn-primary" data-print><i class="bi bi-printer"></i> 인쇄</button>
+  <span class="help align-self-center">운전석 쪽 유리 안쪽이나 계기판 옆에 붙이세요. 직원이 휴대폰으로 찍으면 이름·생년월일로 본인 확인 후 점검 사진·파손 신고·인수인계 확인을 합니다.
+  {% if not public_set %}<br><b>QR 주소: {{ base }}</b> — 회사 와이파이에 연결된 휴대폰에서만 열립니다. 바깥에서도 열려면 설정에 직원 접속 주소(HTTPS)를 넣으세요.{% endif %}</span></div>
+<div class="label-sheet">
+{% for v in rows %}
+  <div class="asset-label"><div class="qr" data-text="{{ v.qr_text }}"></div>
+    <div><div class="small text-muted">{{ company() }} 법인차량</div><div class="fw-bold fs-5">{{ v.plate_no }}</div><div class="small">{{ v.model }}</div>
+      <div class="small text-muted">사진 점검 · 파손 신고</div></div></div>
+{% else %}<div class="text-muted">차량이 없습니다</div>{% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}" src="/static/vendor/qrcode/qrcode.js"></script>
+<script nonce="{{ csp_nonce }}">
+document.querySelectorAll('.qr').forEach(el => { const q = qrcode(0, 'M'); q.addData(el.dataset.text); q.make(); el.innerHTML = q.createSvgTag({ cellSize: 3, margin: 0 }); });
+</script>
+{% endblock %}

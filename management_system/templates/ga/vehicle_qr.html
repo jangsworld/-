@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{ v.plate_no }} 차량</title>
+  <link rel="stylesheet" href="/static/vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/vendor/bootstrap-icons/bootstrap-icons.min.css">
+</head>
+<body class="bg-light">
+<div class="container py-4" style="max-width:520px">
+  <div class="text-center mb-3"><div class="fs-5 fw-bold">{{ company() }}</div><div class="small text-muted">법인차량</div></div>
+  <div class="card shadow-sm mb-3"><div class="card-body text-center">
+    <div class="fs-3 fw-bold">{{ v.plate_no }}</div><div class="text-muted">{{ v.model }} {{ v.model_year or '' }}</div>
+    {% if cur_masked %}<div class="small mt-1">현재 사용자 {{ cur_masked }}</div>{% endif %}
+  </div></div>
+  {% if error %}<div class="alert alert-danger py-2 small">{{ error }}</div>{% endif %}
+  {% if msg %}<div class="alert alert-info py-2 small">{{ msg }}</div>{% endif %}
+
+  {% if staff %}
+    <div class="list-group mb-3">
+      {% for i in open %}<a class="list-group-item list-group-item-action" href="/ga/vehicles/{{ v.id }}/inspections/{{ i.id }}/shoot">
+        <i class="bi bi-camera me-1"></i> {{ i.kind }} ({{ i.insp_date }}) — {{ '사진 찍기' if i.status == '촬영중' else '확인 대기' }}</a>{% endfor %}
+      <a class="list-group-item list-group-item-action" href="/ga/vehicles/{{ v.id }}"><i class="bi bi-car-front me-1"></i> 차량 상세 (사진 점검 시작·사용자·파손·과태료)</a>
+    </div>
+    <p class="small text-muted text-center">관리부 담당자로 로그인되어 있습니다.</p>
+  {% elif me %}
+    <div class="d-flex align-items-center mb-2"><div class="small"><b>{{ me.name }}</b>님 ({{ me.department or '' }})</div>
+      <form method="post" action="/vq/{{ token }}/logout" class="ms-auto"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm btn-link">나가기</button></form></div>
+    {% if mine %}<div class="fw-semibold small mb-1">진행 중인 점검</div>
+    <div class="list-group mb-3">{% for i in mine %}
+      <a class="list-group-item list-group-item-action" href="/vq/{{ token }}/i/{{ i.id }}"><i class="bi bi-camera me-1"></i> {{ i.kind }} ({{ i.insp_date }})
+        {% if i.from_name or i.to_name %}<span class="small text-muted">{{ i.from_name or '-' }} → {{ i.to_name or '-' }}</span>{% endif %}
+        <span class="badge {{ 'text-bg-primary' if i.status == '촬영중' else 'text-bg-warning' }} float-end">{{ '사진 찍기' if i.status == '촬영중' else '확인하기' }}</span></a>{% endfor %}</div>{% endif %}
+    <form method="post" action="/vq/{{ token }}/start" class="d-grid gap-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-outline-danger py-3" name="kind" value="파손신고"><i class="bi bi-exclamation-triangle"></i> 파손·고장 신고 (사진)</button>
+      {% for k in self_kinds %}<button class="btn btn-outline-primary py-2" name="kind" value="{{ k }}"><i class="bi bi-camera"></i> {{ k }} 사진 올리기</button>{% endfor %}
+    </form>
+    <p class="small text-muted mt-3">사용자 변경·반납·신차 인수는 관리부가 점검을 만들면 위 「진행 중인 점검」에 나타납니다.</p>
+  {% else %}
+    <form method="post" action="/vq/{{ token }}/verify" class="card"><div class="card-body">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="fw-semibold mb-2">본인 확인</div>
+      <label class="form-label small mb-0">이름</label><input class="form-control mb-2" name="name" autocomplete="off" required>
+      <label class="form-label small mb-0">생년월일 6자리</label><input class="form-control mb-3" name="birth" inputmode="numeric" pattern="\d{6}" maxlength="6" placeholder="예: 900101" autocomplete="off" required>
+      <button class="btn btn-primary w-100">확인</button>
+      <div class="small text-muted mt-2">확인 후 점검 사진 올리기·파손 신고·인수인계 확인을 할 수 있습니다. 30분 뒤 자동으로 끝납니다.</div>
+    </div></form>
+    <div class="text-center mt-3"><a class="small" href="/login?next=/vq/{{ token }}">관리부 담당자 로그인</a></div>
+  {% endif %}
+</div>
+</body>
+</html>

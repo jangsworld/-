@@ -155,6 +155,9 @@ def dashboard() -> dict:
     }
 
 
+VEHICLE_ALERT_CATS = ("차량", "차량정비", "과태료", "차량점검", "차량파손")
+
+
 def build_alerts(assets, vehicles, contracts, alert_days=60) -> list[dict]:
     t = today()
     out = []
@@ -225,6 +228,9 @@ def build_alerts(assets, vehicles, contracts, alert_days=60) -> list[dict]:
             out.append({"level": "info", "category": "경조금", "name": e["name"], "emp_id": e["employee_id"],
                         "message": f"{e['relation']} {e['category']} 경조금 {e['amount']:,}원 미지급 ({e['event_date']})",
                         "dday": None, "link": "/ga/events"})
+    # 8) 차량: 엔진오일·과태료·사진 점검·파손 (fleet)
+    from app.modules.ga import fleet
+    out.extend(fleet.alerts())
     order = {"danger": 0, "warning": 1, "info": 2}
     out.sort(key=lambda a: (order[a["level"]], a["dday"] if a["dday"] is not None else 9999))
     return out

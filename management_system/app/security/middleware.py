@@ -15,7 +15,8 @@ from app.security import auth
 
 PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/favicon.ico", "/sign/",  # /sign/: 직원 전자서명 (토큰+본인확인)
                    "/q/",            # /q/: 자산 라벨 QR 기본 정보 (무작위 열쇠, 금액·이력 제외)
-                   "/leave-plan/")   # /leave-plan/: 직원 연차 사용계획 회신 (토큰+생년월일)
+                   "/leave-plan/",   # /leave-plan/: 직원 연차 사용계획 회신 (토큰+생년월일)
+                   "/vq/")           # /vq/: 차량 QR — 점검 사진·파손 신고 (무작위 열쇠 + 이름·생년월일)
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 # 경로별 필요 권한 (위에서부터 첫 일치 규칙 적용)
@@ -113,7 +114,8 @@ class SecurityMiddleware(BaseHTTPMiddleware):
 
         # 업로드 크기 제한
         cl = request.headers.get("content-length")
-        limit_mb = 25 if path.startswith("/ga/assets/") else settings.max_upload_mb   # 자산 사진은 서버에서 줄여 저장
+        photo_up = path.startswith(("/ga/assets/", "/vq/")) or (path.startswith("/ga/vehicles/") and path.endswith("/photo"))
+        limit_mb = 25 if photo_up else settings.max_upload_mb   # 자산·차량 사진은 서버에서 줄여 저장
         if cl and cl.isdigit() and int(cl) > limit_mb * 1024 * 1024:
             return PlainTextResponse("요청 크기가 너무 큽니다", status_code=413)
 

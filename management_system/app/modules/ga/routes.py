@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from app.common import templates, today, to_date, vat_split
 from app.config import settings as cfg
 from app.db import audit, get_codes, get_settings, execute
-from app.modules.ga import cartax, contract_intake, photos, repo, services
+from app.modules.ga import cartax, contract_intake, fleet, photos, repo, services
 from app.modules.ga.constants import (
     ASSET_CATEGORIES, ASSET_STATUSES, VEHICLE_STATUSES, DRIVE_PURPOSES, PURPOSE_PENDING, DOC_STATUSES, SEAL_STATUSES,
     PAY_CYCLES, CONTRACT_STATUSES, EVENT_STATUSES, VAT_TYPES,
@@ -241,15 +241,37 @@ def asset_history_delete(aid: int, hid: int):
 
 
 # ── 2. 법인차량 ─────────────────────────────────────────────────────────
+def _fleet_opts() -> dict:
+    return {"insp_kinds": fleet.KINDS, "damage_kinds": fleet.DAMAGE_KINDS, "damage_statuses": fleet.DAMAGE_STATUSES,
+            "insurance_opts": fleet.INSURANCE, "resp_opts": fleet.RESPONSIBILITY, "fine_kinds": fleet.FINE_KINDS,
+            "fine_statuses": fleet.FINE_STATUSES}
+
+
 @router.get("/vehicles", response_class=HTMLResponse)
-def vehicles(request: Request):
+def vehicles(request: Request, tab: str = "list", year: int | None = None, status: str = ""):
     rows = repo.list_vehicles()
+    users = fleet.current_users()
     for v in rows:
         v["stat"] = services.vehicle_stats(v["id"])
         v["odometer"] = repo.last_odometer(v["id"])
+        v["user"] = users.get(v["id"])
         for k in ("insurance_end", "inspection_due", "lease_end"):
             v[k + "_dday"] = (to_date(v[k]) - today()).days if to_date(v[k]) else None
-    return _render(request, "ga/vehicles.html", {
+    year = year or today().year
+    tab = tab if tab in ("list", "inspections", "damages", "fines", "cost") else "list"
+    extra = {"tab": tab, "year": year, "status": status, **_fleet_opts(),
+             "veh_opts": [{"v": v["id"], "t": f"{v['plate_no']} {v['model']}"} for v in rows if v["status"] != "매각"],
+             "fleet_alerts": [a for a in services.build_alerts([], rows, [], 0) if a["category"] in services.VEHICLE_ALERT_CATS],
+             "periodic_due": fleet.periodic_due()}
+    if tab == "inspections":
+        extra["insp_rows"] = fleet.inspections(status=status)
+    elif tab == "damages":
+        extra["damage_rows"] = fleet.damages(status=status, year="" if status == "진행" else str(year))
+    elif tab == "fines":
+        extra["fine_rows"] = fleet.fines(status=status, year="" if status == "진행" else str(year))
+    elif tab == "cost":
+        extra["cost"] = fleet.cost_table(year)
+    return _render(request, "ga/vehicles.html", {**extra,
         "rows": rows, "total": services.vehicle_stats(), "ownership": get_codes("VEHICLE_OWNERSHIP"),
         "statuses": VEHICLE_STATUSES, "fuels": get_codes("FUEL"), "cartax_on": cartax.enabled(),
         "cartax_last": get_settings().get("cartax_last_sync", ""), "year_start": f"{today().year}-01-01",
@@ -283,6 +305,10 @@ def vehicle_detail(request: Request, vid: int, year: int | None = None):
         "maint_categories": get_codes("MAINT_CATEGORY"), "ownership": get_codes("VEHICLE_OWNERSHIP"),
         "statuses": VEHICLE_STATUSES, "fuels": get_codes("FUEL"), "years": list(range(today().year, today().year - 5, -1)),
         "cartax_vehicle": repo.is_cartax_vehicle(vid),
+        "cur_user": fleet.current_user(vid), "assign_rows": fleet.assign_history(vid)[:10],
+        "insp_rows": fleet.inspections(vid)[:10], "damage_rows": fleet.damages(vid)[:10], "fine_rows": fleet.fines(vid)[:10],
+        "oil": fleet.oil_status(v), "oil_interval": int(v.get("oil_interval_km") or fleet.OIL_DEFAULT_KM),
+        "veh_opts": [{"v": v["id"], "t": f"{v['plate_no']} {v['model']}"}], **_fleet_opts(),
     }, "ga.vehicles")
 
 

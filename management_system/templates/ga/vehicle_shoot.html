@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{ i.plate_no }} 사진 점검</title>
+  <link rel="stylesheet" href="/static/vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/vendor/bootstrap-icons/bootstrap-icons.min.css">
+  <style>
+    .slot { border: 1px solid #dee2e6; border-radius: .5rem; background: #fff; }
+    .slot img { width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: .4rem; }
+    .slot .empty { aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; background: #f1f3f5; border-radius: .4rem; color: #868e96; }
+    .slot.done { border-color: #198754; }
+    .ref { opacity: .85; }
+    #busy { position: fixed; inset: 0; background: rgba(0,0,0,.45); color: #fff; display: none; align-items: center; justify-content: center; font-size: 1.1rem; z-index: 10; }
+    .pick { position: relative; overflow: hidden; }
+    .pick input { position: absolute; inset: 0; opacity: 0; }
+  </style>
+</head>
+<body class="bg-light">
+<div id="busy"><div class="text-center"><div class="spinner-border mb-2"></div><div>사진 올리는 중…</div></div></div>
+<div class="container py-3" style="max-width:640px">
+  <div class="d-flex align-items-center mb-2">
+    <a href="{{ back }}" class="text-decoration-none text-muted me-2"><i class="bi bi-chevron-left"></i></a>
+    <div><div class="fw-bold fs-5">{{ i.plate_no }} <span class="small text-muted">{{ i.model }}</span></div>
+      <div class="small text-muted">{{ i.kind }} · {{ i.insp_date }}{% if i.kind in ('신차인수', '사용자변경', '반납') %} · {{ i.from_name or '-' }} → {{ i.to_name or '-' }}{% endif %}</div></div>
+    <span class="badge ms-auto {{ 'text-bg-success' if i.status == '확정' else ('text-bg-warning' if i.status == '확인대기' else 'text-bg-secondary') }}">{{ '관리부 확인 중' if i.status == '확인대기' else i.status }}</span>
+  </div>
+  {% if msg %}<div class="alert alert-info py-2 small">{{ msg }}</div>{% endif %}
+  <div id="err" class="alert alert-danger py-2 small" hidden></div>
+
+  {% if i.status == '촬영중' %}
+  <div class="alert alert-light border small py-2 mb-2">
+    {% if report %}파손·고장 부위를 가까이 1장, 조금 떨어져 위치가 보이게 1장 찍어 주세요.
+    {% else %}아래 8곳을 차례로 찍어 주세요. <b>회색 작은 사진</b>은 지난 점검 사진입니다 — 같은 각도로 찍으면 비교가 쉽습니다. 흠집은 「파손 부위 추가」로 가까이 찍어 주세요.{% endif %}
+  </div>
+  <div class="row g-2 mb-3">
+    <div class="col-6"><label class="form-label small mb-0">계기판 주행거리(km)</label><input class="form-control" id="odo" inputmode="numeric" value="{{ i.odometer or '' }}"></div>
+    <div class="col-6"><label class="form-label small mb-0">연료</label><select class="form-select" id="fuel"><option value=""></option>{% for f in fuel_levels %}<option {{ 'selected' if i.fuel_level == f }}>{{ f }}</option>{% endfor %}</select></div>
+  </div>
+  {% endif %}
+
+  {% if not report %}
+  <div class="row g-2 mb-3">
+  {% for r in rows %}
+    <div class="col-6"><div class="slot p-2 {{ 'done' if r.now }}">
+      <div class="d-flex small fw-semibold mb-1">{{ r.label }}{% if r.now %}<i class="bi bi-check-circle-fill text-success ms-auto"></i>{% endif %}</div>
+      {% if r.now %}<a href="{{ r.now.url }}" target="_blank"><img src="{{ r.now.thumb }}" alt="{{ r.label }}"></a>
+      {% else %}<div class="empty"><i class="bi bi-camera fs-2"></i></div>{% endif %}
+      {% if r.before %}<div class="d-flex align-items-center gap-1 mt-1 ref"><img src="{{ r.before.thumb }}" style="width:40%" alt="지난 사진"><span class="small text-muted">지난 사진</span></div>{% endif %}
+      {% if i.status == '촬영중' %}<div class="btn btn-sm {{ 'btn-outline-secondary' if r.now else 'btn-primary' }} w-100 mt-1 pick">{{ '다시 찍기' if r.now else '찍기' }}
+        <input type="file" accept="image/*" capture="environment" data-slot="{{ r.slot }}"></div>{% endif %}
+    </div></div>
+  {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="fw-semibold mb-2">파손 부위 {% if damage %}<span class="badge text-bg-danger">{{ damage|length }}</span>{% endif %}</div>
+  <div class="row g-2 mb-2">{% for p in damage %}
+    <div class="col-6"><div class="slot p-2"><a href="{{ p.url }}" target="_blank"><img src="{{ p.thumb }}" alt="파손 부위"></a>
+      <div class="small mt-1">{{ p.note or '' }}</div>
+      {% if i.status == '촬영중' %}<button class="btn btn-sm btn-link text-danger p-0" data-del="{{ p.id }}">지우기</button>{% endif %}</div></div>
+  {% else %}<div class="col-12 small text-muted">{{ '없음' if i.status != '촬영중' else '흠집·찌그러짐이 있으면 아래에서 추가하세요.' }}</div>{% endfor %}</div>
+  {% if i.status == '촬영중' %}
+  <div class="input-group mb-3"><input class="form-control" id="dmgNote" placeholder="부위·내용 (예: 뒤 범퍼 왼쪽 긁힘)">
+    <span class="btn btn-outline-danger pick"><i class="bi bi-plus"></i> 파손 부위 추가<input type="file" accept="image/*" capture="environment" data-slot="damage"></span></div>
+
+  <form method="post" action="{{ post }}/finish">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if missing and not report %}<div class="small text-danger mb-1">아직 없는 사진: {{ missing|join(', ') }}</div>{% endif %}
+    <button class="btn btn-success w-100 py-2" {{ 'disabled' if (missing and not report) or (report and not damage) }}>촬영 완료</button>
+  </form>
+  {% endif %}
+
+  {% for side, label in confirm_sides %}
+  <form method="post" action="{{ post }}/confirm" class="card mt-3"><div class="card-body">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="side" value="{{ side }}">
+    <div class="small mb-2">위 사진으로 차량 상태를 확인했습니다. (<b>{{ label }} {{ viewer.name }}</b>)</div>
+    <button class="btn btn-primary w-100">확인합니다</button></div></form>
+  {% endfor %}
+  {% if i.status == '확인대기' and not confirm_sides %}
+  <div class="alert alert-secondary small mt-3">촬영이 끝나 관리부가 지난 사진과 비교하고 있습니다.
+    {% if i.from_ok_at %}<div>인계자 확인 {{ i.from_ok_at }}</div>{% endif %}{% if i.to_ok_at %}<div>인수자 확인 {{ i.to_ok_at }}</div>{% endif %}</div>
+  {% endif %}
+  {% if staff and i.status != '촬영중' %}<a class="btn btn-outline-primary w-100 mt-3" href="{{ post }}">비교·확정 화면으로</a>{% endif %}
+  <p class="small text-muted text-center mt-4">사진은 회사 서버에만 저장되며, 촬영자와 시각이 함께 기록됩니다. 위치 정보는 저장하지 않습니다.</p>
+</div>
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const POST = {{ post|tojson }}, CSRF = {{ csrf_token|tojson }};
+  const busy = document.getElementById('busy'), err = document.getElementById('err');
+  const show = (m) => { err.textContent = m; err.hidden = false; window.scrollTo(0, 0); };
+  const send = async (url, fd) => {
+    if (CSRF) fd.append('csrf_token', CSRF);
+    const r = await fetch(url, { method: 'POST', body: fd, credentials: 'same-origin' });
+    let j = {}; try { j = await r.json(); } catch (_) {}
+    if (!r.ok || j.ok === false) throw new Error(j.message || '올리지 못했습니다. 다시 시도해 주세요.');
+    return j;
+  };
+  document.querySelectorAll('input[type=file][data-slot]').forEach((inp) => inp.addEventListener('change', async () => {
+    const file = inp.files[0]; if (!file) return;
+    const fd = new FormData(); fd.append('slot', inp.dataset.slot); fd.append('file', file);
+    if (inp.dataset.slot === 'damage') fd.append('note', document.getElementById('dmgNote').value);
+    busy.style.display = 'flex';
+    try { await send(POST + '/photo', fd); location.reload(); } catch (e) { busy.style.display = 'none'; show(e.message); inp.value = ''; }
+  }));
+  document.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('이 사진을 지울까요?')) return;
+    try { await send(`${POST}/photo/${b.dataset.del}/delete`, new FormData()); location.reload(); } catch (e) { show(e.message); }
+  }));
+  const meta = async () => {
+    const fd = new FormData(); fd.append('odometer', document.getElementById('odo').value); fd.append('fuel_level', document.getElementById('fuel').value);
+    try { await send(POST + '/meta', fd); } catch (_) {}
+  };
+  ['odo', 'fuel'].forEach((id) => { const el = document.getElementById(id); if (el) el.addEventListener('change', meta); });
+})();
+</script>
+</body>
+</html>

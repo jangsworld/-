@@ -9,6 +9,21 @@
   <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">업무사용비율</div><div class="kpi-value">{{ ('%.1f'|format(total.biz_ratio) ~ '%') if total.biz_ratio is not none else '-' }}</div><div class="kpi-sub">비용 손금 인정 비율 기준</div></div></div>
   <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">올해 차량 운영비</div><div class="kpi-value">{{ total.cost_total|man_won }}원</div><div class="kpi-sub">유류 {{ total.fuel|man_won }} · 정비 {{ total.maint|man_won }}</div></div></div>
 </div>
+{% if fleet_alerts %}<div class="card mb-3"><div class="card-header py-2 d-flex align-items-center"><i class="bi bi-bell me-2"></i>차량 관리 알림 <span class="badge text-bg-danger ms-2">{{ fleet_alerts|length }}</span>
+  <span class="help ms-auto">보험·검사·리스 만기 · 엔진오일 · 과태료 · 사진 점검 · 파손</span></div>
+  <div style="max-height:230px;overflow-y:auto">{% for a in fleet_alerts %}
+    <div class="alert-item lv-{{ a.level }}"><span class="alert-dot"></span>
+      <div class="flex-grow-1"><span class="alert-cat">{{ a.category }}</span> <b class="ms-1">{{ a.name }}</b>
+        {% if a.dday is not none %}<span class="badge {{ 'text-bg-danger' if a.dday < 0 else 'text-bg-light border' }} ms-1">{{ 'D+' ~ (-a.dday) if a.dday < 0 else ('D-' ~ a.dday if a.dday else 'D-Day') }}</span>{% endif %}
+        <span class="small text-secondary ms-1">{{ a.message }}</span></div>
+      {% if a.link %}<a href="{{ a.link }}" class="btn btn-sm btn-outline-secondary text-nowrap">처리</a>{% endif %}</div>
+  {% endfor %}</div></div>{% endif %}
+<ul class="nav nav-tabs mb-3">
+  {% for key, label in [('list','차량 대장'), ('inspections','사진 점검'), ('damages','사고·파손'), ('fines','과태료'), ('cost','비용 분석')] %}
+  <li class="nav-item"><a class="nav-link {% if tab == key %}active{% endif %}" href="?tab={{ key }}">{{ label }}</a></li>{% endfor %}
+  <li class="nav-item ms-auto"><a class="nav-link" href="/ga/vehicles/labels"><i class="bi bi-qr-code"></i> 차량 QR 라벨</a></li>
+</ul>
+{% if tab == 'list' %}
 {% if total.suspect %}<div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle"></i> 올해 운행기록 {{ total.suspect }}건의 주행거리가 비정상입니다. 주행거리와 업무사용비율이 왜곡되니, 아래 표시된 차량을 열어 확인하세요.</div>{% endif %}
 {% if total.pending %}<div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle"></i> 올해 운행기록 {{ total.pending }}건은 카택스에 목적이 비어 있어 "확인필요"로 표시했습니다. 카택스에서 목적을 입력할 때까지 업무용 거리에 포함되지 않습니다.</div>{% endif %}
 {% if can_write %}<div class="card mb-3"><div class="card-body py-2">
@@ -25,12 +40,12 @@
   <div class="card-header d-flex align-items-center">차량 대장
     {% if can_write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#vehicleModal" data-fill="{}"><i class="bi bi-plus"></i> 차량 등록</button>{% endif %}</div>
   <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
-    <thead><tr><th>차량번호</th><th>차종</th><th>소유형태</th><th>관리자</th><th class="num">현재 km</th><th class="num">올해 km</th><th>업무비율</th><th>보험 만기</th><th>정기검사</th><th>리스 만기</th><th>상태</th></tr></thead>
+    <thead><tr><th>차량번호</th><th>차종</th><th>소유형태</th><th>현재 사용자</th><th class="num">현재 km</th><th class="num">올해 km</th><th>업무비율</th><th>보험 만기</th><th>정기검사</th><th>리스 만기</th><th>상태</th></tr></thead>
     <tbody>{% for v in rows %}
       <tr data-href="/ga/vehicles/{{ v.id }}">
         <td class="fw-semibold">{{ v.plate_no }}</td><td>{{ v.model }} <span class="small text-muted">{{ v.model_year or '' }} {{ v.fuel or '' }}</span></td>
         <td>{{ v.ownership }}{% if v.monthly_cost %}<div class="small text-muted">월 {{ v.monthly_cost|man_won }}원</div>{% endif %}</td>
-        <td>{{ v.manager_name or '' }}</td><td class="num">{{ v.odometer|won }}</td><td class="num">{{ v.stat.total_km|won }}{% if v.stat.suspect or v.stat.pending %} <span class="badge text-bg-warning">확인</span>{% endif %}</td>
+        <td>{% if v.user %}{{ v.user.name }}<div class="small text-muted">{{ v.user.start_date }}~</div>{% else %}<span class="text-muted small">{{ '관리 ' ~ v.manager_name if v.manager_name else '-' }}</span>{% endif %}</td><td class="num">{{ v.odometer|won }}</td><td class="num">{{ v.stat.total_km|won }}{% if v.stat.suspect or v.stat.pending %} <span class="badge text-bg-warning">확인</span>{% endif %}</td>
         <td>{{ ('%.0f'|format(v.stat.biz_ratio) ~ '%') if v.stat.biz_ratio is not none else '-' }}</td>
         <td class="small">{{ v.insurance_end or '' }} {{ dday(v.insurance_end_dday) }}</td>
         <td class="small">{{ v.inspection_due or '' }} {{ dday(v.inspection_due_dday) }}</td>
@@ -43,5 +58,64 @@
     정기검사 기한 경과 시 과태료 · 운행일지는 차량 상세에서 입력하고 연도별 운행기록부(CSV)로 내려받을 수 있습니다.
   </div>
 </div>
-{% if can_write %}{% include "ga/_vehicle_modal.html" %}{% endif %}
+{% elif tab == 'inspections' %}
+{% if periodic_due %}<div class="alert alert-light border small py-2"><i class="bi bi-camera"></i> 3개월 넘게 사진 점검이 없는 차량 {{ periodic_due|length }}대:
+  {% for p in periodic_due[:12] %}<a href="/ga/vehicles/{{ p.id }}" class="badge text-bg-light border text-decoration-none">{{ p.plate_no }}{% if p.last %} ({{ p.last }}){% endif %}</a> {% endfor %}{% if periodic_due|length > 12 %}…{% endif %}</div>{% endif %}
+<div class="card"><div class="card-header d-flex align-items-center gap-2">사진 점검
+  <div class="btn-group btn-group-sm ms-2">{% for s, l in [('', '전체'), ('촬영중','촬영중'), ('확인대기','확정 대기'), ('확정','확정')] %}<a class="btn btn-outline-secondary {% if status == s %}active{% endif %}" href="?tab=inspections&status={{ s }}">{{ l }}</a>{% endfor %}</div>
+  {% if can_write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#inspModal" data-fill="{}"><i class="bi bi-camera"></i> 점검 시작</button>{% endif %}</div>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+    <thead><tr><th>점검일</th><th>차량</th><th>구분</th><th>인계자 → 인수자</th><th class="num">사진</th><th>상태</th><th>결과</th></tr></thead>
+    <tbody>{% for i in insp_rows %}<tr data-href="/ga/vehicles/{{ i.vehicle_id }}/inspections/{{ i.id }}">
+      <td>{{ i.insp_date }}</td><td class="fw-semibold">{{ i.plate_no }} <span class="small text-muted">{{ i.model }}</span></td><td>{{ i.kind }}</td>
+      <td>{{ i.from_name or '-' }} → {{ i.to_name or '-' }}</td><td class="num">{{ i.photo_count }}</td>
+      <td><span class="badge {{ 'text-bg-success' if i.status == '확정' else ('text-bg-warning' if i.status == '확인대기' else 'text-bg-light border') }}">{{ '확정 대기' if i.status == '확인대기' else i.status }}</span></td>
+      <td>{% if i.result == '새파손' %}<span class="badge text-bg-danger">새 파손 {{ i.new_damage }}</span>{% elif i.result %}<span class="small text-success">이상 없음</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="7" class="text-center text-muted p-4">사진 점검이 없습니다. 신차 인수·사용자 변경·반납 때 「점검 시작」을 누르세요.</td></tr>{% endfor %}</tbody></table></div></div>
+{% elif tab == 'damages' %}
+<div class="card"><div class="card-header d-flex align-items-center gap-2">사고·파손·고장
+  <div class="btn-group btn-group-sm ms-2"><a class="btn btn-outline-secondary {% if status == '진행' %}active{% endif %}" href="?tab=damages&status=진행">처리 중</a><a class="btn btn-outline-secondary {% if status != '진행' %}active{% endif %}" href="?tab=damages&year={{ year }}">{{ year }}년 전체</a></div>
+  {% if can_write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#damageModal" data-fill="{}"><i class="bi bi-plus"></i> 등록</button>{% endif %}</div>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th>일자</th><th>차량</th><th>구분</th><th>부위·내용</th><th>운전자</th><th>책임</th><th>처리</th><th class="num">수리비</th><th class="num">본인 부담</th><th>진행</th><th></th></tr></thead>
+    <tbody>{% for d in damage_rows %}<tr>
+      <td class="small">{{ d.occur_date }}</td><td class="fw-semibold"><a href="/ga/vehicles/{{ d.vehicle_id }}" class="text-decoration-none">{{ d.plate_no }}</a></td><td>{{ d.kind }}</td>
+      <td class="small">{{ d.part or '' }} {{ d.detail or '' }}{% if d.inspection_id %} <a href="/ga/vehicles/{{ d.vehicle_id }}/inspections/{{ d.inspection_id }}" class="small">사진</a>{% endif %}</td>
+      <td>{{ d.driver_name or '' }}</td><td><span class="badge {{ 'text-bg-warning' if d.responsibility == '미정' else 'text-bg-light border' }}">{{ d.responsibility }}</span></td><td class="small">{{ d.insurance }}</td>
+      <td class="num">{{ d.repair_cost|won if d.repair_cost else '' }}</td><td class="num">{{ d.self_pay|won if d.self_pay else '' }}</td><td>{{ d.status }}</td>
+      <td class="text-nowrap">{% if can_write %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#damageModal" data-fill='{{ d|tojson }}'><i class="bi bi-pencil"></i></button>
+        <form method="post" action="/ga/damages/{{ d.id }}/delete" class="d-inline" data-confirm="삭제할까요?"><input type="hidden" name="next" value="/ga/vehicles?tab=damages"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="11" class="text-center text-muted p-4">기록이 없습니다</td></tr>{% endfor %}</tbody></table></div></div>
+{% elif tab == 'fines' %}
+<div class="card"><div class="card-header d-flex align-items-center gap-2">과태료·범칙금
+  <div class="btn-group btn-group-sm ms-2"><a class="btn btn-outline-secondary {% if status == '진행' %}active{% endif %}" href="?tab=fines&status=진행">처리 중</a><a class="btn btn-outline-secondary {% if status != '진행' %}active{% endif %}" href="?tab=fines&year={{ year }}">{{ year }}년 전체</a></div>
+  {% if can_write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#fineModal" data-fill="{}"><i class="bi bi-plus"></i> 고지서 등록</button>{% endif %}</div>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th>위반 일시</th><th>차량</th><th>내용</th><th>장소</th><th class="num">금액</th><th>운전자</th><th>납부 기한</th><th>진행</th><th></th></tr></thead>
+    <tbody>{% for f in fine_rows %}<tr{% if not f.driver_id %} class="table-warning"{% endif %}>
+      <td class="small">{{ f.violation_at }}</td><td class="fw-semibold">{{ f.plate_no }}</td><td>{{ f.kind }}</td><td class="small">{{ f.place or '' }}</td><td class="num">{{ f.amount|won }}</td>
+      <td>{{ f.driver_name or '확인 필요' }}{% if f.driver_source %} <span class="small text-muted">({{ f.driver_source }})</span>{% endif %}</td>
+      <td class="small">{{ f.due_date or '' }} {% if f.status in ('접수','운전자확인','이의신청') %}{{ dday(f.due_dday, 7) }}{% endif %}</td><td>{{ f.status }}{% if f.paid_date %} <span class="small text-muted">{{ f.paid_date }}</span>{% endif %}</td>
+      <td class="text-nowrap">{% if can_write %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#fineModal" data-fill='{{ f|tojson }}'><i class="bi bi-pencil"></i></button>
+        <form method="post" action="/ga/fines/{{ f.id }}/delete" class="d-inline" data-confirm="삭제할까요?"><input type="hidden" name="next" value="/ga/vehicles?tab=fines"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="9" class="text-center text-muted p-4">기록이 없습니다</td></tr>{% endfor %}</tbody></table></div>
+  <div class="card-footer help">고지서의 위반 일시를 넣으면 그날 운행기록(카택스 포함)과 차량 사용자 이력으로 운전자를 자동으로 찾습니다. 운전자를 찾지 못한 줄은 노란색입니다.</div></div>
+{% elif tab == 'cost' %}
+{% set c = cost %}
+<div class="card"><div class="card-header d-flex align-items-center">차량별 비용 ({{ c.year }}년)
+  <form class="ms-auto d-flex gap-2" method="get"><input type="hidden" name="tab" value="cost"><select class="form-select form-select-sm" name="year">{% for y in range(today().year, today().year - 4, -1) %}<option {{ 'selected' if y == c.year }}>{{ y }}</option>{% endfor %}</select><button class="btn btn-sm btn-outline-secondary text-nowrap">보기</button></form></div>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+    <thead><tr><th>차량</th><th>사용자</th><th class="num">리스·렌트</th><th class="num">유류·통행</th><th class="num">정비·보험·세금</th><th class="num">파손 회사부담</th><th class="num">합계</th><th class="num">월평균</th><th class="num">주행</th><th class="num">km당</th><th>과태료</th><th></th></tr></thead>
+    <tbody>{% for r in c.rows %}<tr data-href="/ga/vehicles/{{ r.id }}">
+      <td class="fw-semibold">{{ r.plate_no }} <span class="small text-muted">{{ r.model }}</span></td><td>{{ r.user }}</td>
+      <td class="num">{{ r.lease|man_won }}</td><td class="num">{{ r.fuel|man_won }}</td><td class="num">{{ r.maint|man_won }}</td><td class="num">{{ r.damage|man_won if r.damage else '' }}</td>
+      <td class="num fw-semibold">{{ r.total|man_won }}</td><td class="num">{{ r.monthly_cost|man_won }}</td>
+      <td class="num">{{ r.km|won }}km<div class="small text-muted">월 {{ r.monthly_km|won }}</div></td><td class="num">{{ (r.per_km|won ~ '원') if r.per_km else '-' }}</td>
+      <td>{% if r.fine_cnt %}{{ r.fine_cnt }}건{% endif %}</td>
+      <td>{% for fl in r.flags %}<span class="badge {{ 'text-bg-warning' if '비용' in fl else 'text-bg-info' }}">{{ fl }}</span> {% endfor %}</td></tr>
+    {% else %}<tr><td colspan="12" class="text-center text-muted p-4">차량이 없습니다</td></tr>{% endfor %}</tbody>
+    <tfoot><tr class="fw-semibold"><td colspan="2">합계</td><td class="num">{{ c.total.lease|man_won }}</td><td class="num">{{ c.total.fuel|man_won }}</td><td class="num">{{ c.total.maint|man_won }}</td><td class="num">{{ c.total.damage|man_won }}</td><td class="num">{{ c.total.total|man_won }}</td><td></td><td class="num">{{ c.total.km|won }}km</td><td></td><td>{{ c.total.fine_cnt }}건</td><td></td></tr></tfoot></table></div>
+  <div class="card-footer help">리스·렌트는 월 납입액 × 올해 사용 개월, 파손은 보험처리 외 (수리비 − 본인 부담). <b>운행 적음</b>: 월 300km 미만 — 차량 공유·반납을 검토하세요. <b>km당 비용 높음</b>: 상위 25%.</div></div>
+{% endif %}
+{% if can_write %}{% include "ga/_vehicle_modal.html" %}{% set next = '/ga/vehicles?tab=' ~ tab %}{% include "ga/_fleet_modals.html" %}{% endif %}
 {% endblock %}

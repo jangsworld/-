@@ -543,6 +543,92 @@ CREATE TABLE IF NOT EXISTS ga_vehicle_maint (
     vendor      TEXT
 );
 
+CREATE TABLE IF NOT EXISTS ga_vehicle_assign (        -- 차량 사용자 이력 (끝나지 않은 줄 = 현재 사용자)
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicle_id    INTEGER NOT NULL REFERENCES ga_vehicles(id) ON DELETE CASCADE,
+    employee_id   INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+    start_date    TEXT NOT NULL,
+    end_date      TEXT,
+    inspection_id INTEGER,
+    note          TEXT,
+    created_by    TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS ga_vehicle_inspections (   -- 인수인계·반납·정기 사진 점검
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicle_id    INTEGER NOT NULL REFERENCES ga_vehicles(id) ON DELETE CASCADE,
+    kind          TEXT NOT NULL,                     -- 신차인수/사용자변경/반납/정기점검/수시점검/파손신고
+    insp_date     TEXT NOT NULL,
+    from_emp_id   INTEGER REFERENCES employees(id) ON DELETE SET NULL,   -- 인계자
+    to_emp_id     INTEGER REFERENCES employees(id) ON DELETE SET NULL,   -- 인수자
+    odometer      INTEGER,
+    fuel_level    TEXT,
+    note          TEXT,
+    status        TEXT NOT NULL DEFAULT '촬영중',    -- 촬영중/확인대기/확정
+    prev_id       INTEGER,                           -- 비교 기준 점검
+    result        TEXT,                              -- 이상없음/새파손
+    responsible_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+    created_by    TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    shot_done_at  TEXT,
+    from_ok_at    TEXT, from_ok_by TEXT,
+    to_ok_at      TEXT, to_ok_by TEXT,
+    reviewed_at   TEXT, reviewed_by TEXT
+);
+CREATE TABLE IF NOT EXISTS ga_vehicle_photos (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    inspection_id INTEGER NOT NULL REFERENCES ga_vehicle_inspections(id) ON DELETE CASCADE,
+    slot          TEXT NOT NULL,                     -- front/rear/left/right/driver/rear_seat/dash/trunk/damage
+    note          TEXT,
+    verdict       TEXT,                              -- 이상없음/새파손/기존파손
+    size          INTEGER,
+    sha256        TEXT,                              -- 저장 파일 지문 (바뀌지 않았음을 확인)
+    uploaded_by   TEXT,
+    uploaded_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS ga_vehicle_damages (       -- 사고·파손·고장
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicle_id    INTEGER NOT NULL REFERENCES ga_vehicles(id) ON DELETE CASCADE,
+    occur_date    TEXT NOT NULL,
+    kind          TEXT NOT NULL DEFAULT '파손',       -- 사고/파손/고장
+    part          TEXT,
+    detail        TEXT,
+    driver_id     INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+    inspection_id INTEGER,
+    photo_id      INTEGER,
+    insurance     TEXT DEFAULT '미정',               -- 보험처리/회사부담/미정
+    repair_cost   INTEGER DEFAULT 0,
+    self_pay      INTEGER DEFAULT 0,                 -- 본인 부담금
+    responsibility TEXT DEFAULT '미정',              -- 미정/운전자/회사/상대방
+    status        TEXT NOT NULL DEFAULT '접수',       -- 접수/수리중/수리완료/종결
+    reported_by   TEXT,
+    note          TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS ga_vehicle_fines (         -- 과태료·범칙금
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicle_id    INTEGER NOT NULL REFERENCES ga_vehicles(id) ON DELETE CASCADE,
+    violation_at  TEXT NOT NULL,                     -- YYYY-MM-DD HH:MM
+    kind          TEXT,
+    place         TEXT,
+    amount        INTEGER DEFAULT 0,
+    due_date      TEXT,
+    driver_id     INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+    driver_source TEXT,                              -- 운행기록/사용자/직접
+    status        TEXT NOT NULL DEFAULT '접수',       -- 접수/운전자확인/납부완료/급여공제/이의신청/종결
+    paid_date     TEXT,
+    note          TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS ga_vehicle_access (        -- 차량 QR 본인확인 세션
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicle_id    INTEGER NOT NULL REFERENCES ga_vehicles(id) ON DELETE CASCADE,
+    employee_id   INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    session_hash  TEXT NOT NULL UNIQUE,
+    expires       TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
 CREATE TABLE IF NOT EXISTS ga_docs (                   -- 문서 수발 대장
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     direction    TEXT NOT NULL CHECK(direction IN ('수신','발신')),
@@ -720,6 +806,7 @@ ADDED_COLUMNS = {
     "ga_vehicle_maint": ["cost_vat"],
     "ga_contracts": ["amount_vat", "folder_name"],
     "ga_vehicle_logs": ["external_id", "external_updated", "external_purpose"],
+    "ga_vehicles": ["qr_token", "oil_interval_km"],
 }
 
 
@@ -731,6 +818,8 @@ def _add_columns(conn):
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
     if "qr_token" in {r[1] for r in conn.execute("PRAGMA table_info(ga_assets)")}:
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_qr ON ga_assets(qr_token)")
+    if "qr_token" in {r[1] for r in conn.execute("PRAGMA table_info(ga_vehicles)")}:
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicle_qr ON ga_vehicles(qr_token)")
     if "external_id" in {r[1] for r in conn.execute("PRAGMA table_info(ga_vehicle_logs)")}:
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_vlog_external ON ga_vehicle_logs(external_id)")
 

@@ -1,0 +1,45 @@
+{% from "ga/_macros.html" import field, modal %}
+{# 사고·파손 / 과태료 / 사진 점검 시작 모달. next: 저장 후 돌아갈 화면, veh_opts: 고를 수 있는 차량 #}
+{% call modal('damageModal', '사고·파손', '/ga/damages/save') %}
+  <input type="hidden" name="next" value="{{ next }}">
+  {{ field('vehicle_id', '차량', opts=veh_opts, req=True, blank=veh_opts|length > 1, value=veh_opts[0].v if veh_opts|length == 1 else '') }}
+  {{ field('occur_date', '발생(확인)일', 'date', value=today().isoformat(), req=True) }}{{ field('kind', '구분', opts=damage_kinds, blank=False) }}
+  {{ field('part', '부위', ph='예: 뒤 범퍼 왼쪽') }}{{ field('driver_id', '운전자(책임 확인 대상)', opts=emp_opts) }}{{ field('responsibility', '책임', opts=resp_opts, blank=False) }}
+  {{ field('detail', '내용', col='col-md-12', ph='긁힘 10cm, 상대 차량과 접촉 등') }}
+  {{ field('insurance', '처리 방법', opts=insurance_opts, blank=False) }}{{ field('repair_cost', '수리비(원)', 'number') }}{{ field('self_pay', '본인 부담(원)', 'number') }}
+  {{ field('status', '진행', opts=damage_statuses, blank=False) }}{{ field('note', '메모', col='col-md-8') }}
+  <div class="col-12 help">사진 점검에서 '새 파손'으로 확정하면 여기에 자동으로 올라옵니다. 본인 부담금은 급여 공제 등 회사 규정에 따라 처리하세요.</div>
+{% endcall %}
+{% call modal('fineModal', '과태료·범칙금', '/ga/fines/save') %}
+  <input type="hidden" name="next" value="{{ next }}">
+  {{ field('vehicle_id', '차량', opts=veh_opts, req=True, blank=veh_opts|length > 1, value=veh_opts[0].v if veh_opts|length == 1 else '') }}
+  {{ field('violation_at', '위반 일시', 'datetime-local', req=True) }}{{ field('kind', '위반 내용', opts=fine_kinds, blank=False) }}
+  {{ field('place', '장소', col='col-md-8') }}{{ field('amount', '금액(원)', 'number') }}
+  {{ field('due_date', '납부 기한', 'date') }}{{ field('driver_id', '운전자 (비우면 자동으로 찾기)', opts=emp_opts) }}{{ field('status', '진행', opts=fine_statuses, blank=False) }}
+  {{ field('paid_date', '납부일', 'date') }}{{ field('note', '메모', col='col-md-8') }}
+  <div class="col-12 help" data-fine-hint>위반 일시를 넣으면 그날 운행기록·차량 사용자로 운전자를 찾아 드립니다.</div>
+{% endcall %}
+{% call modal('inspModal', '사진 점검', '/ga/vehicles/0/inspections') %}
+  {% if veh_opts|length > 1 %}{{ field('vehicle_id', '차량', opts=veh_opts, req=True) }}{% else %}<input type="hidden" name="vehicle_id" value="{{ veh_opts[0].v if veh_opts else '' }}">{% endif %}
+  {{ field('kind', '점검 구분', opts=insp_kinds, blank=False) }}{{ field('insp_date', '점검일', 'date', value=today().isoformat(), req=True) }}
+  {{ field('from_emp_id', '인계자 (지금 사용자)', opts=emp_opts) }}{{ field('to_emp_id', '인수자 (새 사용자)', opts=emp_opts) }}
+  {{ field('note', '메모', col='col-md-8') }}
+  <div class="col-12 help">신차인수·사용자변경은 인수자를, 반납은 인계자를 고르세요 (비우면 현재 사용자). 만든 뒤 휴대폰으로 사진을 찍습니다 —
+    관리부가 직접 찍거나, 당사자가 차에 붙은 QR로 들어가 찍을 수 있습니다. 관리부가 확정하면 사용자 이력이 바뀝니다.</div>
+{% endcall %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const im = document.querySelector('#inspModal form');
+  if (im) im.addEventListener('submit', () => { const v = im.querySelector('[name=vehicle_id]').value; im.action = `/ga/vehicles/${v}/inspections`; });
+  const fm = document.querySelector('#fineModal form');
+  if (!fm) return;
+  const hint = fm.querySelector('[data-fine-hint]');
+  const look = async () => {
+    const v = fm.vehicle_id.value, at = fm.violation_at.value;
+    if (!v || !at || fm.driver_id.value) return;
+    try { const r = await (await fetch(`/ga/fines/driver?vehicle_id=${v}&at=${encodeURIComponent(at)}`)).json();
+      hint.textContent = r.message; if (r.driver_id) fm.driver_id.value = r.driver_id; } catch (_) {}
+  };
+  fm.vehicle_id.addEventListener('change', look); fm.violation_at.addEventListener('change', look);
+})();
+</script>

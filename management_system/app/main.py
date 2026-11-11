@@ -25,6 +25,7 @@ from app.modules.hr.signing import router as sign_router
 from app.modules.hr.leave_routes import router as leave_router, public_router as leave_public_router
 from app.modules.hr.ecount_routes import router as ecount_router
 from app.modules.ga.routes import router as ga_router, public_router as ga_public_router
+from app.modules.ga.fleet_routes import router as fleet_router, public_router as fleet_public_router
 from app.modules.ga import repo as ga_repo
 from app.security import auth
 from app.security.middleware import SecurityMiddleware
@@ -101,7 +102,9 @@ app.include_router(ecount_router)
 app.include_router(leave_public_router)
 app.include_router(hr_router)
 app.include_router(sign_router)
+app.include_router(fleet_router)          # /ga/vehicles/labels 등: 일반 차량 경로보다 먼저
 app.include_router(ga_router)
+app.include_router(fleet_public_router)
 app.include_router(ga_public_router)
 
 templates.env.globals["MODULES"] = MODULES
