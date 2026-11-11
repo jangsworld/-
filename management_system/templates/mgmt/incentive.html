@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% import "mgmt/_m.html" as m %}
+{% block title %}인센티브 예산{% endblock %}
+{% block page_title %}<i class="bi bi-piggy-bank me-2"></i>인센티브 예산{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  {{ m.year_tabs(years, year) }}
+  <form method="get" class="d-flex gap-1"><input class="form-control form-control-sm" style="width:90px" name="year" type="number" value="{{ year + 1 }}"><button class="btn btn-sm btn-outline-secondary">연도 열기</button></form>
+  <div class="ms-auto btn-group btn-group-sm">
+    <a class="btn btn-outline-secondary" href="/mgmt/incentive/export.csv?year={{ year }}"><i class="bi bi-download"></i> 엑셀(CSV)</a>
+    <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#planModal"><i class="bi bi-diagram-3"></i> 예산 정하기</button>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#payModal"><i class="bi bi-plus-lg"></i> 지급 등록</button>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  {{ m.kpi(year ~ '년 총예산', m.eok(ov.total), ov.total|won ~ '원' ~ (' · ' ~ ov.note if ov.note else '')) }}
+  {{ m.kpi('부서 배정', m.eok(ov.assigned), ('미배정 ' ~ m.eok(ov.unassigned)) if ov.unassigned else '전액 배정', 'text-danger' if ov.unassigned < 0 else '') }}
+  {{ m.kpi('지급액', m.eok(ov.paid), ov.payments|length ~ '건') }}
+  {{ m.kpi('잔액', m.eok(ov.remain), ov.remain|won ~ '원', 'text-danger' if ov.remain < 0 else 'text-success') }}
+  {{ m.kpi('소진율', ('%.1f'|format(ov.rate) ~ '%') if ov.rate is not none else '-', '총예산 대비', 'text-danger' if (ov.rate or 0) > 100 else ('text-warning' if (ov.rate or 0) >= 80 else '')) }}
+</div>
+{% if not ov.total %}<div class="alert alert-info py-2 small">{{ year }}년 예산이 아직 없습니다. <b>예산 정하기</b>에서 총예산과 부서별 배정을 넣으세요.</div>{% endif %}
+{% for w in ov.warn %}<div class="alert {{ 'alert-danger' if w.level == 'danger' else 'alert-warning' }} py-1 small mb-2"><i class="bi bi-exclamation-triangle"></i>
+  <b>{{ w.department }}</b> 소진율 {{ '%.0f'|format(w.rate) }}% (배정 {{ w.budget|man_won }}, 지급 {{ w.paid|man_won }}, 잔액 {{ w.remain|man_won if w.remain else '0' }})</div>{% endfor %}
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-7"><div class="card h-100"><div class="card-header">부서별 예산 · 지급 · 잔액</div><div class="card-body"><div class="chart-box tall"><canvas id="cDept"></canvas></div></div></div></div>
+  <div class="col-lg-5"><div class="card h-100"><div class="card-header">월별 누적 지급 (총예산 대비)</div><div class="card-body"><div class="chart-box tall"><canvas id="cCum"></canvas></div></div></div></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6"><div class="card h-100"><div class="card-header">부서별 현황</div><div class="table-responsive"><table class="table table-sm mb-0">
+    <thead><tr><th>부서</th><th class="num">배정</th><th class="num">지급</th><th class="num">잔액</th><th style="width:150px">소진율</th></tr></thead><tbody>
+    {% for r in ov.rows %}<tr><td><a href="?year={{ year }}&department={{ r.department|urlencode }}">{{ r.department }}</a></td><td class="num">{{ r.budget|man_won }}</td><td class="num">{{ r.paid|man_won }}</td>
+      <td class="num {{ 'text-danger' if r.remain < 0 }}">{{ r.remain|man_won if r.remain else '0' }}</td>
+      <td><div class="progress" style="height:8px"><div class="progress-bar {{ 'bg-danger' if r.level == 'danger' else ('bg-warning' if r.level == 'warning' else '') }}" style="width:{{ [r.rate or 0, 100]|min }}%"></div></div>
+        <span class="small text-muted">{{ ('%.0f'|format(r.rate) ~ '%') if r.rate is not none else '-' }}</span></td></tr>
+    {% else %}<tr><td colspan="5" class="text-muted text-center py-3">배정된 부서가 없습니다</td></tr>{% endfor %}
+    </tbody></table></div></div></div>
+  <div class="col-lg-6"><div class="card h-100"><div class="card-header">직원별 지급 합계</div><div class="table-responsive" style="max-height:360px"><table class="table table-sm mb-0" data-excel>
+    <thead class="sticky-top"><tr><th>성명</th><th>부서</th><th class="num">건수</th><th class="num">합계</th></tr></thead><tbody>
+    {% for p in ov.people %}<tr><td>{{ p.name }}</td><td>{{ p.department }}</td><td class="num">{{ p.count }}</td><td class="num">{{ p.amount|won }}</td></tr>
+    {% else %}<tr><td colspan="4" class="text-muted text-center py-3">지급 기록이 없습니다</td></tr>{% endfor %}</tbody></table></div></div></div>
+  <div class="col-12"><div class="card"><div class="card-header d-flex align-items-center">지급 기록 {% if department %}<span class="badge text-bg-primary ms-2">{{ department }}</span> <a class="small ms-2" href="?year={{ year }}">전체 보기</a>{% endif %}</div>
+    <div class="table-responsive" style="max-height:480px"><table class="table table-sm table-hover mb-0" data-excel><thead class="sticky-top"><tr><th>지급일</th><th>부서</th><th>성명</th><th class="num">금액</th><th>사유</th><th>메모</th><th>등록</th><th></th></tr></thead><tbody>
+    {% for p in pays %}<tr><td>{{ p.pay_date }}</td><td>{{ p.department }}</td><td>{{ p.name or '(부서 지급)' }}</td><td class="num">{{ p.amount|won }}</td><td>{{ p.reason or '' }}</td><td class="small">{{ p.note or '' }}</td><td class="small text-muted">{{ p.created_by or '' }}</td>
+      <td><form method="post" action="/mgmt/incentive/pay/{{ p.id }}/delete" data-confirm="이 지급 기록을 삭제할까요?"><input type="hidden" name="year" value="{{ year }}"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
+    {% else %}<tr><td colspan="8" class="text-muted text-center py-3">지급 기록이 없습니다</td></tr>{% endfor %}</tbody></table></div></div></div>
+</div>
+
+<div class="modal fade" id="planModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="/mgmt/incentive/plan">
+  <input type="hidden" name="year" value="{{ year }}">
+  <div class="modal-header"><h6 class="modal-title">{{ year }}년 인센티브 예산</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div class="row g-2 mb-2"><div class="col-6"><label class="form-label small">총예산(원)</label><input class="form-control form-control-sm" name="total" data-money id="pTotal" value="{{ ov.total or '' }}"></div>
+      <div class="col-6"><label class="form-label small">메모</label><input class="form-control form-control-sm" name="note" value="{{ ov.note }}"></div></div>
+    <table class="table table-sm mb-1"><thead><tr><th>부서</th><th class="num">배정(원)</th></tr></thead><tbody>
+    {% set bmap = {} %}{% for r in ov.rows %}{% set _ = bmap.update({r.department: r.budget}) %}{% endfor %}
+    {% for d in (depts + ov.rows|map(attribute='department')|list)|unique %}<tr><td><input type="hidden" name="dept" value="{{ d }}">{{ d }}</td>
+      <td><input class="form-control form-control-sm text-end p-amt" name="amount" data-money value="{{ bmap.get(d) or '' }}"></td></tr>{% endfor %}
+    </tbody></table>
+    <div class="small">배정 합계 <b id="pSum">-</b> · 미배정 <b id="pLeft">-</b></div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div>
+</form></div></div>
+
+<div class="modal fade" id="payModal" tabindex="-1"><div class="modal-dialog modal-lg"><form class="modal-content" method="post" action="/mgmt/incentive/pay">
+  <input type="hidden" name="year" value="{{ year }}">
+  <div class="modal-header"><h6 class="modal-title">인센티브 지급 등록 ({{ year }}년)</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div class="row g-2 mb-2">
+      <div class="col-md-3"><label class="form-label small">지급일</label><input class="form-control form-control-sm" type="date" name="common_date" value="{{ today_iso if today_iso[:4] == year|string else year ~ '-12-31' }}" required></div>
+      <div class="col-md-4"><label class="form-label small">사유</label><input class="form-control form-control-sm" name="common_reason" placeholder="예: 상반기 성과, 프로젝트 수주"></div>
+      <div class="col-md-5"><label class="form-label small">부서</label><select class="form-select form-select-sm" id="payDept"><option value="">부서를 고르세요</option>{% for d in depts %}<option>{{ d }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="help mb-1">금액을 넣은 줄만 저장됩니다. 직원을 정하지 않고 부서에 한꺼번에 준 금액은 맨 위 '부서 지급' 줄에 넣으세요.</div>
+    <div class="table-responsive" style="max-height:380px"><table class="table table-sm mb-0"><thead class="sticky-top"><tr><th>성명</th><th>직급</th><th class="num" style="width:160px">금액(원)</th><th>메모</th></tr></thead><tbody id="payRows"><tr><td colspan="4" class="text-muted text-center py-3">부서를 고르면 직원 목록이 나옵니다</td></tr></tbody></table></div>
+    <div class="small mt-1">합계 <b id="paySum">0</b>원</div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div>
+</form></div></div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}" src="/static/vendor/chartjs/chart.umd.min.js"></script>
+<script nonce="{{ csp_nonce }}">
+const R = {{ ov.rows|tojson }}, CUM = {{ ov.cumulative|tojson }}, TOTAL = {{ ov.total }}, EMPS = {{ emps|tojson }};
+const man = (v) => v / 1e4;
+new Chart(document.getElementById('cDept'), { type: 'bar',
+  data: { labels: R.map(r => r.department), datasets: [
+    { label: '지급', data: R.map(r => man(r.paid)), backgroundColor: R.map(r => r.level === 'danger' ? '#c0392b' : (r.level === 'warning' ? '#f2a541' : '#2d5a8c')), stack: 's' },
+    { label: '잔액', data: R.map(r => man(Math.max(r.remain, 0))), backgroundColor: '#d6e2ef', stack: 's' } ] },
+  options: { maintainAspectRatio: false, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, title: { display: true, text: '만원' } } },
+    plugins: { tooltip: { callbacks: { label: c => ` ${c.dataset.label} ${fmt.won(c.raw)}만원`, footer: (it) => { const r = R[it[0].dataIndex]; return `배정 ${fmt.won(man(r.budget))}만원 · 소진율 ${r.rate == null ? '-' : r.rate.toFixed(0) + '%'}`; } } } } } });
+new Chart(document.getElementById('cCum'), { type: 'line',
+  data: { labels: Array.from({ length: 12 }, (_, i) => (i + 1) + '월'), datasets: [
+    { label: '누적 지급', data: CUM.map(v => v == null ? null : man(v)), borderColor: '#2d5a8c', backgroundColor: 'rgba(45,90,140,.15)', fill: true, tension: .25 },
+    { label: '총예산', data: CUM.map(() => man(TOTAL)), borderColor: '#c0392b', borderDash: [5, 4], pointRadius: 0 } ] },
+  options: { maintainAspectRatio: false, scales: { x: { grid: { display: false } }, y: { title: { display: true, text: '만원' }, beginAtZero: true } },
+    plugins: { tooltip: { callbacks: { label: c => ` ${c.dataset.label} ${fmt.won(c.raw)}만원` } } } } });
+
+const num = (v) => Number(String(v || '').replace(/[^0-9-]/g, '')) || 0;
+const pSum = () => { let s = 0; document.querySelectorAll('.p-amt').forEach(i => s += num(i.value));
+  document.getElementById('pSum').textContent = fmt.won(s) + '원'; document.getElementById('pLeft').textContent = fmt.won(num(document.getElementById('pTotal').value) - s) + '원'; };
+document.getElementById('planModal').addEventListener('input', pSum); pSum();
+
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const row = (dept, e) => `<tr><td>${e ? esc(e.name) : '<b>부서 지급</b> <span class="small text-muted">(직원 미지정)</span>'}
+  <input type="hidden" name="pay_date" value=""><input type="hidden" name="reason" value=""><input type="hidden" name="department" value="${esc(dept)}"><input type="hidden" name="employee_id" value="${e ? e.id : ''}"></td>
+  <td>${e ? esc(e.rank) : ''}</td><td><input class="form-control form-control-sm text-end pay-amt" name="amount" data-money inputmode="numeric"></td><td><input class="form-control form-control-sm" name="note"></td></tr>`;
+document.getElementById('payDept').addEventListener('change', (ev) => {
+  const d = ev.target.value, body = document.getElementById('payRows');
+  body.innerHTML = d ? row(d, null) + EMPS.filter(e => e.department === d).map(e => row(d, e)).join('') : '<tr><td colspan="4" class="text-muted text-center py-3">부서를 고르면 직원 목록이 나옵니다</td></tr>';
+});
+document.getElementById('payModal').addEventListener('input', () => { let s = 0; document.querySelectorAll('.pay-amt').forEach(i => s += num(i.value)); document.getElementById('paySum').textContent = fmt.won(s); });
+</script>
+{% endblock %}

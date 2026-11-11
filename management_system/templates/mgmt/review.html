@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% import "mgmt/_m.html" as m %}
+{% block title %}인사평가·연봉조정{% endblock %}
+{% block page_title %}<i class="bi bi-clipboard-data me-2"></i>인사평가·연봉조정{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <ul class="nav nav-pills">{% for x in cycles %}<li class="nav-item"><a class="nav-link py-1 {{ 'active' if x.year == year }}" href="?year={{ x.year }}">{{ x.year }}년 성과 <span class="badge text-bg-light border">{{ x.status }}</span></a></li>{% endfor %}</ul>
+  <form method="post" action="/mgmt/review/create" class="d-flex gap-1 ms-auto">
+    <select class="form-select form-select-sm" name="year">{% for y in range(today().year - 3, today().year + 1)|reverse %}<option value="{{ y }}" {{ 'selected' if y == year }}>{{ y }}년 성과</option>{% endfor %}</select>
+    <button class="btn btn-sm btn-outline-primary"><i class="bi bi-plus-lg"></i> 평가 만들기</button></form>
+</div>
+
+{% if not c %}
+<div class="row g-3">
+  <div class="col-lg-6"><div class="card h-100"><div class="card-body">
+    <h6>{{ year }}년 성과 인사평가가 아직 없습니다</h6>
+    <ol class="small mb-3">
+      <li><b>고정인상률 정하기</b> — {{ year }}년 손익(fund)을 보고 5·6·7% 등 안을 나란히 비교해 하나를 고릅니다.</li>
+      <li><b>부서장 평가 입력</b> — 등급(S·A·B·C·D)만 넣습니다. 부서별 평가표(CSV, 연봉 없음)를 내려받아 부서장에게 받고 올려도 됩니다.</li>
+      <li><b>최종 인상률</b> — 고정 + 등급 가산(필요하면 개별 조정)으로 직원별 새 연봉이 바로 계산됩니다.</li>
+      <li><b>확정 → 연봉현황 반영</b> — {{ year + 1 }}년 연봉으로 한 번에 들어갑니다.</li>
+    </ol>
+    <form method="post" action="/mgmt/review/create"><input type="hidden" name="year" value="{{ year }}"><button class="btn btn-primary">{{ year }}년 성과 평가 만들기</button></form>
+  </div></div></div>
+  <div class="col-lg-6">{{ m.fin_box(fin, year, '/mgmt/review?year=' ~ year, fund_ready, fin_items) }}</div>
+</div>
+{% else %}
+{% set steps = ['준비', '평가중', '확정', '반영완료'] %}
+<div class="card mb-3"><div class="card-body d-flex flex-wrap align-items-center gap-3">
+  <div class="d-flex gap-1 align-items-center">{% for s in steps %}<span class="badge {{ 'text-bg-primary' if s == c.status else ('text-bg-success' if steps.index(s) < steps.index(c.status) else 'text-bg-light border') }} px-3 py-2">{{ loop.index }}. {{ s }}</span>{% if not loop.last %}<i class="bi bi-chevron-right text-muted"></i>{% endif %}{% endfor %}</div>
+  <div class="small text-muted">평가 기간 {{ c.eval_start or '-' }} ~ {{ c.eval_end or '-' }} · 반영 {{ c.apply_year }}년 연봉 (적용일 {{ c.effective_date or '-' }})
+    {% if c.decided_at %} · 확정 {{ c.decided_at[:16] }} {{ c.decided_by or '' }}{% endif %}{% if c.applied_at %} · 반영 {{ c.applied_at[:16] }}{% endif %}</div>
+  <div class="ms-auto d-flex gap-1">
+    {% if c.status in ('준비', '평가중') %}<form method="post" action="/mgmt/review/{{ year }}/status" data-confirm="확정하면 등급·인상률을 더 바꿀 수 없습니다 (다시 열기 가능). 확정할까요?"><input type="hidden" name="status" value="확정"><button class="btn btn-sm btn-success" {{ 'disabled' if c.base_rate is none }}><i class="bi bi-lock"></i> 확정</button></form>{% endif %}
+    {% if c.status == '확정' %}<form method="post" action="/mgmt/review/{{ year }}/status"><input type="hidden" name="status" value="평가중"><button class="btn btn-sm btn-outline-secondary"><i class="bi bi-unlock"></i> 다시 열기</button></form>
+      <form method="post" action="/mgmt/review/{{ year }}/apply" data-confirm="{{ res.count - res.missing_salary|length }}명의 {{ c.apply_year }}년 연봉을 연봉현황에 넣습니다.{% if res.missing_salary %} 기준 연봉이 없는 {{ res.missing_salary|length }}명은 빠집니다.{% endif %}{% if res.already %} 이미 {{ c.apply_year }}년 연봉이 있는 {{ res.already }}명은 새 값으로 바뀝니다.{% endif %} 반영할까요?"><button class="btn btn-sm btn-primary"><i class="bi bi-box-arrow-in-right"></i> 연봉현황에 반영</button></form>{% endif %}
+    {% if c.status == '반영완료' %}<a class="btn btn-sm btn-outline-primary" href="/hr/salaries?year={{ c.apply_year }}">{{ c.apply_year }}년 연봉현황 보기</a>
+      <a class="btn btn-sm btn-outline-secondary" href="/hr/contracts">연봉계약서 작성</a>{% endif %}
+    <a class="btn btn-sm btn-outline-secondary" href="/mgmt/review/{{ year }}/result.csv"><i class="bi bi-download"></i> 결과 CSV</a>
+  </div>
+</div></div>
+
+{# ① 고정인상률 #}
+<h6 class="mt-2" id="scenario">① 고정인상률 정하기 <span class="help">{{ year }}년 성과를 보고 {{ c.apply_year }}년 고정인상률을 고릅니다</span></h6>
+<div class="row g-3 mb-3">
+  <div class="col-lg-5">{{ m.fin_box(sc.fin, year, '/mgmt/review?year=' ~ year, fund_ready, fin_items) }}</div>
+  <div class="col-lg-7"><form class="card h-100" method="post" action="/mgmt/review/{{ year }}/setup">
+    <div class="card-header">평가 기준 {% if c.locked %}<span class="badge text-bg-secondary">확정됨 · 읽기 전용</span>{% endif %}</div>
+    <fieldset class="card-body row g-2" {{ 'disabled' if c.locked }}>
+      <div class="col-md-4"><label class="form-label small">비교할 고정인상률(%)</label><input class="form-control form-control-sm" name="scenarios" value="{{ c.scenarios|join(', ') }}"></div>
+      <div class="col-md-5"><label class="form-label small">등급별 가산(%p)</label><input class="form-control form-control-sm" name="grades" value="{% for g, v in c.grades %}{{ g }}:{{ '%+g'|format(v) }}{{ ', ' if not loop.last }}{% endfor %}"></div>
+      <div class="col-md-3"><label class="form-label small">정한 고정인상률(%)</label><input class="form-control form-control-sm fw-bold" name="base_rate" value="{{ c.base_rate if c.base_rate is not none else '' }}" placeholder="아래 표에서 고르기"></div>
+      <div class="col-md-3"><label class="form-label small">평가 시작</label><input class="form-control form-control-sm" type="date" name="eval_start" value="{{ c.eval_start or '' }}"></div>
+      <div class="col-md-3"><label class="form-label small">평가 종료</label><input class="form-control form-control-sm" type="date" name="eval_end" value="{{ c.eval_end or '' }}"></div>
+      <div class="col-md-3"><label class="form-label small">새 연봉 적용일</label><input class="form-control form-control-sm" type="date" name="effective_date" value="{{ c.effective_date or '' }}"></div>
+      <div class="col-md-3"><label class="form-label small">반올림 단위(원)</label><select class="form-select form-select-sm" name="round_unit">{% for u in [1000, 10000, 100000] %}<option value="{{ u }}" {{ 'selected' if c.round_unit == u }}>{{ u|won }}</option>{% endfor %}</select></div>
+      <div class="col-md-3"><label class="form-label small">물가상승률(%) 참고</label><input class="form-control form-control-sm" name="cpi" value="{{ c.inputs.cpi or '' }}"></div>
+      <div class="col-md-3"><label class="form-label small">{{ c.apply_year }}년 최저임금(시간급)</label><input class="form-control form-control-sm" name="min_wage_next" value="{{ c.inputs.min_wage_next or '' }}" placeholder="비우면 현재 설정값"></div>
+      <div class="col-md-6"><label class="form-label small">메모 (산정 근거)</label><input class="form-control form-control-sm" name="memo" value="{{ c.inputs.memo or '' }}"></div>
+      <div class="col-12 text-end"><button class="btn btn-sm btn-primary">기준 저장</button></div>
+    </fieldset></form></div>
+</div>
+<div class="card mb-4"><div class="card-header">고정인상률 안 비교 <span class="help ms-2">회사 실부담 = 연봉 인상액 × {{ '%.3f'|format(sc.mult) }} (4대보험 {{ sc.rates.employer }}% + 퇴직 {{ sc.rates.retire }}%) · 현재 인건비율 {{ ('%.1f'|format(sc.labor_ratio_now) ~ '%') if sc.labor_ratio_now is not none else '-' }}</span></div>
+  <div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle"><thead><tr><th>고정인상률</th><th class="num">평균 최종 인상률<br><span class="help">평가 가산 포함</span></th><th class="num">연봉 인상액<br><span class="help">고정만</span></th><th class="num">연봉 인상액<br><span class="help">가산 포함</span></th>
+    <th class="num">회사 실부담</th><th class="num">{{ year }}년 영업이익 대비</th><th class="num">영업이익 증가분 대비</th><th class="num">인상 후 인건비율</th><th class="num">최저임금 미달</th><th></th></tr></thead><tbody>
+  {% for r in sc.rows %}<tr class="{{ 'table-primary fw-semibold' if r.chosen }}"><td>{{ '%g'|format(r.rate) }}%{% if r.chosen %} <span class="badge text-bg-primary">선택</span>{% endif %}</td>
+    <td class="num">{{ ('%.2f'|format(r.avg_rate) ~ '%') if r.avg_rate is not none else '-' }}</td><td class="num">{{ r.increase_fixed|man_won }}</td><td class="num">{{ r.increase|man_won }}</td>
+    <td class="num">{{ r.real_cost|man_won }}</td>
+    <td class="num {{ 'text-danger' if (r.op_share or 0) > 30 }}">{{ ('%.1f'|format(r.op_share) ~ '%') if r.op_share is not none else '-' }}</td>
+    <td class="num {{ 'text-danger' if (r.op_growth_share or 0) > 100 }}">{{ ('%.0f'|format(r.op_growth_share) ~ '%') if r.op_growth_share is not none else '-' }}</td>
+    <td class="num">{{ ('%.1f'|format(r.labor_ratio_after) ~ '%') if r.labor_ratio_after is not none else '-' }}</td>
+    <td class="num {{ 'text-danger fw-bold' if r.below_min }}">{{ r.below_min }}명</td>
+    <td>{% if not c.locked and not r.chosen %}<form method="post" action="/mgmt/review/{{ year }}/setup"><input type="hidden" name="base_rate" value="{{ r.rate }}"><button class="btn btn-sm btn-outline-primary py-0">이 안으로 정하기</button></form>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+  <div class="card-body border-top"><div class="chart-box" style="height:200px"><canvas id="cScen"></canvas></div>
+    <div class="help">영업이익 증가분 대비: 회사 실부담 ÷ ({{ year }}년 영업이익 − {{ year - 1 }}년 영업이익). 100%를 넘으면 늘어난 이익보다 인상 비용이 큽니다. 영업이익이 줄었거나 자료가 없으면 '-'입니다.</div></div>
+</div>
+
+{# ② 평가 · ③ 최종 #}
+<h6 id="eval">② 부서장 평가 · ③ 최종 인상률 <span class="help">등급만 넣으면 가산·새 연봉이 계산됩니다. 가산이나 최종 인상률을 직접 넣으면 그 값이 우선합니다.</span></h6>
+<div class="row g-3 mb-3">
+  {{ m.kpi('평가 대상', res.count ~ '명', '평가 완료 ' ~ res.graded ~ '명', 'text-warning' if res.graded < res.count else 'text-success') }}
+  {{ m.kpi('평균 최종 인상률', ('%.2f'|format(res.avg_rate) ~ '%') if res.avg_rate is not none else '-', '고정 ' ~ (('%g'|format(c.base_rate) ~ '%') if c.base_rate is not none else '미정')) }}
+  {{ m.kpi('총액 인상률', ('%.2f'|format(res.increase_rate) ~ '%') if res.increase_rate is not none else '-', m.eok(res.total_base) ~ ' → ' ~ m.eok(res.total_new)) }}
+  {{ m.kpi('연봉 인상액', res.increase|man_won ~ '원', '회사 실부담 ' ~ (res.increase * sc.mult)|man_won ~ '원') }}
+  {{ m.kpi('등급 분포', res.grade_dist.items()|map('join', ' ')|join(' · ') if res.grade_dist else '-', '', 'fs-6') }}
+  {{ m.kpi('확인 필요', (res.missing_salary|length + res.below_min|length) ~ '건', '기준연봉 없음 ' ~ res.missing_salary|length ~ ' · 최저임금 미달 ' ~ res.below_min|length, 'text-danger' if (res.missing_salary or res.below_min) else '') }}
+</div>
+<div class="card mb-3"><div class="card-header d-flex flex-wrap align-items-center gap-2">
+  <form method="get" class="d-flex gap-1"><input type="hidden" name="year" value="{{ year }}"><select class="form-select form-select-sm" name="department" data-autosubmit><option value="">전체 부서</option>{% for d in depts %}<option {{ 'selected' if department == d }}>{{ d }}</option>{% endfor %}</select></form>
+  <a class="btn btn-sm btn-outline-secondary" href="/mgmt/review/{{ year }}/sheet.csv?department={{ department|urlencode }}"><i class="bi bi-download"></i> {{ department or '전체' }} 평가표 (연봉 없음)</a>
+  {% if not c.locked %}<form method="post" action="/mgmt/review/{{ year }}/sheet" enctype="multipart/form-data" class="d-flex gap-1"><input class="form-control form-control-sm" type="file" name="file" accept=".csv" required style="max-width:220px"><button class="btn btn-sm btn-outline-primary">평가표 올리기</button></form>{% endif %}
+  <span class="help ms-auto">부서별 평가표를 부서장에게 보내 등급·의견을 받아 그대로 올리면 됩니다.</span></div>
+  <form method="post" action="/mgmt/review/{{ year }}/items"><input type="hidden" name="department" value="{{ department }}">
+  <div class="table-responsive" style="max-height:640px"><table class="table table-sm table-hover mb-0 align-middle"><thead class="sticky-top"><tr>
+    <th>부서</th><th>성명</th><th>직급</th><th style="width:80px">등급</th><th class="num" style="width:90px">가산(%p)</th><th class="num" style="width:100px">최종 직접(%)</th><th class="num">최종</th>
+    <th class="num">기준 연봉</th><th class="num">새 연봉</th><th class="num">인상액</th><th>의견</th><th style="width:100px">평가자</th></tr></thead><tbody>
+  {% for r in rows %}{% set e = r.employee %}<tr class="{{ 'table-warning' if not r.base_salary or r.below_min }}">
+    <td class="small">{{ e.department or '' }}</td><td><a href="/hr/employees/{{ e.id }}?tab=salary">{{ e.name }}</a><input type="hidden" name="employee_id" value="{{ e.id }}"></td><td class="small">{{ e.rank or '' }}</td>
+    <td><select class="form-select form-select-sm" name="grade" {{ 'disabled' if c.locked }}><option value=""></option>{% for g, v in c.grades %}<option {{ 'selected' if r.grade == g }}>{{ g }}</option>{% endfor %}</select></td>
+    <td><input class="form-control form-control-sm text-end" name="add_rate" value="{{ r.add_rate if r.add_custom else '' }}" placeholder="{{ '%+g'|format(r.add_rate) }}" {{ 'disabled' if c.locked }}></td>
+    <td><input class="form-control form-control-sm text-end" name="final_rate" value="{{ r.override if r.override is not none else '' }}" {{ 'disabled' if c.locked }}></td>
+    <td class="num fw-semibold">{{ '%.2f'|format(r.final_rate) }}%</td>
+    <td class="num">{{ r.base_salary|won }}{% if r.base_year and r.base_year != year %} <span class="badge text-bg-light border" title="{{ r.base_year }}년 연봉 사용">{{ r.base_year }}</span>{% endif %}{% if not r.base_salary %}<span class="badge text-bg-danger">없음</span>{% endif %}</td>
+    <td class="num">{{ r.new_salary|won }}{% if r.below_min %} <span class="badge text-bg-danger">최저임금 미달</span>{% endif %}{% if r.already and c.status != '반영완료' %} <span class="badge text-bg-light border" title="이미 {{ c.apply_year }}년 연봉 {{ r.already|won }}원 등록됨">등록됨</span>{% endif %}</td>
+    <td class="num">{{ r.raise|won if r.raise is not none else '-' }}</td>
+    <td><input class="form-control form-control-sm" name="comment" value="{{ r.comment }}" {{ 'disabled' if c.locked }}></td>
+    <td><input class="form-control form-control-sm" name="evaluator" value="{{ r.evaluator }}" placeholder="부서장" {{ 'disabled' if c.locked }}></td></tr>
+  {% else %}<tr><td colspan="12" class="text-muted text-center py-3">평가 대상이 없습니다</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% if not c.locked and rows %}<div class="card-footer text-end"><button class="btn btn-sm btn-primary"><i class="bi bi-save"></i> {{ department or '전체' }} 평가 저장</button></div>{% endif %}
+  </form></div>
+
+<div class="card"><div class="card-header">부서별 결과</div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>부서</th><th class="num">인원</th><th class="num">평가 완료</th><th class="num">기준 연봉 합계</th><th class="num">새 연봉 합계</th><th class="num">인상액</th><th class="num">총액 인상률</th></tr></thead><tbody>
+  {% for d in res.dept %}<tr><td>{{ d.department }}</td><td class="num">{{ d.count }}</td><td class="num {{ 'text-warning' if d.graded < d.count }}">{{ d.graded }}</td><td class="num">{{ d.base|man_won }}</td><td class="num">{{ d.new|man_won }}</td><td class="num">{{ (d.new - d.base)|man_won }}</td><td class="num">{{ ('%.2f'|format(d.rate) ~ '%') if d.rate is not none else '-' }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if c %}
+<script nonce="{{ csp_nonce }}" src="/static/vendor/chartjs/chart.umd.min.js"></script>
+<script nonce="{{ csp_nonce }}">
+const S = {{ sc.rows|tojson }};
+new Chart(document.getElementById('cScen'), {
+  data: { labels: S.map(r => r.rate + '%'), datasets: [
+    { type: 'bar', label: '회사 실부담(만원)', data: S.map(r => r.real_cost / 1e4), backgroundColor: S.map(r => r.chosen ? '#2d5a8c' : '#9db4d0'), yAxisID: 'y' },
+    { type: 'line', label: '영업이익 대비(%)', data: S.map(r => r.op_share), borderColor: '#c0392b', backgroundColor: '#c0392b', yAxisID: 'y1', spanGaps: true } ] },
+  options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+    scales: { x: { grid: { display: false } }, y: { title: { display: true, text: '만원' } }, y1: { position: 'right', grid: { display: false }, title: { display: true, text: '%' } } } } });
+</script>
+{% endif %}
+{% endblock %}

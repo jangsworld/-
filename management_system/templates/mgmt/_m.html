@@ -1,0 +1,40 @@
+{% macro kpi(label, value, sub='', cls='') -%}
+<div class="col-6 col-md-4 col-xl"><div class="card kpi h-100"><div class="kpi-label">{{ label }}</div><div class="kpi-value {{ cls }}">{{ value }}</div><div class="kpi-sub">{{ sub }}</div></div></div>
+{%- endmacro %}
+
+{% macro eok(v, d=2) -%}{% if v is none %}-{% else %}{{ ('%.' ~ d ~ 'f')|format(v / 100000000) }}억{% endif %}{%- endmacro %}
+
+{% macro year_tabs(years, year, extra='') -%}
+<ul class="nav nav-pills">{% for y in years %}<li class="nav-item"><a class="nav-link py-1 {{ 'active' if y == year }}" href="?year={{ y }}{{ extra }}">{{ y }}년</a></li>{% endfor %}</ul>
+{%- endmacro %}
+
+{# 연도별 손익 요약: fund 읽기 전용 / 직접 입력 #}
+{% macro fin_box(f, year, next, fund_ready, items, title='') -%}
+{% set cur = f.cur %}
+<div class="card h-100"><div class="card-header d-flex align-items-center flex-wrap gap-1">
+  <span><i class="bi bi-graph-up me-1"></i>{{ title or (year ~ '년 손익 요약') }}</span>
+  {% if cur %}<span class="badge {{ 'text-bg-primary' if cur.source == 'fund' else 'text-bg-secondary' }} ms-2">{{ cur.source }}{% if cur.basis %} · {{ cur.basis }}{% endif %}</span>
+    <span class="help ms-1">{{ cur.period or '' }}{% if cur.as_of %} · {{ cur.as_of }} 기준{% endif %} · {{ cur.fetched_at[:16] }} 읽음</span>
+  {% else %}<span class="badge text-bg-light border ms-2">아직 없음</span>{% endif %}
+  <div class="ms-auto d-flex gap-1">
+    <form method="post" action="/mgmt/fin/pull" data-busy="fund에서 읽는 중"><input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="next" value="{{ next }}">
+      <button class="btn btn-sm btn-outline-primary" {{ 'disabled' if not fund_ready }} title="{{ '' if fund_ready else '회사정보·환경설정 → fund 연결을 먼저 하세요' }}"><i class="bi bi-cloud-download"></i> fund에서 {{ year }}년 읽기</button></form>
+    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#finManual{{ year }}"><i class="bi bi-pencil"></i> 직접 입력</button>
+  </div></div>
+  <div class="card-body p-0">
+    <table class="table table-sm mb-0"><thead><tr><th>항목</th><th class="num">{{ year }}년{% if cur and cur.basis == '진행 중' %} (연말 예상){% endif %}</th>
+      {% if cur and cur.basis == '진행 중' %}<th class="num">실적</th>{% endif %}<th class="num">{{ year - 1 }}년</th><th class="num">증감</th></tr></thead><tbody>
+    {% for r in f.rows %}<tr class="{{ 'fw-semibold' if r.item in ('매출액', '영업손익', '당기순손익') }}"><td>{{ r.item }}</td><td class="num">{{ eok(r.cur) }}</td>
+      {% if cur and cur.basis == '진행 중' %}<td class="num text-muted">{{ eok(r.actual) }}</td>{% endif %}
+      <td class="num text-muted">{{ eok(r.prev) }}</td><td class="num {{ 'text-success' if (r.rate or 0) > 0 else ('text-danger' if (r.rate or 0) < 0) }}">{{ r.rate|pct }}</td></tr>{% endfor %}
+    </tbody></table>
+    {% if not fund_ready %}<div class="help px-3 py-2">fund 연결 전입니다. 직접 입력하거나, 관리자가 회사정보·환경설정 → fund 연결을 하면 버튼 한 번으로 읽어 옵니다.</div>{% endif %}
+    <div class="collapse" id="finManual{{ year }}"><form method="post" action="/mgmt/fin/manual" class="row g-2 p-3 border-top">
+      <input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="next" value="{{ next }}">
+      <div class="col-12 help">{{ year }}년 확정 값(원)을 넣습니다. fund에서 읽은 값이 있으면 덮어씁니다. 전년 값은 연도를 바꿔 넣으세요.</div>
+      {% for it in items %}<div class="col-6 col-md-4"><label class="form-label small mb-0">{{ it }}</label>
+        <input class="form-control form-control-sm" name="v{{ loop.index0 }}" data-money inputmode="numeric" value="{{ f.by[it].cur if f.by[it].cur is not none else '' }}"></div>{% endfor %}
+      <div class="col-12 text-end"><button class="btn btn-sm btn-primary">저장</button></div>
+    </form></div>
+  </div></div>
+{%- endmacro %}

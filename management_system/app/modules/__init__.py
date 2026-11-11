@@ -29,7 +29,18 @@ MODULES = [
             {"key": "ga.vehicles", "name": "법인차량", "icon": "bi-car-front", "url": "/ga/vehicles"},
             {"key": "ga.docs", "name": "문서수발·관인", "icon": "bi-envelope-paper", "url": "/ga/docs"},
             {"key": "ga.contracts", "name": "계약·임대차", "icon": "bi-file-earmark-check", "url": "/ga/contracts"},
+            {"key": "ga.company", "name": "회사 관리 만기", "icon": "bi-hourglass-split", "url": "/ga/company"},
             {"key": "ga.events", "name": "경조사", "icon": "bi-flower1", "url": "/ga/events", "perm": "ga_events"},
+        ],
+    },
+    {
+        "key": "mgmt", "name": "경영관리", "icon": "bi-bar-chart-line-fill", "ready": True,
+        "menus": [
+            {"key": "mgmt.labor", "restricted": True, "name": "인건비 총괄", "icon": "bi-pie-chart", "url": "/mgmt/labor"},
+            {"key": "mgmt.review", "restricted": True, "name": "인사평가·연봉조정", "icon": "bi-clipboard-data", "url": "/mgmt/review"},
+            {"key": "mgmt.incentive", "restricted": True, "name": "인센티브 예산", "icon": "bi-piggy-bank", "url": "/mgmt/incentive"},
+            {"key": "mgmt.training", "name": "교육 이수", "icon": "bi-mortarboard", "url": "/mgmt/training", "perm": "ga_write"},
+            {"key": "mgmt.compliance", "name": "법정의무 일정", "icon": "bi-calendar2-check", "url": "/mgmt/compliance", "perm": "ga_write"},
         ],
     },
     {

@@ -27,6 +27,8 @@ from app.modules.hr.ecount_routes import router as ecount_router
 from app.modules.ga.routes import router as ga_router, public_router as ga_public_router
 from app.modules.ga.fleet_routes import router as fleet_router, public_router as fleet_public_router
 from app.modules.ga import repo as ga_repo
+from app.modules.mgmt import fin as mgmt_fin
+from app.modules.mgmt.routes import router as mgmt_router, company_router
 from app.security import auth
 from app.security.middleware import SecurityMiddleware
 from app.security.crypto import enc
@@ -102,6 +104,8 @@ app.include_router(ecount_router)
 app.include_router(leave_public_router)
 app.include_router(hr_router)
 app.include_router(sign_router)
+app.include_router(mgmt_router)
+app.include_router(company_router)        # /ga/company: 일반 총무 경로보다 먼저
 app.include_router(fleet_router)          # /ga/vehicles/labels 등: 일반 차량 경로보다 먼저
 app.include_router(ga_router)
 app.include_router(fleet_public_router)
@@ -223,6 +227,39 @@ def settings_cartax_test():
         return _settings_redirect(cartax.test_connection(), "cartax")
     except cartax.CartaxError as ex:
         return _settings_redirect(f"연결 실패: {ex}", "cartax")
+
+
+@app.post("/settings/fund")
+async def settings_fund(request: Request):
+    """fund 연결: 주소·인증서 지문·열쇠. 열쇠는 fund 설정 화면에서 만든 값을 사용자가 직접 붙여 넣습니다."""
+    form = await request.form()
+    url = str(form.get("fund_url", "")).strip()
+    fp = str(form.get("fund_cert_sha256", "")).strip().upper()
+    key = str(form.get("fund_token", "")).strip()
+    if url and not url.startswith("https://"):
+        return _settings_redirect("fund 주소는 https:// 로 시작해야 합니다", "fund")
+    if fp and len("".join(c for c in fp if c in "0123456789ABCDEF")) != 64:
+        return _settings_redirect("인증서 지문은 SHA-256 (64자리, 콜론 포함 가능)이어야 합니다", "fund")
+    if url:
+        set_setting("fund_url", url)
+    if fp:
+        set_setting("fund_cert_sha256", fp)
+    if key:
+        set_setting("fund_token", enc(key))
+    if form.get("clear"):
+        set_setting("fund_token", "")
+    audit("system", "fund 연결 설정 변경", "", "열쇠 변경" if key else "")
+    return _settings_redirect("fund 연결 설정이 저장되었습니다", "fund")
+
+
+@app.post("/settings/fund/test")
+def settings_fund_test():
+    from app.common import today
+    try:
+        d = mgmt_fin.fetch_fund(today().year)
+    except mgmt_fin.FundError as ex:
+        return _settings_redirect(f"연결 실패: {ex}", "fund")
+    return _settings_redirect(f"연결 성공: {today().year}년 {d.get('basis')} 자료 ({d.get('as_of')} 기준, 항목 {len(d.get('items') or {})}개)", "fund")
 
 
 @app.post("/settings")

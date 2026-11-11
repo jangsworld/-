@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% import "mgmt/_m.html" as m %}
+{% block title %}인건비 총괄{% endblock %}
+{% block page_title %}<i class="bi bi-pie-chart me-2"></i>인건비 총괄{% endblock %}
+{% block content %}
+{% set t = ov.total %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  {{ m.year_tabs(years, year) }}
+  <div class="ms-auto btn-group btn-group-sm">
+    <a class="btn btn-outline-secondary" href="/mgmt/labor/export.csv?year={{ year }}"><i class="bi bi-download"></i> 엑셀(CSV)</a>
+    <button class="btn btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#rates"><i class="bi bi-sliders"></i> 회사 부담률</button>
+  </div>
+</div>
+<div class="collapse mb-3" id="rates"><form method="post" action="/mgmt/labor/rates" class="card card-body row g-2 flex-row align-items-end">
+  <input type="hidden" name="year" value="{{ year }}">
+  <div class="col-md-3"><label class="form-label small">4대보험 회사 부담률(%)</label><input class="form-control form-control-sm" name="employer" value="{{ ov.rates.employer }}"></div>
+  <div class="col-md-3"><label class="form-label small">퇴직급여 충당률(%)</label><input class="form-control form-control-sm" name="retire" value="{{ ov.rates.retire }}"></div>
+  <div class="col-md-2"><button class="btn btn-sm btn-primary">저장</button></div>
+  <div class="col-12 help">국민연금·건강·장기요양·고용·산재 회사 부담 합계(업종 산재율에 따라 다름)와 퇴직급여(연 1/12 ≈ 8.33%)입니다. 정확한 금액이 아닌 추정용입니다.</div>
+</form></div>
+
+<div class="row g-3 mb-3">
+  {{ m.kpi('총 인건비 (추정)', m.eok(t.total), t.total|won ~ '원') }}
+  {{ m.kpi('연봉 (근무 개월분)', m.eok(t.salary), '인센티브 ' ~ m.eok(t.incentive)) }}
+  {{ m.kpi('회사 부담', m.eok(t.employer + t.retire), '4대보험 ' ~ m.eok(t.employer) ~ ' · 퇴직 ' ~ m.eok(t.retire)) }}
+  {{ m.kpi('인원', t.count ~ '명', '연간 환산 ' ~ ('%.1f'|format(t.fte)) ~ '명') }}
+  {{ m.kpi('1인당 인건비', (ov.per_head|man_won) ~ '원' if ov.per_head else '-', '연간 환산 인원 기준') }}
+  {{ m.kpi('인건비율 (매출 대비)', ('%.1f'|format(ov.labor_ratio)) ~ '%' if ov.labor_ratio is not none else '-',
+          ('1인당 매출 ' ~ m.eok(ov.rev_per_head)) if ov.rev_per_head else '매출 자료 필요', 'text-danger' if (ov.labor_ratio or 0) > 30 else '') }}
+</div>
+{% if ov.missing %}<div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle"></i> {{ year }}년 연봉이 없는 직원 {{ ov.missing|length }}명은 0원으로 계산했습니다:
+  {{ ov.missing[:8]|map(attribute='name')|join(', ') }}{% if ov.missing|length > 8 %} 외{% endif %} — <a href="/hr/salaries?year={{ year }}">연봉현황</a>에서 넣으세요.</div>{% endif %}
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-7"><div class="card h-100"><div class="card-header">부서별 인건비 구성 ({{ year }}년)</div><div class="card-body"><div class="chart-box tall"><canvas id="cDept"></canvas></div></div></div></div>
+  <div class="col-lg-5">{{ m.fin_box(ov.fin, year, '/mgmt/labor?year=' ~ year, fund_ready, fin_items) }}</div>
+  <div class="col-12"><div class="card"><div class="card-header">연도별 인건비·인건비율</div><div class="card-body"><div class="chart-box"><canvas id="cTrend"></canvas></div></div></div></div>
+</div>
+
+<div class="card mb-3"><div class="card-header">부서별 ({{ year }}년)</div><div class="table-responsive"><table class="table table-sm table-hover mb-0">
+  <thead><tr><th>부서</th><th class="num">인원</th><th class="num">연봉</th><th class="num">인센티브</th><th class="num">4대보험</th><th class="num">퇴직 충당</th><th class="num">합계</th><th class="num">1인당</th><th style="width:140px">비중</th></tr></thead><tbody>
+  {% for r in ov.rows %}<tr><td>{{ r.department }}</td><td class="num">{{ r.count }}</td><td class="num">{{ r.salary|man_won }}</td><td class="num">{{ r.incentive|man_won }}</td>
+    <td class="num">{{ r.employer|man_won }}</td><td class="num">{{ r.retire|man_won }}</td><td class="num fw-semibold">{{ r.total|man_won }}</td><td class="num">{{ r.per_head|man_won }}</td>
+    <td><div class="progress" style="height:8px"><div class="progress-bar" style="width:{{ r.share or 0 }}%"></div></div><span class="small text-muted">{{ '%.1f'|format(r.share or 0) }}%</span></td></tr>{% endfor %}
+  </tbody><tfoot class="fw-semibold"><tr><td>합계</td><td class="num">{{ t.count }}</td><td class="num">{{ t.salary|man_won }}</td><td class="num">{{ t.incentive|man_won }}</td><td class="num">{{ t.employer|man_won }}</td><td class="num">{{ t.retire|man_won }}</td><td class="num">{{ t.total|man_won }}</td><td class="num">{{ ov.per_head|man_won }}</td><td></td></tr></tfoot>
+</table></div></div>
+
+<div class="card"><div class="card-header">개인별 ({{ year }}년) <span class="help ms-2">연봉은 그 해 연봉(없으면 직전 연봉)을 근무 개월만큼 나눠 계산</span></div>
+  <div class="table-responsive" style="max-height:520px"><table class="table table-sm table-hover mb-0" data-excel><thead class="sticky-top"><tr><th>부서</th><th>성명</th><th>직급</th><th class="num">개월</th><th class="num">연봉(연간)</th><th class="num">연봉(개월분)</th><th class="num">인센티브</th><th class="num">회사 부담</th><th class="num">합계</th></tr></thead><tbody>
+  {% for p in ov.people %}<tr><td>{{ p.department }}</td><td><a href="/hr/employees/{{ p.id }}?tab=salary">{{ p.name }}</a></td><td>{{ p.rank or '' }}</td><td class="num">{{ p.months }}</td>
+    <td class="num">{{ p.annual|won }}{% if p.base_year and p.base_year != year %} <span class="badge text-bg-light border" title="{{ p.base_year }}년 연봉 사용">{{ p.base_year }}</span>{% endif %}</td>
+    <td class="num">{{ p.salary|won }}</td><td class="num">{{ p.incentive|won if p.incentive else '' }}</td><td class="num">{{ (p.employer + p.retire)|won }}</td><td class="num fw-semibold">{{ p.total|won }}</td></tr>{% endfor %}
+  </tbody></table></div></div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}" src="/static/vendor/chartjs/chart.umd.min.js"></script>
+<script nonce="{{ csp_nonce }}">
+const D = {{ ov.rows|tojson }}, T = {{ trend|tojson }}, Y = {{ year }};
+const man = (v) => v / 1e4;
+new Chart(document.getElementById('cDept'), { type: 'bar',
+  data: { labels: D.map(r => r.department), datasets: [
+    { label: '연봉', data: D.map(r => man(r.salary)), backgroundColor: '#2d5a8c' },
+    { label: '인센티브', data: D.map(r => man(r.incentive)), backgroundColor: '#f2a541' },
+    { label: '4대보험', data: D.map(r => man(r.employer)), backgroundColor: '#3fa7a3' },
+    { label: '퇴직 충당', data: D.map(r => man(r.retire)), backgroundColor: '#9db4d0' } ] },
+  options: { maintainAspectRatio: false, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, title: { display: true, text: '만원' } } },
+    plugins: { tooltip: { callbacks: { label: c => ` ${c.dataset.label} ${fmt.won(c.raw)}만원` } } } } });
+new Chart(document.getElementById('cTrend'), {
+  data: { labels: T.map(r => r.year + '년'), datasets: [
+    { type: 'bar', label: '연봉', data: T.map(r => r.salary / 1e8), backgroundColor: '#2d5a8c', stack: 's', yAxisID: 'y' },
+    { type: 'bar', label: '인센티브', data: T.map(r => r.incentive / 1e8), backgroundColor: '#f2a541', stack: 's', yAxisID: 'y' },
+    { type: 'bar', label: '회사 부담', data: T.map(r => r.extra / 1e8), backgroundColor: '#9db4d0', stack: 's', yAxisID: 'y' },
+    { type: 'line', label: '인건비율(%)', data: T.map(r => r.labor_ratio), borderColor: '#c0392b', backgroundColor: '#c0392b', yAxisID: 'y1', tension: .3, spanGaps: true } ] },
+  options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+    scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, title: { display: true, text: '억원' } },
+      y1: { position: 'right', grid: { display: false }, title: { display: true, text: '매출 대비 %' } } } } });
+</script>
+{% endblock %}

@@ -712,6 +712,147 @@ CREATE TABLE IF NOT EXISTS ga_events (                 -- 경조사 내역
     created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
+-- ── 경영관리 ──────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS mgmt_fin_year (             -- 연도별 손익 요약 (fund 읽기 전용 또는 직접 입력)
+    year        INTEGER PRIMARY KEY,
+    source      TEXT NOT NULL,                       -- fund/직접입력
+    basis       TEXT,                                -- 확정/진행 중
+    data        TEXT NOT NULL,                       -- 암호화 JSON {period, as_of, items:{매출액:{실적,연말예상,확정}}}
+    fetched_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    fetched_by  TEXT
+);
+CREATE TABLE IF NOT EXISTS review_cycles (             -- 인사평가·연봉조정 (성과연도 단위)
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    year           INTEGER NOT NULL UNIQUE,          -- 성과연도 (예: 2026)
+    apply_year     INTEGER NOT NULL,                 -- 인상 반영 연도 (예: 2027)
+    eval_start     TEXT,
+    eval_end       TEXT,
+    scenarios      TEXT,                             -- JSON [5,6,7]
+    grades         TEXT,                             -- JSON [[등급, 가산%p], ...]
+    inputs         TEXT,                             -- 암호화 JSON (물가·최저임금·메모)
+    base_rate      REAL,                             -- 정한 고정인상률(%)
+    round_unit     INTEGER DEFAULT 10000,
+    effective_date TEXT,
+    status         TEXT NOT NULL DEFAULT '준비',      -- 준비/평가중/확정/반영완료
+    decided_at     TEXT, decided_by TEXT,
+    applied_at     TEXT, applied_by TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS review_items (              -- 직원별 평가·최종 인상률
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    cycle_id     INTEGER NOT NULL REFERENCES review_cycles(id) ON DELETE CASCADE,
+    employee_id  INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    grade        TEXT,
+    add_rate     REAL,                               -- 평가 가산(%p) — 비우면 등급 기준
+    final_rate   REAL,                               -- 개별 조정 최종 인상률(%) — 비우면 고정+가산
+    comment      TEXT,                               -- 암호화
+    evaluator    TEXT,
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    UNIQUE(cycle_id, employee_id)
+);
+CREATE TABLE IF NOT EXISTS incentive_years (           -- 인센티브 연간 총예산
+    year   INTEGER PRIMARY KEY,
+    total  INTEGER NOT NULL DEFAULT 0,
+    note   TEXT
+);
+CREATE TABLE IF NOT EXISTS incentive_budgets (         -- 부서별 배정
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    year        INTEGER NOT NULL,
+    department  TEXT NOT NULL,
+    amount      INTEGER NOT NULL DEFAULT 0,
+    note        TEXT,
+    UNIQUE(year, department)
+);
+CREATE TABLE IF NOT EXISTS incentive_payments (        -- 지급 기록
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    year         INTEGER NOT NULL,
+    pay_date     TEXT NOT NULL,
+    department   TEXT NOT NULL,
+    employee_id  INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+    amount       TEXT NOT NULL,                      -- 암호화 (개인 지급액)
+    reason       TEXT,
+    note         TEXT,
+    created_by   TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS training_courses (          -- 교육 과정 (법정의무·산업안전·특별교육)
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE,
+    category    TEXT NOT NULL DEFAULT '법정의무교육',
+    cycle       TEXT NOT NULL DEFAULT '매년',         -- 매년/반기/분기/최초 1회/2년/3년
+    hours       REAL DEFAULT 0,                      -- 주기당 필요 시간 (0 = 시간 기준 없음)
+    target      TEXT NOT NULL DEFAULT '전 직원',      -- 전 직원/지정 직원
+    basis       TEXT,
+    note        TEXT,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    sort_order  INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS training_targets (          -- 지정 직원 과정의 대상자
+    course_id    INTEGER NOT NULL REFERENCES training_courses(id) ON DELETE CASCADE,
+    employee_id  INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    PRIMARY KEY(course_id, employee_id)
+);
+CREATE TABLE IF NOT EXISTS training_records (          -- 직원별 이수 기록
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    course_id    INTEGER NOT NULL REFERENCES training_courses(id) ON DELETE CASCADE,
+    employee_id  INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    edu_date     TEXT NOT NULL,
+    hours        REAL DEFAULT 0,
+    method       TEXT,                               -- 집합/온라인/외부 위탁
+    provider     TEXT,
+    note         TEXT,
+    created_by   TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS compliance_tasks (          -- 법정의무 일정 (신고·납부·회의·점검)
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    category    TEXT NOT NULL DEFAULT '신고·납부',
+    cycle       TEXT NOT NULL DEFAULT '매년',         -- 매년/반기/분기/매월/한 번
+    month       INTEGER,                             -- 매년: 기한 월
+    day         INTEGER,                             -- 기한 일 (말일보다 크면 말일)
+    due_date    TEXT,                                -- 한 번: 기한
+    basis       TEXT,
+    owner       TEXT,
+    note        TEXT,
+    is_active   INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS compliance_done (           -- 일정별 처리 기록
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id    INTEGER NOT NULL REFERENCES compliance_tasks(id) ON DELETE CASCADE,
+    period     TEXT NOT NULL,                        -- 2026 / 2026-H1 / 2026-Q1 / 2026-03 / once
+    done_date  TEXT NOT NULL,
+    done_by    TEXT,
+    note       TEXT,
+    UNIQUE(task_id, period)
+);
+CREATE TABLE IF NOT EXISTS ga_company_items (          -- 회사 관리 만기 (면허·인허가·등기·보험·인증·인감·카드)
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    category    TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    number      TEXT,
+    agency      TEXT,                                -- 발급·관리 기관
+    start_date  TEXT,
+    expire_date TEXT,                                -- 만기·갱신·신고 기한
+    cycle       TEXT DEFAULT '없음',                  -- 없음/매년/2년/3년/5년
+    owner       TEXT,
+    alert_days  INTEGER DEFAULT 60,
+    status      TEXT NOT NULL DEFAULT '유효',         -- 유효/갱신중/만료/해지
+    note        TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS ga_company_history (        -- 갱신 이력
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id     INTEGER NOT NULL REFERENCES ga_company_items(id) ON DELETE CASCADE,
+    old_expire  TEXT,
+    new_expire  TEXT,
+    done_date   TEXT NOT NULL,
+    done_by     TEXT,
+    note        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_incentive_pay ON incentive_payments(year, department);
+CREATE INDEX IF NOT EXISTS idx_training_rec ON training_records(course_id, employee_id, edu_date);
+
 CREATE INDEX IF NOT EXISTS idx_vlogs ON ga_vehicle_logs(vehicle_id, drive_date);
 CREATE INDEX IF NOT EXISTS idx_ga_docs ON ga_docs(direction, doc_date);
 CREATE INDEX IF NOT EXISTS idx_salaries_year ON salaries(year);
@@ -774,7 +915,24 @@ def init_db() -> bool:
             for i, n in enumerate(names):
                 conn.execute("INSERT INTO codes(group_code, name, sort_order, behavior) VALUES (?,?,?,?)",
                              (group, n, i, ASSET_EVENT_BEHAVIOR.get(n) if group == "ASSET_EVENT" else None))
+        _seed_mgmt(conn)
     return is_new
+
+
+def _seed_mgmt(conn):
+    """교육 과정·법정의무 일정 기본 목록 (비어 있을 때 한 번만). 화면에서 고치거나 끌 수 있습니다."""
+    from app.modules.mgmt import constants as mc
+    if not conn.execute("SELECT COUNT(*) FROM training_courses").fetchone()[0]:
+        for i, c in enumerate(mc.DEFAULT_COURSES):
+            conn.execute("INSERT INTO training_courses(name, category, cycle, hours, target, basis, note, sort_order) "
+                         "VALUES (?,?,?,?,?,?,?,?)", (*c, i))
+    if not conn.execute("SELECT COUNT(*) FROM compliance_tasks").fetchone()[0]:
+        from app.common import today
+        # 이 날 이전 일정은 '기록 전'으로 보고 밀린 일로 세지 않습니다 (설정 compliance_since 로 바꿀 수 있음)
+        conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES ('compliance_since', ?)", (today().isoformat(),))
+        for t in mc.DEFAULT_TASKS:
+            conn.execute("INSERT INTO compliance_tasks(title, category, cycle, month, day, basis, note) "
+                         "VALUES (?,?,?,?,?,?,?)", t)
 
 
 def _all_default_codes() -> dict:

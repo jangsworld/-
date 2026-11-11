@@ -39,6 +39,9 @@ RULES = [
     (r"^/ga/(assets|contracts)/export\.csv", GA_STAFF, GA_STAFF),
     (r"^/ga/(contract-drafts|contracts/\d+/file)", GA_STAFF, GA_STAFF),     # 계약서 원본·초안: 총무 담당자 이상
     (r"^/ga", ALL, GA_STAFF),
+    # 경영관리: 교육 이수·법정의무 일정은 총무 담당 이상, 인건비·인사평가·인센티브는 관리자·인사담당만
+    (r"^/mgmt/(training|compliance)", GA_STAFF, GA_STAFF),
+    (r"^/mgmt", WRITERS, WRITERS),
     (r"^/$", ALL, ALL),
 ]
 

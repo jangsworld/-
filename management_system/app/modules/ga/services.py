@@ -229,8 +229,10 @@ def build_alerts(assets, vehicles, contracts, alert_days=60) -> list[dict]:
                         "message": f"{e['relation']} {e['category']} 경조금 {e['amount']:,}원 미지급 ({e['event_date']})",
                         "dday": None, "link": "/ga/events"})
     # 8) 차량: 엔진오일·과태료·사진 점검·파손 (fleet)
-    from app.modules.ga import fleet
+    from app.modules.ga import company, fleet
     out.extend(fleet.alerts())
+    # 9) 회사 관리 만기 (면허·인허가·등기·보험·인증 등)
+    out.extend(company.alerts())
     order = {"danger": 0, "warning": 1, "info": 2}
     out.sort(key=lambda a: (order[a["level"]], a["dday"] if a["dday"] is not None else 9999))
     return out

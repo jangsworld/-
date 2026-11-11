@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% import "ga/_macros.html" as g %}
+{% block title %}회사 관리 만기{% endblock %}
+{% block page_title %}<i class="bi bi-hourglass-split me-2"></i>회사 관리 만기{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <form method="get" class="d-flex gap-1">
+    <select class="form-select form-select-sm" name="category" data-autosubmit><option value="">전체 구분</option>{% for x in categories %}<option {{ 'selected' if category == x }}>{{ x }}</option>{% endfor %}</select>
+    <select class="form-select form-select-sm" name="status" data-autosubmit>{% for x in ['관리중'] + statuses + [''] %}<option value="{{ x }}" {{ 'selected' if status == x }}>{{ x or '전체 상태' }}</option>{% endfor %}</select></form>
+  <span class="help">면허·인허가·등기·보험·인증·인감·법인카드처럼 기한을 놓치면 안 되는 것을 모아 봅니다. 계약 만료는 <a href="/ga/contracts">계약·임대차</a>, 전체 달력은 <a href="/mgmt/compliance">법정의무 일정</a>에서 함께 보입니다.</span>
+  {% if can_write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#itemModal" data-fill='{}'><i class="bi bi-plus-lg"></i> 등록</button>{% endif %}
+</div>
+{% if alerts %}<div class="card border-warning mb-3"><div class="card-header bg-warning-subtle"><i class="bi bi-bell"></i> 만기 알림 {{ alerts|length }}건</div><ul class="list-group list-group-flush">
+  {% for r in alerts %}<li class="list-group-item py-1 small d-flex gap-2">{{ g.dday(r.dday) }} <b>{{ r.name }}</b> <span class="text-muted">{{ r.category }} · {{ r.agency or '' }} · 만기 {{ r.expire_date }}</span>{% if r.status == '갱신중' %}<span class="badge text-bg-info">갱신중</span>{% endif %}</li>{% endfor %}
+</ul></div>{% endif %}
+
+<div class="card mb-3"><div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle" data-excel><thead><tr><th>구분</th><th>이름</th><th>번호</th><th>발급·관리 기관</th><th>시작</th><th>만기·기한</th><th></th><th>주기</th><th>담당</th><th>상태</th><th>메모</th><th></th></tr></thead><tbody>
+{% for r in rows %}<tr class="{{ 'table-warning' if r.alert }}"><td>{{ r.category }}</td><td class="fw-semibold">{{ r.name }}</td><td class="small">{{ r.number or '' }}</td><td class="small">{{ r.agency or '' }}</td>
+  <td class="small">{{ r.start_date or '' }}</td><td>{{ r.expire_date or '-' }}</td><td>{{ g.dday(r.dday, r.alert_days or 60) if r.status in ('유효', '갱신중') }}</td><td>{{ r.cycle }}</td><td class="small">{{ r.owner or '' }}</td>
+  <td><span class="badge {{ 'text-bg-success' if r.status == '유효' else ('text-bg-info' if r.status == '갱신중' else 'text-bg-secondary') }}">{{ r.status }}</span></td><td class="small">{{ r.note or '' }}</td>
+  <td class="text-nowrap">{% if can_write %}<button class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#itemModal" data-fill='{{ r|tojson }}'>수정</button>
+    {% if r.expire_date %}<button class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#renewModal" data-renew="{{ r.id }}" data-name="{{ r.name }}" data-old="{{ r.expire_date }}" data-next="{{ next_expire.get(r.id) }}">갱신</button>{% endif %}
+    <form method="post" action="/ga/company/{{ r.id }}/delete" class="d-inline" data-confirm="'{{ r.name }}'을(를) 삭제할까요? 갱신 이력도 지워집니다."><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="12" class="text-muted text-center py-4">등록된 항목이 없습니다. 예: 건설업 등록증, 중소기업 확인서, ISO 인증, 화재보험, 임원 임기(등기), 법인카드 유효기간</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+{% if history %}<div class="card"><div class="card-header">갱신 이력</div><div class="table-responsive" style="max-height:300px"><table class="table table-sm mb-0"><thead><tr><th>처리일</th><th>항목</th><th>이전 만기</th><th>새 만기</th><th>처리자</th><th>메모</th></tr></thead><tbody>
+  {% for h in history %}<tr><td>{{ h.done_date }}</td><td>{{ h.name }}</td><td>{{ h.old_expire or '-' }}</td><td>{{ h.new_expire }}</td><td class="small">{{ h.done_by or '' }}</td><td class="small">{{ h.note or '' }}</td></tr>{% endfor %}
+</tbody></table></div></div>{% endif %}
+
+<datalist id="exNames">{% for x in examples %}<option value="{{ x }}">{% endfor %}</datalist>
+<div class="modal fade" id="itemModal" tabindex="-1"><div class="modal-dialog modal-lg"><form class="modal-content" method="post" action="/ga/company/save">
+  <input type="hidden" name="id" value="">
+  <div class="modal-header"><h6 class="modal-title">회사 관리 항목 <span data-mode-title>등록</span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body row g-2">
+    <div class="col-md-4"><label class="form-label small">구분</label><select class="form-select form-select-sm" name="category">{% for x in categories %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-md-8"><label class="form-label small">이름 <span class="text-danger">*</span></label><input class="form-control form-control-sm" name="name" list="exNames" required></div>
+    <div class="col-md-4"><label class="form-label small">번호 (등록·증권·인증 번호)</label><input class="form-control form-control-sm" name="number"></div>
+    <div class="col-md-4"><label class="form-label small">발급·관리 기관</label><input class="form-control form-control-sm" name="agency"></div>
+    <div class="col-md-4"><label class="form-label small">담당</label><input class="form-control form-control-sm" name="owner"></div>
+    <div class="col-md-3"><label class="form-label small">시작일</label><input class="form-control form-control-sm" type="date" name="start_date"></div>
+    <div class="col-md-3"><label class="form-label small">만기·기한</label><input class="form-control form-control-sm" type="date" name="expire_date"></div>
+    <div class="col-md-2"><label class="form-label small">갱신 주기</label><select class="form-select form-select-sm" name="cycle">{% for x in cycles %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label small">미리 알림(일)</label><input class="form-control form-control-sm" name="alert_days" value="60" inputmode="numeric"></div>
+    <div class="col-md-2"><label class="form-label small">상태</label><select class="form-select form-select-sm" name="status">{% for x in statuses %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-12"><label class="form-label small">메모 (준비 서류, 갱신 방법 등)</label><textarea class="form-control form-control-sm" name="note" rows="2"></textarea></div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div>
+</form></div></div>
+
+<div class="modal fade" id="renewModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" id="renewForm">
+  <div class="modal-header"><h6 class="modal-title">갱신 완료 · <span id="rnName"></span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body row g-2">
+    <div class="col-12 small">지금 만기 <b id="rnOld"></b></div>
+    <div class="col-md-6"><label class="form-label small">새 만기·기한</label><input class="form-control form-control-sm" type="date" name="new_expire" id="rnNew" required></div>
+    <div class="col-md-6"><label class="form-label small">처리일</label><input class="form-control form-control-sm" type="date" name="done_date"></div>
+    <div class="col-12"><label class="form-label small">메모</label><input class="form-control form-control-sm" name="note"></div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-sm btn-primary">갱신</button></div>
+</form></div></div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-renew]'); if (!b) return;
+  document.getElementById('renewForm').action = `/ga/company/${b.dataset.renew}/renew`;
+  document.getElementById('rnName').textContent = b.dataset.name;
+  document.getElementById('rnOld').textContent = b.dataset.old;
+  document.getElementById('rnNew').value = b.dataset.next || '';
+});
+</script>
+{% endblock %}

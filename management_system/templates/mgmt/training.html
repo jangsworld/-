@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% import "mgmt/_m.html" as m %}
+{% block title %}교육 이수{% endblock %}
+{% block page_title %}<i class="bi bi-mortarboard me-2"></i>교육 이수 관리{% endblock %}
+{% block content %}
+{% set ST = {'done': ('✓', 'text-bg-success', '이수'), 'partial': ('△', 'text-bg-warning', '부족'), 'missing': ('✗', 'text-bg-danger', '미이수'), 'upcoming': ('·', 'text-bg-light border', '예정')} %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  {{ m.year_tabs(range(year - 2, year + 2)|list, year, '&tab=' ~ tab) }}
+  <ul class="nav nav-tabs ms-3">
+    {% for k, n in [('matrix', '이수 현황'), ('records', '이수 기록'), ('courses', '과정·대상자')] %}<li class="nav-item"><a class="nav-link py-1 {{ 'active' if tab == k }}" href="?year={{ year }}&tab={{ k }}">{{ n }}</a></li>{% endfor %}
+  </ul>
+  <div class="ms-auto btn-group btn-group-sm">
+    <a class="btn btn-outline-secondary" href="/mgmt/training/export.csv?year={{ year }}"><i class="bi bi-download"></i> 엑셀(CSV)</a>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#recModal"><i class="bi bi-plus-lg"></i> 이수 등록</button>
+  </div>
+</div>
+
+{% if tab == 'matrix' %}
+<div class="row g-2 mb-3">
+{% for s in mx.summary if s.targets %}{% set c = s.course %}
+  <div class="col-6 col-md-4 col-xl-3"><div class="card h-100"><div class="card-body py-2">
+    <div class="d-flex"><div class="small fw-semibold text-truncate" title="{{ c.name }}">{{ c.name }}</div><span class="badge text-bg-light border ms-auto">{{ c.cycle }}{% if c.hours %} {{ '%g'|format(c.hours) }}h{% endif %}</span></div>
+    <div class="progress my-1" style="height:6px"><div class="progress-bar {{ 'bg-success' if (s.rate or 0) >= 100 else ('bg-danger' if s.missing else '') }}" style="width:{{ s.rate or 0 }}%"></div></div>
+    <div class="small text-muted">대상 {{ s.targets }}명{% if s.due %} · 이수 {{ s.done }}/{{ s.due }}{% endif %}
+      {% if s.missing %} · <span class="text-danger">미이수 {{ s.missing|length }}</span>{% endif %}
+      {% if s.pending and s.next_end %} · {{ s.next_end }}까지 {{ s.pending|length }}명 남음{% endif %}</div>
+  </div></div></div>
+{% endfor %}
+</div>
+<div class="card"><div class="card-header d-flex flex-wrap gap-2 align-items-center">
+  <form method="get" class="d-flex gap-1"><input type="hidden" name="year" value="{{ year }}"><select class="form-select form-select-sm" name="department" data-autosubmit><option value="">전체 부서</option>{% for d in depts %}<option {{ 'selected' if department == d }}>{{ d }}</option>{% endfor %}</select></form>
+  <label class="small"><input type="checkbox" class="form-check-input me-1" id="onlyTodo">할 일 있는 직원만</label>
+  <span class="help ms-auto">✓ 이수 · △ 시간 부족 · ✗ 미이수(기한 지남) · · 올해 남음 · 빈칸 = 대상 아님</span></div>
+  <div class="table-responsive" style="max-height:640px"><table class="table table-sm table-hover mb-0 align-middle text-center" id="mx"><thead class="sticky-top"><tr><th class="text-start">부서</th><th class="text-start">성명</th>
+    {% for c in mx.courses %}<th class="small" style="min-width:70px" title="{{ c.name }} · {{ c.cycle }} · {{ c.target }}">{{ c.name|replace(' 교육', '')|replace('교육', '')|truncate(10, True, '…') }}</th>{% endfor %}</tr></thead><tbody>
+  {% for r in mx.rows %}<tr data-todo="{{ r.todo }}"><td class="text-start small">{{ r.employee.department or '' }}</td><td class="text-start">{{ r.employee.name }}</td>
+    {% for x in r.cells %}<td>{% if x %}{% set s = ST[x.status] %}<span class="badge {{ s[1] }}" title="{{ s[2] }}{% for p in x.periods %} · {{ p.label }} {{ '%g'|format(p.hours) }}h{{ ' ✓' if p.ok }}{% endfor %}{% if x.last %} · 최근 {{ x.last }}{% endif %}">{{ s[0] }}</span>{% endif %}</td>{% endfor %}</tr>
+  {% else %}<tr><td colspan="{{ mx.courses|length + 2 }}" class="text-muted py-3">{{ year }}년 재직 직원이 없습니다</td></tr>{% endfor %}
+  </tbody></table></div></div>
+
+{% elif tab == 'records' %}
+<div class="card"><div class="card-header d-flex gap-2 align-items-center">
+  <form method="get" class="d-flex gap-1"><input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="tab" value="records">
+    <select class="form-select form-select-sm" name="course" data-autosubmit><option value="0">전체 과정</option>{% for c in courses_all %}<option value="{{ c.id }}" {{ 'selected' if course_id == c.id }}>{{ c.name }}</option>{% endfor %}</select></form>
+  <span class="small text-muted">{{ records|length }}건</span></div>
+  <div class="table-responsive" style="max-height:640px"><table class="table table-sm table-hover mb-0" data-excel><thead class="sticky-top"><tr><th>교육일</th><th>과정</th><th>부서</th><th>성명</th><th class="num">시간</th><th>방식</th><th>기관·강사</th><th>메모</th><th>등록</th><th></th></tr></thead><tbody>
+  {% for r in records %}<tr><td>{{ r.edu_date }}</td><td>{{ r.course }}</td><td>{{ r.department or '' }}</td><td>{{ r.name }}</td><td class="num">{{ '%g'|format(r.hours or 0) }}</td><td>{{ r.method or '' }}</td><td>{{ r.provider or '' }}</td><td class="small">{{ r.note or '' }}</td><td class="small text-muted">{{ r.created_by or '' }}</td>
+    <td><form method="post" action="/mgmt/training/records/{{ r.id }}/delete" data-confirm="이 이수 기록을 삭제할까요?"><input type="hidden" name="year" value="{{ year }}"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
+  {% else %}<tr><td colspan="10" class="text-muted text-center py-3">{{ year }}년 이수 기록이 없습니다</td></tr>{% endfor %}</tbody></table></div></div>
+
+{% else %}
+<div class="card"><div class="card-header d-flex align-items-center">교육 과정 <span class="help ms-2">기본 과정은 예시입니다. 법령·회사 상황에 맞게 시간·주기·대상을 고치거나 끄세요.</span>
+  <button class="btn btn-sm btn-outline-primary ms-auto" data-bs-toggle="modal" data-bs-target="#courseModal" data-fill='{}'><i class="bi bi-plus-lg"></i> 과정 추가</button></div>
+  <div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle"><thead><tr><th>과정</th><th>구분</th><th>주기</th><th class="num">시간</th><th>대상</th><th>근거</th><th>메모</th><th>사용</th><th></th></tr></thead><tbody>
+  {% for c in courses_all %}<tr class="{{ 'text-muted' if not c.is_active }}"><td class="fw-semibold">{{ c.name }}</td><td>{{ c.category }}</td><td>{{ c.cycle }}</td><td class="num">{{ '%g'|format(c.hours or 0) }}</td>
+    <td>{{ c.target }}{% if c.target == '지정 직원' %} <span class="badge text-bg-light border">{{ (targets.get(c.id) or [])|length }}명</span>{% endif %}</td>
+    <td class="small">{{ c.basis or '' }}</td><td class="small">{{ c.note or '' }}</td><td>{{ '사용' if c.is_active else '끔' }}</td>
+    <td class="text-nowrap"><button class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#courseModal" data-fill='{{ c|tojson }}'>수정</button>
+      {% if c.target == '지정 직원' %}<button class="btn btn-sm btn-link p-0" data-bs-toggle="modal" data-bs-target="#tgModal" data-cid="{{ c.id }}" data-cname="{{ c.name }}">대상자</button>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div></div>
+{% endif %}
+
+<div class="modal fade" id="recModal" tabindex="-1"><div class="modal-dialog modal-lg"><form class="modal-content" method="post" action="/mgmt/training/records">
+  <input type="hidden" name="year" value="{{ year }}">
+  <div class="modal-header"><h6 class="modal-title">교육 이수 등록</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body row g-2">
+    <div class="col-md-5"><label class="form-label small">과정</label><select class="form-select form-select-sm" name="course_id" id="rCourse" required>{% for c in courses_all if c.is_active %}<option value="{{ c.id }}" data-hours="{{ c.hours or '' }}">{{ c.name }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label small">교육일</label><input class="form-control form-control-sm" type="date" name="edu_date" value="{{ today_iso }}" required></div>
+    <div class="col-md-2"><label class="form-label small">시간</label><input class="form-control form-control-sm" name="hours" id="rHours" inputmode="decimal"></div>
+    <div class="col-md-2"><label class="form-label small">방식</label><select class="form-select form-select-sm" name="method">{% for x in methods %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-md-6"><label class="form-label small">기관·강사</label><input class="form-control form-control-sm" name="provider"></div>
+    <div class="col-md-6"><label class="form-label small">메모</label><input class="form-control form-control-sm" name="note"></div>
+    <div class="col-12 d-flex gap-2 align-items-center mt-2"><b class="small">이수한 직원</b>
+      <select class="form-select form-select-sm w-auto" id="rDept"><option value="">전체 부서</option>{% for d in depts %}<option>{{ d }}</option>{% endfor %}</select>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="rAll">보이는 직원 모두</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="rTodo">이 과정 아직 안 한 직원</button>
+      <button type="button" class="btn btn-sm btn-link" id="rNone">모두 해제</button><span class="small ms-auto"><b id="rCnt">0</b>명</span></div>
+    <div class="col-12"><div class="border rounded p-2" style="max-height:300px;overflow:auto"><div class="row g-1" id="rEmps">
+      {% for e in emps %}<div class="col-6 col-md-4 col-lg-3" data-dept="{{ e.department }}"><label class="small"><input type="checkbox" class="form-check-input me-1" name="emp_ids" value="{{ e.id }}">{{ e.name }} <span class="text-muted">{{ e.department }}</span></label></div>{% endfor %}
+    </div></div></div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div>
+</form></div></div>
+
+<div class="modal fade" id="courseModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="/mgmt/training/courses">
+  <input type="hidden" name="id" value="">
+  <div class="modal-header"><h6 class="modal-title">교육 과정 <span data-mode-title>등록</span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body row g-2">
+    <div class="col-12"><label class="form-label small">과정 이름</label><input class="form-control form-control-sm" name="name" required></div>
+    <div class="col-md-4"><label class="form-label small">구분</label><select class="form-select form-select-sm" name="category">{% for x in categories %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label small">주기</label><select class="form-select form-select-sm" name="cycle">{% for x in cycles %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label small">주기당 시간</label><input class="form-control form-control-sm" name="hours" inputmode="decimal" placeholder="0 = 기준 없음"></div>
+    <div class="col-md-4"><label class="form-label small">대상</label><select class="form-select form-select-sm" name="target">{% for x in target_opts %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label small">사용</label><select class="form-select form-select-sm" name="is_active"><option value="1">사용</option><option value="0">끔</option></select></div>
+    <div class="col-12"><label class="form-label small">근거</label><input class="form-control form-control-sm" name="basis"></div>
+    <div class="col-12"><label class="form-label small">메모</label><input class="form-control form-control-sm" name="note"></div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div>
+</form></div></div>
+
+<div class="modal fade" id="tgModal" tabindex="-1"><div class="modal-dialog modal-lg"><form class="modal-content" method="post" id="tgForm">
+  <div class="modal-header"><h6 class="modal-title">대상자 지정 · <span id="tgName"></span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><div class="help mb-2">관리감독자·고소작업대 작업자처럼 정해진 사람만 받는 교육의 대상자를 고르세요.</div>
+    <div class="row g-1">{% for e in emps %}<div class="col-6 col-md-4 col-lg-3"><label class="small"><input type="checkbox" class="form-check-input me-1 tg" name="emp_ids" value="{{ e.id }}">{{ e.name }} <span class="text-muted">{{ e.department }}</span></label></div>{% endfor %}</div></div>
+  <div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div>
+</form></div></div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+const TG = {{ targets|tojson }};
+const NOTDONE = {{ notdone|tojson }};
+const box = document.getElementById('rEmps'), cnt = () => document.getElementById('rCnt').textContent = box.querySelectorAll('input:checked').length;
+const rc = document.getElementById('rCourse'), rh = document.getElementById('rHours');
+const setH = () => { const o = rc.selectedOptions[0]; if (o && !rh.value) rh.value = o.dataset.hours || ''; };
+rc && rc.addEventListener('change', () => { rh.value = ''; setH(); }); setH();
+document.getElementById('rDept').addEventListener('change', (e) => box.querySelectorAll('[data-dept]').forEach(d => d.hidden = !!e.target.value && d.dataset.dept !== e.target.value));
+document.getElementById('rAll').addEventListener('click', () => { box.querySelectorAll('[data-dept]:not([hidden]) input').forEach(i => i.checked = true); cnt(); });
+document.getElementById('rNone').addEventListener('click', () => { box.querySelectorAll('input').forEach(i => i.checked = false); cnt(); });
+document.getElementById('rTodo').addEventListener('click', () => {
+  const ids = new Set((NOTDONE[rc.value] || []).map(String));
+  box.querySelectorAll('input').forEach(i => i.checked = ids.has(i.value)); cnt();
+});
+box.addEventListener('change', cnt);
+const only = document.getElementById('onlyTodo');
+only && only.addEventListener('change', () => document.querySelectorAll('#mx tbody tr[data-todo]').forEach(tr => tr.hidden = only.checked && tr.dataset.todo === '0'));
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-cid]'); if (!b) return;
+  document.getElementById('tgForm').action = `/mgmt/training/courses/${b.dataset.cid}/targets`;
+  document.getElementById('tgName').textContent = b.dataset.cname;
+  const ids = new Set((TG[b.dataset.cid] || []).map(String));
+  document.querySelectorAll('#tgModal .tg').forEach(i => i.checked = ids.has(i.value));
+});
+</script>
+{% endblock %}

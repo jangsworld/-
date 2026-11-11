@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% import "mgmt/_m.html" as m %}
+{% block title %}법정의무 일정{% endblock %}
+{% block page_title %}<i class="bi bi-calendar2-check me-2"></i>법정의무 일정{% endblock %}
+{% block content %}
+{% set SB = {'의무': 'text-bg-primary', '교육': 'text-bg-info', '회사관리': 'text-bg-secondary', '계약': 'text-bg-dark'} %}
+{% set STB = {'overdue': ('text-bg-danger', '지남'), 'soon': ('text-bg-warning', '2주 안'), 'upcoming': ('text-bg-light border', '예정'), 'done': ('text-bg-success', '완료'), 'before': ('text-bg-light border text-muted', '기록 전')} %}
+{% set srcq = src|join(',') %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  {{ m.year_tabs(range(year - 1, year + 2)|list, year, '&show=' ~ show ~ '&src=' ~ srcq) }}
+  <div class="btn-group btn-group-sm ms-2">{% for k, n in [('todo', '할 일만'), ('all', '전체')] %}<a class="btn {{ 'btn-secondary' if show == k else 'btn-outline-secondary' }}" href="?year={{ year }}&show={{ k }}&src={{ srcq }}">{{ n }}</a>{% endfor %}</div>
+  <div class="d-flex gap-1 ms-2">{% for s in ['의무', '교육', '회사관리', '계약'] %}{% set on = s in src %}
+    {% set nxt = (src|reject('equalto', s)|list) if on else (src|list + [s]) %}
+    <a class="badge {{ SB[s] if on else 'text-bg-light border text-muted' }} text-decoration-none py-2" href="?year={{ year }}&show={{ show }}&src={{ nxt|join(',') }}">{{ '✓ ' if on }}{{ s }}</a>{% endfor %}</div>
+  <button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#taskModal" data-fill='{}'><i class="bi bi-plus-lg"></i> 일정 추가</button>
+</div>
+<div class="row g-3 mb-3">
+  {{ m.kpi('기한 지남', counts.overdue ~ '건', '처리 안 됨', 'text-danger' if counts.overdue else 'text-success') }}
+  {{ m.kpi('2주 안', counts.soon ~ '건', '곧 기한', 'text-warning' if counts.soon else '') }}
+  {{ m.kpi('예정', counts.upcoming ~ '건', year ~ '년 남은 일정') }}
+  {{ m.kpi('완료', counts.done ~ '건', '처리·이수 완료') }}
+</div>
+{% if since and counts.before %}<div class="help mb-2">{{ since }} 이전 의무 일정 {{ counts.before }}건은 BMS로 관리하기 전이라 '기록 전'으로 두고 할 일에서 뺐습니다. <a href="?year={{ year }}&show=all&src={{ srcq }}">전체</a>에서 볼 수 있습니다.</div>{% endif %}
+
+{% for mon in range(1, 13) if mon in months %}
+<div class="card mb-2"><div class="card-header py-1 fw-semibold {{ 'bg-primary-subtle' if year == td.year and mon == td.month }}">{{ mon }}월</div>
+  <ul class="list-group list-group-flush">
+  {% for e in months[mon] %}{% set st = STB[e.status] %}
+    <li class="list-group-item d-flex flex-wrap align-items-center gap-2 py-2">
+      <span class="text-nowrap small" style="width:88px">{{ e.date.strftime('%m-%d') }} ({{ '월화수목금토일'[e.date.weekday()] }})</span>
+      <span class="badge {{ st[0] }}">{{ st[1] }}{% if e.status in ('soon', 'upcoming') %} D-{{ (e.date - td).days }}{% elif e.status == 'overdue' %} {{ (td - e.date).days }}일{% endif %}</span>
+      <span class="badge {{ SB[e.source] }}">{{ e.source }}</span>
+      <span class="{{ 'text-decoration-line-through text-muted' if e.status == 'done' }}">{% if e.link %}<a href="{{ e.link }}" class="text-reset">{{ e.title }}</a>{% else %}{{ e.title }}{% endif %}</span>
+      <span class="small text-muted">{{ e.category }}{% if e.detail %} · {{ e.detail }}{% endif %}{% if e.basis %} · {{ e.basis }}{% endif %}{% if e.note %} · {{ e.note }}{% endif %}</span>
+      {% if e.source == '의무' %}
+        {% if e.done %}<span class="small text-success ms-auto">{{ e.done.done_date }} {{ e.done.done_by or '' }}{% if e.done.note %} · {{ e.done.note }}{% endif %}</span>
+          <form method="post" action="/mgmt/compliance/done"><input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="show" value="{{ show }}"><input type="hidden" name="task_id" value="{{ e.task_id }}"><input type="hidden" name="period" value="{{ e.period }}"><input type="hidden" name="undo" value="1"><button class="btn btn-sm btn-link p-0 text-muted">취소</button></form>
+        {% else %}<form method="post" action="/mgmt/compliance/done" class="d-flex gap-1 ms-auto"><input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="show" value="{{ show }}"><input type="hidden" name="task_id" value="{{ e.task_id }}"><input type="hidden" name="period" value="{{ e.period }}">
+          <input class="form-control form-control-sm" style="width:160px" name="note" placeholder="메모 (접수번호 등)"><input type="hidden" name="done_date" value="{{ td.isoformat() }}"><button class="btn btn-sm btn-outline-success py-0"><i class="bi bi-check2"></i> 완료</button></form>{% endif %}
+      {% endif %}
+    </li>
+  {% endfor %}</ul></div>
+{% else %}<div class="text-muted text-center py-4">{{ '할 일이 없습니다 👍' if show == 'todo' else '일정이 없습니다' }}</div>{% endfor %}
+
+<div class="card mt-4" id="tasks"><div class="card-header">직접 관리하는 의무 일정 <span class="help ms-2">기본 목록은 예시입니다(12월 결산 법인 기준). 회사에 해당 없는 항목은 끄고, 기한이 휴일이면 다음 영업일로 보세요.</span></div>
+  <div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle"><thead><tr><th>일정</th><th>구분</th><th>주기</th><th>기한</th><th>근거</th><th>담당</th><th>메모</th><th>사용</th><th></th></tr></thead><tbody>
+  {% for t in tasks %}<tr class="{{ 'text-muted' if not t.is_active }}"><td>{{ t.title }}</td><td>{{ t.category }}</td><td>{{ t.cycle }}</td>
+    <td class="small">{% if t.cycle == '한 번' %}{{ t.due_date }}{% elif t.cycle == '매년' %}{{ t.month }}월 {{ t.day or '말' }}일{% elif t.cycle == '매월' %}매월 {{ t.day or '말' }}일{% else %}기간 마지막 달 {{ t.day or '말' }}일{% endif %}</td>
+    <td class="small">{{ t.basis or '' }}</td><td class="small">{{ t.owner or '' }}</td><td class="small">{{ t.note or '' }}</td><td>{{ '사용' if t.is_active else '끔' }}</td>
+    <td class="text-nowrap"><button class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#taskModal" data-fill='{{ t|tojson }}'>수정</button>
+      <form method="post" action="/mgmt/compliance/tasks/{{ t.id }}/delete" class="d-inline" data-confirm="이 일정과 처리 기록을 삭제할까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>{% endfor %}
+  </tbody></table></div></div>
+
+<div class="modal fade" id="taskModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="/mgmt/compliance/tasks">
+  <input type="hidden" name="id" value="">
+  <div class="modal-header"><h6 class="modal-title">의무 일정 <span data-mode-title>등록</span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body row g-2">
+    <div class="col-12"><label class="form-label small">일정</label><input class="form-control form-control-sm" name="title" required></div>
+    <div class="col-md-4"><label class="form-label small">구분</label><select class="form-select form-select-sm" name="category">{% for x in categories %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label small">주기</label><select class="form-select form-select-sm" name="cycle">{% for x in cycles %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label small">사용</label><select class="form-select form-select-sm" name="is_active"><option value="1">사용</option><option value="0">끔</option></select></div>
+    <div class="col-md-4"><label class="form-label small">월 (매년)</label><input class="form-control form-control-sm" name="month" inputmode="numeric"></div>
+    <div class="col-md-4"><label class="form-label small">일 (비우면 말일)</label><input class="form-control form-control-sm" name="day" inputmode="numeric"></div>
+    <div class="col-md-4"><label class="form-label small">날짜 (한 번)</label><input class="form-control form-control-sm" type="date" name="due_date"></div>
+    <div class="col-md-6"><label class="form-label small">근거</label><input class="form-control form-control-sm" name="basis"></div>
+    <div class="col-md-6"><label class="form-label small">담당</label><input class="form-control form-control-sm" name="owner"></div>
+    <div class="col-12"><label class="form-label small">메모</label><input class="form-control form-control-sm" name="note"></div>
+    <div class="col-12 help">분기·반기는 그 기간 마지막 달(3·6·9·12월 / 6·12월)의 '일'이 기한입니다.</div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div>
+</form></div></div>
+{% endblock %}
