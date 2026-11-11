@@ -351,6 +351,31 @@ CREATE TABLE IF NOT EXISTS leave_plans (
     created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
+-- 급여·연말정산 정보: 이카운트 사원등록(급여지급사항·기타설정)에 넣을 값
+CREATE TABLE IF NOT EXISTS employee_payroll (
+    employee_id     INTEGER PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+    householder     TEXT,                 -- 세대주 Y/N
+    dependents      INTEGER,              -- 부양가족 수 (본인 제외)
+    children_8_20   INTEGER,              -- 8~20세 자녀 수
+    insured_monthly INTEGER,              -- 보수월액(4대보험)
+    pay_items       TEXT,                 -- 급여항목별 월 금액 JSON {"기본급": 3000000, ...}
+    note            TEXT,
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 이카운트 사원등록 반영 기록 (기록이 없으면 '반영 대기')
+CREATE TABLE IF NOT EXISTS ecount_sync (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    action      TEXT NOT NULL,            -- 신규/퇴사
+    status      TEXT NOT NULL,            -- 완료/제외
+    method      TEXT,                     -- 엑셀/도우미/직접/기존
+    note        TEXT,
+    done_by     TEXT,
+    done_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    UNIQUE(employee_id, action)
+);
+
 -- 상해공제(단체상해보험) 가입 이력: 안전사고 대비 직원별 가입
 CREATE TABLE IF NOT EXISTS employee_insurances (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

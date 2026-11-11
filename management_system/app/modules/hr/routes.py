@@ -89,14 +89,20 @@ def dashboard(request: Request):
         d["charts"]["salary_trend"] = []
         for k in ("avg_salary", "payroll", "contract_missing"):
             d["kpi"][k] = 0
-        notice = None
+        notice = ecount_wait = None
     else:                                                  # 연차 촉진 기간 알림 (인사 담당자만)
         from app.modules.hr import leave
         try:
             notice = leave.stage_notice(today().year)
         except Exception:                                  # 알림 계산 실패가 대시보드를 막지 않도록
             notice = None
-    return _render(request, "hr/dashboard.html", {"d": d, "leave_notice": notice}, "hr.dashboard")
+        from app.modules.hr import ecount
+        try:
+            ecount_wait = len(ecount.pending())
+        except Exception:
+            ecount_wait = None
+    return _render(request, "hr/dashboard.html", {"d": d, "leave_notice": notice, "ecount_wait": ecount_wait},
+                   "hr.dashboard")
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -416,7 +422,7 @@ def draft_delete(draft_id: int):
 def employee_detail(request: Request, emp_id: int, tab: str = "info"):
     e = _emp_or_404(emp_id)
     e["has_contract"] = emp_id in repo.valid_contract_ids()
-    if request.state.user["role"] not in ("admin", "hr") and tab in ("salary", "contract", "reward", "special", "files", "check"):
+    if request.state.user["role"] not in ("admin", "hr") and tab in ("salary", "contract", "reward", "special", "insurance", "payroll", "files", "check"):
         tab = "info"
     audit("hr", "인사기록 열람", f"{e['emp_no']} {e['name']}", tab)  # 개인정보 접속기록
     files = intake.list_files(e) if tab == "files" else []
@@ -432,6 +438,7 @@ def employee_detail(request: Request, emp_id: int, tab: str = "info"):
         "rewards": repo.list_rewards(employee_id=emp_id),
         "specials": repo.list_specials(employee_id=emp_id),
         "insurances": repo.list_insurances(emp_id),
+        **(_payroll_ctx(emp_id) if request.state.user["role"] in ("admin", "hr") else {}),
         "appointment_types": get_codes("APPOINTMENT_TYPE"),
         "salary_reasons": get_codes("SALARY_REASON"),
         "reward_categories": _reward_categories(),
@@ -442,6 +449,15 @@ def employee_detail(request: Request, emp_id: int, tab: str = "info"):
         "rrn_masked": repo.rrn_masked(emp_id) if request.state.user["role"] in ("admin", "hr") else "",
         "assets": __import__("app.modules.ga.repo", fromlist=["x"]).list_assets(holder_id=emp_id),
     }, "hr.employees")
+
+
+def _payroll_ctx(emp_id: int) -> dict:
+    """인사기록카드 '급여·연말정산' 탭과 이카운트 반영 상태."""
+    from app.modules.hr import ecount
+    sync = {r["action"]: r for r in repo.query("SELECT * FROM ecount_sync WHERE employee_id=?", (emp_id,))}
+    return {"payroll": ecount.get_payroll(emp_id), "pay_item_names": ecount.pay_items(),
+            "contract_pay": ecount.contract_pay(emp_id), "insured_suggest": ecount.suggest_insured(emp_id),
+            "ecount_sync": sync}
 
 
 @router.get("/employees/{emp_id}/edit", response_class=HTMLResponse)

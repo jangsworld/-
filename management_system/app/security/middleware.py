@@ -29,7 +29,7 @@ RULES = [
     (r"^/account", ALL, ALL),
     (r"^/logout", ALL, ALL),
     # 연봉·계약서·증명서·상벌·근로특이사항(건강·가족정보)·내보내기: 조회자 접근 불가
-    (r"^/hr/(leave|salaries|contracts|documents|templates|certificates|rewards|specials|drafts|technicians|api)", WRITERS, WRITERS),
+    (r"^/hr/(leave|ecount|salaries|contracts|documents|templates|certificates|rewards|specials|drafts|technicians|api)", WRITERS, WRITERS),
     (r"^/hr/employees/(new|import|export\.csv|template\.csv|\d+/(edit|file|checks))", WRITERS, WRITERS),
     (r"^/hr", ALL, WRITERS),
     # 총무: 관인 승인은 관리자, 경조사(가족 사망·질병 등)는 총무 담당자 이상만 열람

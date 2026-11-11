@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}이카운트 연동{% endblock %}
+{% block page_title %}<i class="bi bi-arrow-left-right me-2"></i>이카운트 연동 <span class="text-muted small">BMS 인사등록 → 이카운트 사원등록</span>{% endblock %}
+{% block content %}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'pending' }}" href="?tab=pending">반영 대기 <span class="badge text-bg-{{ 'danger' if new_rows or out_rows else 'light border' }}">{{ new_rows|length + out_rows|length }}</span></a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'history' }}" href="?tab=history">반영 기록</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'template' }}" href="?tab=template">양식·설정</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'helper' }}" href="?tab=helper">입력 도우미</a></li>
+</ul>
+
+{% if tab == 'pending' %}
+<div class="alert alert-light border small mb-3">
+  BMS에 <b>인사등록</b>하거나 <b>퇴사일</b>을 넣으면 여기에 자동으로 올라옵니다. 두 방법 중 편한 쪽으로 이카운트에 넣은 뒤 <b>「반영 완료」</b>로 표시하세요.
+  <span class="text-nowrap"><b>① 엑셀</b>: 고른 직원을 이카운트 양식 순서대로 담은 파일을 받아 이카운트 사원등록 [엑셀 업로드]에 붙여 넣기.</span>
+  <span class="text-nowrap"><b>② 입력 도우미</b>: 이카운트 화면의 칸을 도우미가 채우고 저장은 직접(「입력 도우미」 탭).</span>
+</div>
+<form method="post" id="pendForm">
+  {% for title, rows, act in [('신규 입사자 — 이카운트 사원등록', new_rows, '신규'), ('퇴사자 — 이카운트 퇴사일자 입력', out_rows, '퇴사')] %}
+  <div class="card mb-3">
+    <div class="card-header fw-semibold">{{ title }} <span class="badge text-bg-light border">{{ rows|length }}</span></div>
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead><tr><th style="width:32px"><input type="checkbox" class="form-check-input" data-check-group="{{ act }}" {{ 'checked' if rows }}></th>
+        <th>성명</th><th>사번</th><th>부서</th><th>직급</th><th>고용형태</th><th>{{ '입사일' if act == '신규' else '퇴사일' }}</th><th>확인할 점</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+      <tr><td><input type="checkbox" class="form-check-input" name="keys" value="{{ r.id }}:{{ act }}" data-group="{{ act }}" checked></td>
+        <td class="fw-semibold"><a href="/hr/employees/{{ r.id }}?tab=payroll">{{ r.name }}</a></td><td>{{ r.emp_no }}</td>
+        <td>{{ r.department or '' }}</td><td>{{ r.rank or '' }}</td><td>{{ r.employment_type or '' }}</td>
+        <td>{{ r.hire_date if act == '신규' else r.resign_date }}</td>
+        <td class="small">{% for w in r.warn %}<span class="badge text-bg-warning me-1">{{ w }}</span>{% else %}<span class="text-success"><i class="bi bi-check2"></i> 준비됨</span>{% endfor %}</td></tr>
+      {% else %}<tr><td colspan="8" class="text-center text-muted p-3">대기 중인 {{ '신규 입사자' if act == '신규' else '퇴사자' }}가 없습니다</td></tr>{% endfor %}
+      </tbody></table></div>
+  </div>
+  {% endfor %}
+  {% if new_rows or out_rows %}
+  <div class="card"><div class="card-body d-flex flex-wrap align-items-center gap-2">
+    <div class="form-check me-2"><input class="form-check-input" type="checkbox" name="include_rrn" value="1" id="incRrn" checked>
+      <label class="form-check-label small" for="incRrn">엑셀에 주민등록번호 포함 <span class="text-muted">(연말정산에 필요 · 내려받은 기록이 남습니다)</span></label></div>
+    <button class="btn btn-sm btn-success" formaction="/hr/ecount/export"><i class="bi bi-file-earmark-excel"></i> 고른 직원 엑셀 받기</button>
+    <span class="vr mx-1"></span>
+    <input type="hidden" name="method" value="엑셀">
+    <button class="btn btn-sm btn-primary" formaction="/hr/ecount/mark" name="status" value="완료"
+            data-confirm="고른 직원을 이카운트에 넣었다고 표시합니다. 이카운트에서 저장까지 끝냈나요?"><i class="bi bi-check2-all"></i> 반영 완료로 표시</button>
+    <button class="btn btn-sm btn-outline-secondary" formaction="/hr/ecount/mark" name="status" value="제외"
+            data-confirm="고른 직원은 이카운트에 넣지 않는 것으로 표시합니다(예: 이카운트 급여 대상이 아닌 직원). 계속할까요?">이카운트 대상 아님</button>
+    <div class="help w-100 mt-1">'확인할 점'이 있는 직원은 인사기록카드 → <b>급여·연말정산</b> 탭에서 채우면 엑셀에도 들어갑니다. 비어 있어도 엑셀은 받을 수 있습니다(그 칸만 빈칸).</div>
+  </div></div>
+  {% endif %}
+</form>
+
+{% elif tab == 'history' %}
+<div class="card"><table class="table table-sm align-middle mb-0" data-excel data-excel-unit="건">
+  <thead><tr><th>반영일시</th><th>성명</th><th>사번</th><th>부서</th><th>구분</th><th>결과</th><th>방법</th><th>처리자</th><th>메모</th><th data-nofilter></th></tr></thead>
+  <tbody>
+  {% for h in history %}
+  <tr><td class="small">{{ h.done_at }}</td><td>{{ h.name }}</td><td>{{ h.emp_no }}</td><td>{{ h.department or '' }}</td><td>{{ h.action }}</td>
+    <td>{% if h.status == '완료' %}<span class="badge text-bg-success">완료</span>{% else %}<span class="badge text-bg-secondary">대상 아님</span>{% endif %}</td>
+    <td>{{ h.method or '' }}</td><td class="small">{{ h.done_by or '' }}</td><td class="small">{{ h.note or '' }}</td>
+    <td class="text-end"><form method="post" action="/hr/ecount/history/{{ h.id }}/undo" data-confirm="이 기록을 지우고 다시 '반영 대기'로 돌릴까요?"><button class="btn btn-sm btn-link p-0">되돌리기</button></form></td></tr>
+  {% else %}<tr><td colspan="10" class="text-center text-muted p-3">아직 기록이 없습니다 (이 기능을 쓰기 전에 등록된 직원은 '기존'으로 보고 목록에서 뺐습니다)</td></tr>{% endfor %}
+  </tbody></table></div>
+
+{% elif tab == 'template' %}
+<div class="row g-3">
+  <div class="col-lg-7"><div class="card">
+    <div class="card-header d-flex align-items-center">엑셀 칸 구성
+      <span class="ms-2 small text-muted">{{ ('양식: ' ~ tpl.filename) if tpl.filename else '기본 칸 구성 (이카운트 양식을 올리면 그 순서로 바뀝니다)' }}</span></div>
+    <div class="card-body border-bottom">
+      <form method="post" action="/hr/ecount/template" enctype="multipart/form-data" class="d-flex gap-2">
+        <input type="file" class="form-control form-control-sm" name="file" accept=".xlsx,.xls" required>
+        <button class="btn btn-sm btn-primary text-nowrap"><i class="bi bi-upload"></i> 이카운트 양식 올리기</button>
+      </form>
+      <div class="help mt-1">이카운트 → 사원등록 → [엑셀 업로드]에서 <b>빈 양식</b>을 내려받아 올리세요. 칸 이름을 읽어 BMS 항목과 자동으로 짝을 맞춥니다. 직원 자료는 넣지 마세요.</div>
+    </div>
+    <form method="post" action="/hr/ecount/template/map">
+    <div class="table-responsive" style="max-height:520px"><table class="table table-sm align-middle mb-0">
+      <thead class="sticky-top bg-white"><tr><th style="width:48px">칸</th><th>이카운트 칸 이름</th><th>넣을 BMS 항목</th></tr></thead><tbody>
+      {% for c in tpl.columns %}{% set i = loop.index0 %}
+      <tr class="{{ 'table-warning' if not c.field }}"><td class="text-muted small">{{ loop.index }}</td><td>{{ c.header }}</td>
+        <td><select class="form-select form-select-sm" name="field_{{ i }}"><option value="">(비워 둠)</option>
+          {% for k, label, _a in targets %}<option value="{{ k }}" {{ 'selected' if c.field == k }}>{{ label }}{{ ' (급여항목)' if k.startswith('pay:') }}</option>{% endfor %}</select></td></tr>
+      {% endfor %}</tbody></table></div>
+    <div class="card-footer d-flex gap-2"><button class="btn btn-sm btn-primary">짝 저장</button>
+      {% if tpl.filename %}<button class="btn btn-sm btn-outline-secondary ms-auto" formaction="/hr/ecount/template/reset" data-confirm="올린 양식을 지우고 기본 칸 구성으로 돌릴까요?">기본 구성으로</button>{% endif %}</div>
+    </form>
+  </div></div>
+  <div class="col-lg-5"><div class="card"><div class="card-header">설정</div><div class="card-body">
+    <form method="post" action="/hr/ecount/settings">
+      <label class="form-label small">급여항목 (이카운트 급여항목 이름과 같게, 쉼표로 구분)</label>
+      <textarea class="form-control form-control-sm" name="pay_items" rows="3">{{ pay_items }}</textarea>
+      <div class="help mb-2">인사기록카드 「급여·연말정산」 탭에 이 항목별 금액 칸이 생깁니다.</div>
+      <label class="form-label small">날짜 형식</label>
+      <select class="form-select form-select-sm mb-3" name="date_format">{% for x in date_formats %}<option {{ 'selected' if x == date_format }}>{{ x }}</option>{% endfor %}</select>
+      <button class="btn btn-sm btn-primary">저장</button>
+    </form>
+  </div></div></div>
+</div>
+
+{% else %}
+<div class="row g-3">
+  <div class="col-lg-7"><div class="card"><div class="card-body">
+    <div class="fw-semibold mb-2"><i class="bi bi-magic"></i> 이카운트 입력 도우미</div>
+    <p class="small mb-2">담당자 PC에서 실행하는 작은 프로그램입니다. 브라우저 창을 하나 열어 <b>BMS와 이카운트에 직접 로그인</b>하면,
+      반영 대기 직원을 골라 이카운트 사원등록 화면의 칸을 대신 채웁니다. <b>「저장」은 담당자가 화면을 확인한 뒤 누릅니다.</b>
+      저장했다고 알려 주면 BMS에 '반영 완료(도우미)'로 기록합니다.</p>
+    <ul class="small mb-3">
+      <li>이카운트 비밀번호는 도우미·BMS 어디에도 저장하지 않습니다(로그인은 담당자가 직접).</li>
+      <li>채운 칸은 노란색으로 표시됩니다. 못 찾은 칸은 도우미 창에 이름이 뜹니다 → 다른 탭(급여지급사항·기타설정)을 열고 Enter 를 누르면 이어서 채웁니다.</li>
+      <li>이카운트 화면이 바뀌어 칸을 못 찾으면 엑셀 방식을 쓰고, 도우미의 「d」(화면 칸 목록 저장)로 저장한 파일을 보내 주시면 맞춰 고칩니다.</li>
+    </ul>
+    <a class="btn btn-primary btn-sm" href="/hr/ecount/helper.zip"><i class="bi bi-download"></i> 입력 도우미 내려받기 (zip)</a>
+  </div></div></div>
+  <div class="col-lg-5"><div class="card"><div class="card-body small">
+    <div class="fw-semibold mb-2">처음 한 번 준비</div>
+    <ol class="mb-2 ps-3">
+      <li>zip을 풀고 <code>run_helper.bat</code> 을 두 번 누릅니다.</li>
+      <li>처음에는 필요한 구성요소를 설치합니다(1~2분, 인터넷 필요). PC에 Python 이 없으면 안내가 뜹니다.</li>
+      <li>Edge 창이 열리면 BMS 탭과 이카운트 탭에서 각각 로그인합니다. 다음부터는 로그인 상태가 유지될 수 있습니다.</li>
+    </ol>
+    <div class="fw-semibold mb-2">쓰는 순서</div>
+    <ol class="mb-0 ps-3">
+      <li>이카운트에서 <b>사원등록 신규 화면</b>(퇴사자는 그 사원의 수정 화면)을 엽니다.</li>
+      <li>도우미 창에서 직원 번호를 고르고 Enter → 칸이 채워집니다.</li>
+      <li>화면을 확인하고 이카운트에서 저장 → 도우미 창에 <code>s</code> 를 눌러 완료 기록.</li>
+    </ol>
+  </div></div></div>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+document.querySelectorAll('[data-check-group]').forEach(all => all.addEventListener('change', () => {
+  document.querySelectorAll('[data-group="' + all.dataset.checkGroup + '"]').forEach(cb => { cb.checked = all.checked; });
+}));
+</script>
+{% endblock %}

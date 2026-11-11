@@ -10,6 +10,9 @@
       <div class="fs-5 fw-bold">{{ e.name }} <span class="st st-{{ e.status }} align-middle">{{ e.status }}</span></div>
       <div class="text-muted">{{ e.emp_no }} · {{ e.department or '-' }} · {{ e.rank or '-' }}{% if e.title %} / {{ e.title }}{% endif %} · {{ e.employment_type }}</div>
       <div class="small text-muted">입사 {{ e.hire_date }} · 근속 {{ e.hire_date|service(e.resign_date) }}{% if e.resign_date %} · 퇴사 {{ e.resign_date }}{% endif %}</div>
+      {% if ecount_sync is defined %}{% set need = '퇴사' if e.resign_date and '퇴사' not in ecount_sync else ('신규' if '신규' not in ecount_sync else '') %}
+      <div class="small mt-1">{% if need %}<a href="/hr/ecount" class="badge text-bg-warning text-decoration-none"><i class="bi bi-arrow-left-right"></i> 이카운트 {{ '퇴사' if need == '퇴사' else '사원등록' }} 반영 대기</a>
+        {% else %}<span class="badge text-bg-light border text-success"><i class="bi bi-check2"></i> 이카운트 반영됨</span>{% endif %}</div>{% endif %}
     </div>
     {% if perms.salary %}<div class="ms-auto text-end">
       <div class="small text-muted">현재 연봉</div><div class="fs-5 fw-bold">{{ e.annual_salary|won }}원</div>
@@ -23,7 +26,7 @@
   <div class="card-footer bg-white p-0">
     <ul class="nav nav-tabs border-0 px-2">
       {% for key, label, cnt in [('info','기본정보',None), ('history','인사발령',appointments|length), ('contract','근로계약·증명서',contracts|length + certs|length),
-        ('salary','연봉',salaries|length), ('reward','상벌',rewards|length), ('special','근로특이사항',specials|length), ('insurance','상해공제',insurances|length), ('files','입사서류',None), ('check','체크리스트',None)] if perms.salary or key in ('info', 'history') %}
+        ('salary','연봉',salaries|length), ('reward','상벌',rewards|length), ('special','근로특이사항',specials|length), ('insurance','상해공제',insurances|length), ('payroll','급여·연말정산',None), ('files','입사서류',None), ('check','체크리스트',None)] if perms.salary or key in ('info', 'history') %}
       <li class="nav-item"><a class="nav-link {% if tab == key %}active{% endif %}" href="?tab={{ key }}">{{ label }}{% if cnt %} <span class="badge text-bg-light border">{{ cnt }}</span>{% endif %}</a></li>
       {% endfor %}
     </ul>
@@ -156,6 +159,42 @@
   </div><div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div></form></div></div>
 <datalist id="insurerList">{% for x in insurances|map(attribute='insurer')|select|unique %}<option value="{{ x }}">{% endfor %}</datalist>
 
+{% elif tab == 'payroll' and payroll is defined %}
+<form method="post" action="/hr/employees/{{ e.id }}/payroll" class="card">
+  <div class="card-header d-flex align-items-center">급여·연말정산 정보 <span class="small text-muted ms-2">이카운트 사원등록 「급여지급사항·기타설정」에 들어갈 값</span>
+    {% if payroll.updated_at %}<span class="ms-auto small text-muted">저장 {{ payroll.updated_at }}</span>{% endif %}</div>
+  <div class="card-body row g-3">
+    <div class="col-lg-6">
+      <div class="fw-semibold small mb-2">급여항목별 월 금액 (원)</div>
+      <table class="table table-sm align-middle mb-1">
+      {% for name in pay_item_names %}{% set cur = payroll.pay_items.get(name) if payroll.saved else contract_pay.get(name) %}
+        <tr><td class="small" style="width:40%">{{ name }}</td><td><input class="form-control form-control-sm text-end" name="pay_{{ name }}" inputmode="numeric" value="{{ cur or '' }}" data-money></td></tr>
+      {% endfor %}
+        <tr class="table-light"><td class="small fw-semibold">합계</td><td class="text-end fw-semibold" id="paySum"></td></tr>
+      </table>
+      <div class="help">{% if not payroll.saved and contract_pay %}최신 근로계약서의 금액을 미리 채웠습니다. 확인 후 저장하세요.{% endif %}
+        항목 이름은 「이카운트 연동 → 양식·설정」에서 바꿉니다.</div>
+    </div>
+    <div class="col-lg-6">
+      <div class="fw-semibold small mb-2">4대보험 · 연말정산</div>
+      <div class="row g-2">
+        <div class="col-7"><label class="form-label small">보수월액 (원)</label>
+          <input class="form-control form-control-sm text-end" name="insured_monthly" inputmode="numeric" value="{{ payroll.insured_monthly or '' }}" data-money>
+          {% if insured_suggest %}<div class="help">참고: 기준연봉 ÷ 12 = {{ insured_suggest|won }}원 (비과세 항목은 빼고 적으세요)</div>{% endif %}</div>
+        <div class="col-5"><label class="form-label small">세대주</label>
+          <select class="form-select form-select-sm" name="householder"><option value="">-</option>
+            <option value="Y" {{ 'selected' if payroll.householder == 'Y' }}>세대주</option><option value="N" {{ 'selected' if payroll.householder == 'N' }}>세대원</option></select></div>
+        <div class="col-6"><label class="form-label small">부양가족 수 (본인 제외)</label><input class="form-control form-control-sm" name="dependents" type="number" min="0" max="30" value="{{ payroll.dependents if payroll.dependents is not none else '' }}"></div>
+        <div class="col-6"><label class="form-label small">8~20세 자녀 수</label><input class="form-control form-control-sm" name="children_8_20" type="number" min="0" max="20" value="{{ payroll.children_8_20 if payroll.children_8_20 is not none else '' }}"></div>
+        <div class="col-12"><label class="form-label small">메모</label><input class="form-control form-control-sm" name="note" value="{{ payroll.note }}"></div>
+      </div>
+      <div class="help mt-2">주민등록번호·계좌는 「기본정보」의 값을 씁니다. 이 정보는 인사담당자만 봅니다.</div>
+    </div>
+  </div>
+  {% if perms.write %}<div class="card-footer d-flex"><button class="btn btn-sm btn-primary">저장</button>
+    <a class="btn btn-sm btn-outline-secondary ms-auto" href="/hr/ecount"><i class="bi bi-arrow-left-right"></i> 이카운트 연동으로</a></div>{% endif %}
+</form>
+
 {% elif tab == 'files' %}
 <div class="row g-3">
   <div class="col-lg-4"><div class="card h-100"><div class="card-header">필수서류 제출 현황</div>
@@ -221,6 +260,17 @@
 {% endblock %}
 
 {% block scripts %}
+{% if tab == 'payroll' %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const ins = [...document.querySelectorAll('input[name^="pay_"]')];
+  const out = document.getElementById('paySum'); if (!out) return;
+  const num = v => parseInt(String(v).replace(/[^0-9]/g, '')) || 0;
+  const calc = () => { out.textContent = ins.reduce((s, i) => s + num(i.value), 0).toLocaleString() + '원'; };
+  ins.forEach(i => i.addEventListener('input', calc)); calc();
+})();
+</script>
+{% endif %}
 {% if tab == 'insurance' %}
 <script nonce="{{ csp_nonce }}">
 (() => {

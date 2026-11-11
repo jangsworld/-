@@ -23,6 +23,7 @@ from app.modules.hr import intake, repo as hr_repo
 from app.modules.hr.routes import router as hr_router
 from app.modules.hr.signing import router as sign_router
 from app.modules.hr.leave_routes import router as leave_router, public_router as leave_public_router
+from app.modules.hr.ecount_routes import router as ecount_router
 from app.modules.ga.routes import router as ga_router, public_router as ga_public_router
 from app.modules.ga import repo as ga_repo
 from app.security import auth
@@ -76,6 +77,8 @@ async def lifespan(_app):
         if filled:
             log.info("구분값 자동 추가(기존 자료): %s", {g: len(v) for g, v in filled.items()})
         ga_repo.ensure_qr_tokens()
+        from app.modules.hr import ecount
+        ecount.baseline_once()
     except Exception:   # 정리 작업 실패로 시스템이 안 뜨는 일은 없게
         log.exception("시작 시 자료 정리 실패")
     log.info("BMS started on port %s", settings.port)
@@ -94,6 +97,7 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 app.mount("/static", StaticFiles(directory=os.path.join(APP_DIR, "static")), name="static")
 app.include_router(auth_router)
 app.include_router(leave_router)
+app.include_router(ecount_router)
 app.include_router(leave_public_router)
 app.include_router(hr_router)
 app.include_router(sign_router)

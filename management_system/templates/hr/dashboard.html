@@ -2,6 +2,10 @@
 {% block title %}인사 대시보드{% endblock %}
 {% block page_title %}<i class="bi bi-speedometer2 me-2"></i>인사 대시보드{% endblock %}
 {% block content %}
+{% if ecount_wait %}
+<div class="alert alert-info d-flex align-items-center gap-2"><i class="bi bi-arrow-left-right"></i><div>이카운트에 아직 반영하지 않은 입사·퇴사가 <b>{{ ecount_wait }}건</b> 있습니다.</div>
+  <a class="btn btn-sm btn-info ms-auto text-nowrap" href="/hr/ecount">이카운트 연동</a></div>
+{% endif %}
 {% if leave_notice %}
 <div class="alert alert-warning d-flex align-items-center gap-2"><i class="bi bi-bell-fill"></i><div>{{ leave_notice.text }}</div>
   <a class="btn btn-sm btn-warning ms-auto text-nowrap" href="/hr/leave/review?round={{ leave_notice.round }}">{{ leave_notice.round }}차 명단 확인</a></div>
