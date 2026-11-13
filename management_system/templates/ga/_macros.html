@@ -17,7 +17,7 @@
   <input type="hidden" name="id" value="">
   <div class="modal-header"><h6 class="modal-title">{{ title }} <span data-mode-title>등록</span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body row g-2">{{ caller() }}</div>
-  <div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div>
+  <div class="modal-footer"><button type="button" class="btn btn-sm btn-outline-secondary me-auto" data-bs-dismiss="modal">취소</button><button class="btn btn-sm btn-primary"><i class="bi bi-save"></i> 저장</button></div>
 </form></div></div>
 {%- endmacro %}
 

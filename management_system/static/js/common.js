@@ -125,3 +125,153 @@ document.addEventListener('click', (e) => {
   m.querySelectorAll('[data-new-only]').forEach((t) => { t.hidden = !!data.id; });
   f.dispatchEvent(new Event('bms:filled'));
 });
+
+// ════════════════════════════════════════════════════════════════════
+// 입력 화면 도우미 (모든 등록·수정 화면·등록 창에 자동 적용)
+// ════════════════════════════════════════════════════════════════════
+(() => {
+  const FIELDS = 'input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=submit]), select, textarea';
+  const isEmpty = (el) => !String(el.value || '').trim();
+  const mark = (el) => {
+    if (!el.matches || !el.matches(FIELDS)) return;
+    el.classList.toggle('is-empty', isEmpty(el));
+    const box = el.closest('.field-box');
+    if (box) box.classList.toggle('has-value', [...box.querySelectorAll(FIELDS)].some(x => !isEmpty(x)));
+  };
+  const markAll = (root = document) => root.querySelectorAll(FIELDS).forEach(mark);
+
+  // 1) 필수 칸 이름에 * 자동 표시
+  const labelOf = (el) => {
+    if (el.id) { const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`); if (l) return l; }
+    const p = el.closest('.col, [class*="col-"], .mb-2, .mb-3, .field');
+    return p ? p.querySelector('label.form-label, .form-label') : null;
+  };
+  const addStars = (root = document) => root.querySelectorAll('[required]').forEach((el) => {
+    const l = labelOf(el);
+    if (l && !l.querySelector('.text-danger, .req-mark')) { const s = document.createElement('span'); s.className = 'req-mark'; s.textContent = ' *'; l.appendChild(s); }
+  });
+  const nameOf = (el) => ((labelOf(el)?.textContent || el.placeholder || '').replace(/\*/g, '').trim());
+
+  // 2) 입력 중인 칸 이름 강조
+  document.addEventListener('focusin', (e) => { const p = e.target.matches?.(FIELDS) && e.target.parentElement; if (p) p.classList.add('field-focus'); });
+  document.addEventListener('focusout', (e) => { const p = e.target.parentElement; if (p) p.classList.remove('field-focus'); });
+
+  // 3) 자동 서식: 전화번호·주민번호·계좌번호
+  const phone = (v) => {
+    const d = v.replace(/\D/g, '').slice(0, 11);
+    if (d.startsWith('02')) return d.length > 9 ? `${d.slice(0, 2)}-${d.slice(2, 6)}-${d.slice(6)}` : d.length > 5 ? `${d.slice(0, 2)}-${d.slice(2, 5)}-${d.slice(5)}` : d;
+    if (d.length > 10) return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`;
+    if (d.length > 6) return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+    if (d.length > 3) return `${d.slice(0, 3)}-${d.slice(3)}`;
+    return d;
+  };
+  const clearBad = (el) => {
+    if (!el.classList) return;
+    el.classList.remove('is-invalid');
+    const host = el.closest('.input-group') || el;
+    const m = host.parentElement?.querySelector(':scope > .invalid-msg'); if (m) m.remove();
+  };
+  document.addEventListener('input', (e) => {
+    const el = e.target;
+    if (!el.matches) return;
+    if (el.matches('[name=phone], [name=emergency_contact], [name$="_phone"], [data-fmt=phone]')) {
+      const atEnd = el.selectionStart === el.value.length; el.value = phone(el.value); if (atEnd) el.selectionStart = el.selectionEnd = el.value.length;
+    } else if (el.matches('[name=rrn]')) {
+      const d = el.value.replace(/\D/g, '').slice(0, 13); el.value = d.length > 6 ? `${d.slice(0, 6)}-${d.slice(6)}` : d;
+    } else if (el.matches('[name=bank_account], [data-fmt=digits]')) {
+      el.value = el.value.replace(/[^\d]/g, '');
+    }
+    mark(el); clearBad(el);
+  });
+  document.addEventListener('change', (e) => { mark(e.target); clearBad(e.target); });
+
+  // 4) 틀린 칸: 빨간 테두리 + 칸 아래 이유 + 첫 칸으로 이동 (브라우저 말풍선 대신)
+  const reason = (el) => {
+    const v = el.validity;
+    if (v.valueMissing) return el.tagName === 'SELECT' ? '골라 주세요' : '꼭 입력해야 합니다';
+    if (v.typeMismatch) return el.type === 'email' ? '이메일 형식이 아닙니다 (예: name@company.com)' : '형식이 맞지 않습니다';
+    if (v.patternMismatch) return el.title || (el.name === 'rrn' ? '주민등록번호 13자리를 넣어 주세요' : '형식이 맞지 않습니다');
+    if (v.rangeUnderflow) return `${el.min} 이상으로 넣어 주세요`;
+    if (v.rangeOverflow) return `${el.max} 이하로 넣어 주세요`;
+    if (v.tooLong || v.tooShort) return '글자 수를 확인해 주세요';
+    if (v.badInput || v.stepMismatch) return '숫자를 확인해 주세요';
+    return el.validationMessage || '확인해 주세요';
+  };
+  let bad = [];
+  document.addEventListener('invalid', (e) => {
+    const el = e.target;
+    e.preventDefault();
+    el.classList.add('is-invalid');
+    const host = el.closest('.input-group') || el;
+    let m = host.parentElement.querySelector(':scope > .invalid-msg');
+    if (!m) { m = document.createElement('div'); m.className = 'invalid-msg'; host.after(m); }
+    m.textContent = reason(el);
+    bad.push(el);
+    if (bad.length === 1) setTimeout(() => {
+      const first = bad[0], n = bad.length; bad = [];
+      first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      setTimeout(() => first.focus({ preventScroll: true }), 250);
+      const nm = nameOf(first);
+      toast(n > 1 ? `확인할 칸이 ${n}개 있습니다 — '${nm}'부터 보세요` : `'${nm}' 칸을 확인해 주세요`);
+    }, 0);
+  }, true);
+
+  // 5) 저장하지 않고 나가면 확인 (<form data-dirty>)
+  let submitting = false;
+  document.addEventListener('submit', (e) => { if (!e.defaultPrevented) submitting = true; });
+  document.querySelectorAll('form[data-dirty]').forEach((f) => {
+    const on = (e) => { if (e.isTrusted) f.classList.add("is-dirty"); };
+    f.addEventListener('input', on); f.addEventListener('change', on);
+  });
+  window.addEventListener('beforeunload', (e) => {
+    if (!submitting && document.querySelector('form[data-dirty].is-dirty')) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  // 6) 구역 바로가기 + 구역별 입력 개수 + 남은 필수 칸 (<nav data-section-nav="폼 id">)
+  document.querySelectorAll('[data-section-nav]').forEach((nav) => {
+    const form = document.getElementById(nav.dataset.sectionNav);
+    if (!form) return;
+    const secs = [...form.querySelectorAll('.form-section[id]')];
+    nav.innerHTML = secs.map(s => `<a href="#${s.id}" data-sec="${s.id}">${s.dataset.title || s.id}<span class="cnt"></span></a>`).join('') + '<span class="req-left"></span>';
+    const refresh = () => {
+      let left = 0;
+      secs.forEach((s) => {
+        const f = [...s.querySelectorAll(FIELDS)].filter(x => !x.readOnly && !x.disabled && x.offsetParent !== null);
+        const filled = f.filter(x => !isEmpty(x)).length;
+        const reqLeft = f.filter(x => x.required && isEmpty(x)).length;
+        left += reqLeft;
+        const done = reqLeft === 0 && filled > 0;
+        s.classList.toggle('is-done', done);
+        const a = nav.querySelector(`[data-sec="${s.id}"]`);
+        a.classList.toggle('done', done);
+        a.querySelector('.cnt').textContent = f.length ? `${filled}/${f.length}` : '';
+        const c = s.querySelector('.form-section-count'); if (c) c.textContent = f.length ? `${filled} / ${f.length}칸 입력` : '';
+      });
+      const r = nav.querySelector('.req-left');
+      r.textContent = left ? `필수 ${left}칸 남음` : '필수 입력 완료';
+      r.classList.toggle('ok', !left);
+    };
+    form.addEventListener('input', refresh); form.addEventListener('change', refresh); refresh();
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((ents) => ents.forEach((en) => {
+        if (en.isIntersecting) nav.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.sec === en.target.id));
+      }), { rootMargin: '-35% 0px -60% 0px' });
+      secs.forEach(s => io.observe(s));
+    }
+  });
+
+  // 7) 등록 창이 열리면 첫 빈 칸에 바로 입력
+  document.addEventListener('shown.bs.modal', (e) => {
+    markAll(e.target); addStars(e.target);
+    const el = [...e.target.querySelectorAll(FIELDS)].find(x => !x.readOnly && !x.disabled && x.offsetParent !== null && isEmpty(x) && x.type !== 'date' && x.tagName !== 'SELECT');
+    if (el) el.focus();
+  });
+  document.addEventListener('bms:filled', (e) => {
+    markAll(e.target);
+    e.target.querySelectorAll('.is-invalid').forEach(x => x.classList.remove('is-invalid'));
+    e.target.querySelectorAll('.invalid-msg').forEach(x => x.remove());
+  });
+  document.addEventListener('reset', (e) => setTimeout(() => markAll(e.target), 0));
+
+  markAll(); addStars();
+})();

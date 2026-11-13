@@ -154,3 +154,107 @@ th.xf-th { white-space: nowrap; }
 .xf-btn.on { background: #2d5a8c; color: #fff; }
 .xf-pop { position: absolute; z-index: 1080; width: 260px; }
 .xf-pop .xf-vals { max-height: 240px; overflow-y: auto; border: 1px solid #e3e7ee; border-radius: 4px; padding: 4px 6px; }
+
+/* ════════════════════════════════════════════════════════════════════
+   입력 화면 (모든 등록·수정 화면과 등록 창에 공통 적용)
+   - 칸 이름은 진하게, 예시 글자는 흐리게 → '입력된 값'과 '예시'가 헷갈리지 않게
+   - 지금 쓰는 칸·필수 칸·틀린 칸이 한눈에 보이게
+   ════════════════════════════════════════════════════════════════════ */
+:root { --ink: #1d2b3a; --label: #2f3d4c; --hint: #a3adba; --field-line: #c9d2dd; --focus: #2d5a8c; --req: #d92d20; }
+
+/* 칸 이름 */
+.form-label, .form-label.small { font-size: .8rem; font-weight: 600; color: var(--label); margin-bottom: .3rem; letter-spacing: -.01em; }
+.form-label .text-danger, .req-mark { color: var(--req) !important; font-weight: 700; margin-left: 1px; }
+.form-label .bi { color: #8a96a3; font-weight: 400; }
+
+/* 입력칸 */
+.form-control, .form-select { border-color: var(--field-line); color: var(--ink); background-color: #fff; }
+.form-control-sm, .form-select-sm { min-height: 34px; font-size: .88rem; border-radius: .4rem; padding-top: .3rem; padding-bottom: .3rem; }
+.form-control::placeholder { color: var(--hint); opacity: 1; font-size: .84rem; }
+.form-control:hover:not(:focus):not([readonly]):not(:disabled), .form-select:hover:not(:focus):not(:disabled) { border-color: #9fb0c4; }
+.form-control:focus, .form-select:focus { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(45,90,140,.16); background-color: #fff; }
+/* 지금 입력 중인 칸의 이름도 같이 강조 */
+.field-focus > .form-label, .field-focus > label.form-label { color: var(--focus); }
+/* 아직 안 고른 선택칸은 흐리게 */
+.form-select.is-empty { color: var(--hint); }
+.form-select.is-empty option { color: var(--ink); }
+/* 자동 계산·읽기 전용 칸 */
+.form-control[readonly] { background: #f3f5f8; color: #475467; border-style: dashed; }
+.form-control:disabled, .form-select:disabled { background: #f3f5f8; color: #667085; }
+/* 날짜칸의 '연-월-일' 글자를 예시처럼 흐리게 */
+input[type="date"].is-empty::-webkit-datetime-edit { color: var(--hint); }
+/* 필수 칸이 비어 있으면 왼쪽에 옅은 표시 */
+.form-control[required].is-empty, .form-select[required].is-empty { border-left: 3px solid #f5b3ad; }
+/* 틀린 칸 */
+.form-control.is-invalid, .form-select.is-invalid { border-color: var(--req); background-image: none; padding-right: .5rem; }
+.form-control.is-invalid:focus, .form-select.is-invalid:focus { box-shadow: 0 0 0 3px rgba(217,45,32,.15); }
+.invalid-msg { font-size: .76rem; color: var(--req); margin-top: .2rem; font-weight: 500; }
+.invalid-msg::before { content: "⚠ "; }
+/* 도움말 */
+.help { font-size: .76rem; color: #7a8693; margin-top: .2rem; line-height: 1.45; }
+.form-text { font-size: .76rem; }
+/* 체크박스·라디오 */
+.form-check-input { border-color: #9fb0c4; }
+.form-check-input:checked { background-color: var(--focus); border-color: var(--focus); }
+
+/* 구역: 번호 + 제목 + 설명 */
+.form-section { padding: 1.1rem 1.25rem 1.2rem; border-bottom: 1px solid var(--line); scroll-margin-top: 120px; }
+.form-section:last-of-type { border-bottom: 0; }
+.form-section-head { display: flex; align-items: center; gap: .6rem; margin-bottom: .85rem; }
+.form-section-no { width: 26px; height: 26px; border-radius: 50%; background: #e8eef6; color: var(--brand-2); font-weight: 700; font-size: .8rem;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.form-section.is-done .form-section-no { background: #1e7b34; color: #fff; }
+.form-section-title { font-weight: 700; font-size: .98rem; color: var(--ink); margin: 0; }
+.form-section-desc { font-size: .76rem; color: #7a8693; }
+.form-section-count { margin-left: auto; font-size: .74rem; color: #7a8693; white-space: nowrap; }
+.form-section.optional .form-section-title::after { content: "선택"; font-size: .68rem; font-weight: 600; color: #7a8693; background: #f2f4f7;
+  border-radius: 1rem; padding: .05rem .45rem; margin-left: .45rem; vertical-align: middle; }
+
+/* 구역 바로가기 (긴 입력 화면 위쪽에 고정) */
+.section-nav { position: sticky; top: 57px; z-index: 6; background: rgba(243,245,248,.96); backdrop-filter: blur(4px);
+  padding: .55rem 0; margin: -.3rem 0 .6rem; display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
+.section-nav a { font-size: .8rem; text-decoration: none; color: #475467; background: #fff; border: 1px solid var(--line); border-radius: 2rem; padding: .25rem .75rem; }
+.section-nav a:hover { border-color: var(--brand-2); color: var(--brand-2); }
+.section-nav a.active { background: var(--brand-2); border-color: var(--brand-2); color: #fff; }
+.section-nav a .cnt { font-size: .7rem; opacity: .75; margin-left: .25rem; }
+.section-nav a.done::before { content: "✓ "; color: #1e7b34; font-weight: 700; }
+.section-nav a.active.done::before { color: #b9f0c6; }
+.section-nav .req-left { margin-left: auto; font-size: .78rem; color: var(--req); font-weight: 600; }
+.section-nav .req-left.ok { color: #1e7b34; }
+
+/* 저장 버튼 줄: 긴 화면에서도 항상 보이게 */
+.form-actions { position: sticky; bottom: 0; z-index: 5; background: rgba(255,255,255,.97); border-top: 1px solid var(--line);
+  padding: .7rem 1.25rem; display: flex; gap: .5rem; align-items: center; border-radius: 0 0 .6rem .6rem; box-shadow: 0 -4px 12px rgba(16,24,40,.05); }
+.form-actions .btn-primary { min-width: 120px; font-weight: 600; }
+.form-actions .dirty-note { font-size: .78rem; color: #9a6400; display: none; }
+form.is-dirty .form-actions .dirty-note { display: inline; }
+
+/* 묶음 상자 (자격증처럼 같은 칸이 반복될 때) */
+.field-box { border: 1px solid var(--line); border-radius: .5rem; padding: .75rem; background: #fbfcfe; height: 100%; }
+.field-box-title { font-weight: 700; font-size: .84rem; color: var(--ink); margin-bottom: .5rem; display: flex; align-items: center; gap: .4rem; }
+.field-box.has-value { background: #fff; border-color: #b9cbe0; }
+
+/* 등록·수정 창 (모달) */
+.modal-content { border: 0; border-radius: .7rem; box-shadow: 0 20px 50px rgba(16,24,40,.25); }
+.modal-header { border-bottom: 1px solid var(--line); padding: .9rem 1.2rem; background: #f7f9fc; border-radius: .7rem .7rem 0 0; }
+.modal-title { font-weight: 700; font-size: 1rem; color: var(--ink); }
+.modal-title [data-mode-title] { font-size: .72rem; font-weight: 600; padding: .1rem .5rem; border-radius: 1rem; background: #e8eef6; color: var(--brand-2); margin-left: .3rem; vertical-align: middle; }
+.modal-body { padding: 1.1rem 1.2rem; }
+.modal-body.row { margin: 0; --bs-gutter-y: .75rem; }
+.modal-footer { border-top: 1px solid var(--line); padding: .7rem 1.2rem; background: #fff; border-radius: 0 0 .7rem .7rem; }
+.modal-footer .btn-primary { min-width: 96px; font-weight: 600; }
+.modal-dialog-scrollable .modal-body { max-height: calc(100vh - 200px); }
+
+@media (max-width: 767px) {
+  .form-section { padding: .9rem .9rem 1rem; }
+  .form-control-sm, .form-select-sm { min-height: 40px; font-size: 16px; }   /* 휴대폰: 누르기 쉽고, 확대되지 않게 */
+  .section-nav { top: 52px; overflow-x: auto; flex-wrap: nowrap; }
+  .section-nav a { white-space: nowrap; }
+  .form-actions { padding: .6rem .9rem; }
+  .form-actions .btn { white-space: nowrap; }
+  .form-actions .btn-primary { flex: 1; }
+  form.is-dirty .form-actions .dirty-note { display: none; }
+  .section-nav { margin-top: -.6rem; }
+}
+/* 저장 버튼 줄이 있는 화면에서는 알림이 버튼을 가리지 않게 */
+body:has(.form-actions) .toast-container { bottom: 64px !important; }

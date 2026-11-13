@@ -31,59 +31,47 @@
 </div>
 {% endif %}
 
-<form method="post" class="card">
-  <div class="card-body">
-    <h6 class="section-title mb-2">기본 인적사항</h6>
-    <div class="row g-2 mb-3">
-      {{ inp('emp_no', '사번', ph='비우면 자동부여') }}
+{% macro sec(id, no, title, desc='', icon='', optional=False) %}
+<section class="form-section {{ 'optional' if optional }}" id="{{ id }}" data-title="{{ title }}">
+  <div class="form-section-head"><span class="form-section-no">{{ no }}</span>
+    <div><h6 class="form-section-title">{% if icon %}<i class="bi {{ icon }} me-1 text-secondary"></i>{% endif %}{{ title }}</h6>{% if desc %}<div class="form-section-desc">{{ desc }}</div>{% endif %}</div>
+    <span class="form-section-count"></span></div>
+  {{ caller() }}
+</section>
+{% endmacro %}
+<nav class="section-nav no-print" data-section-nav="empForm"></nav>
+<form method="post" class="card" id="empForm" data-dirty>
+  {% call sec('s-basic', 1, '기본 인적사항', '성명과 입사일만 꼭 넣으면 저장됩니다. 나머지는 나중에 채워도 됩니다.', 'bi-person') %}
+    <div class="row g-3">
       {{ inp('name', '성명', req=True) }}
+      {{ inp('emp_no', '사번', ph='비우면 자동 부여') }}
       <div class="col-md-3"><label class="form-label small">주민등록번호</label>
-        <input class="form-control form-control-sm {{ 'draft-check' if src.get('rrn') and src.rrn.ocr }}" name="rrn" autocomplete="off" pattern="\d{6}-?\d{7}" maxlength="14"
-               placeholder="{{ e.rrn_masked or '000000-0000000' }}">
-        <div class="help">{% if draft and e.rrn_masked %}서류에서 읽은 값입니다. <button type="button" class="btn btn-link btn-sm p-0" id="rrnBtn">보기</button> <span id="rrnText"></span> 틀리면 전체 번호를 입력하세요{% elif e.rrn_masked %}저장됨. 바꿀 때만 입력하세요{% else %}암호화 저장, 생년월일·성별 자동 입력{% endif %}</div>{{ origin('rrn') }}</div>
+        <input class="form-control form-control-sm {{ 'draft-check' if src.get('rrn') and src.rrn.ocr }}" name="rrn" autocomplete="off" inputmode="numeric" pattern="\d{6}-?\d{7}" maxlength="14"
+               title="주민등록번호 13자리를 넣어 주세요" placeholder="{{ e.rrn_masked or '숫자 13자리 (- 자동)' }}">
+        <div class="help">{% if draft and e.rrn_masked %}서류에서 읽은 값입니다. <button type="button" class="btn btn-link btn-sm p-0" id="rrnBtn">보기</button> <span id="rrnText"></span> 틀리면 전체 번호를 입력하세요{% elif e.rrn_masked %}저장됨 · 바꿀 때만 입력{% else %}<i class="bi bi-lock"></i> 암호화 저장 · 생년월일·성별 자동 입력{% endif %}</div>{{ origin('rrn') }}</div>
       {{ inp('birth_date', '생년월일', 'date') }}
       {{ sel('gender', '성별', ['남', '여']) }}
-      {{ inp('phone', '연락처', ph='010-0000-0000') }}
-      {{ inp('email', '이메일', 'email', ph='전자서명·증명서 전송에 사용') }}
-      {{ inp('address', '주소', col='col-md-6') }}
-      <div class="col-md-2"><label class="form-label small">비상연락처 관계</label>
-        <input class="form-control form-control-sm" name="emergency_relation" value="{{ e.emergency_relation or '' }}" list="relationList" placeholder="배우자, 아들 등">
+      {{ inp('phone', '휴대폰', ph='숫자만 입력 (- 자동)') }}
+      {{ inp('email', '이메일', 'email', col='col-md-6', ph='예: name@company.com · 전자서명·증명서 받을 주소') }}
+      {{ inp('address', '주소', col='col-md-12') }}
+      <div class="col-md-3"><label class="form-label small">비상연락처 관계</label>
+        <input class="form-control form-control-sm" name="emergency_relation" value="{{ e.emergency_relation or '' }}" list="relationList" placeholder="목록에서 고르거나 입력">
         <datalist id="relationList">{% for r in emergency_relations %}<option value="{{ r }}"></option>{% endfor %}</datalist></div>
-      {{ inp('emergency_contact', '비상연락처', ph='010-0000-0000') }}
+      {{ inp('emergency_contact', '비상연락처', ph='숫자만 입력 (- 자동)') }}
     </div>
-    <h6 class="section-title mb-2">최종학력</h6>
-    <div class="row g-2 mb-3">
-      {{ sel('edu_level', '학력', edu_levels, col='col-md-2') }}
-      {{ inp('edu_school', '학교명', col='col-md-4') }}
-      {{ inp('edu_major', '학과', col='col-md-4') }}
-      {{ inp('edu_grad_year', '졸업연도', 'number', col='col-md-2', ph='2022') }}
-    </div>
-    <h6 class="section-title mb-2">보유자격</h6>
-    <div class="row g-2 mb-1">
-      {% for kind in qualification_kinds %}{% set q = quals.get(kind, {}) %}{% set i = loop.index0 %}
-      <div class="col-lg-4"><div class="border rounded p-2 h-100">
-        <div class="small fw-semibold mb-1">{{ kind }}</div>
-        <label class="form-label small mb-0">기술자 자격번호</label><input class="form-control form-control-sm mb-1" name="q{{ i }}_no" value="{{ q.license_no or '' }}">
-        <label class="form-label small mb-0">자격등급</label><input class="form-control form-control-sm mb-1" name="q{{ i }}_grade" value="{{ q.grade or '' }}" list="gradeList" placeholder="{{ qualification_grades|join('·') }}">
-        <label class="form-label small mb-0">대표 국가기술자격증</label><input class="form-control form-control-sm mb-1" name="q{{ i }}_cert" value="{{ q.main_cert or '' }}" placeholder="정보통신기사 등">
-        <label class="form-label small mb-0">교육·갱신 만료일</label><input class="form-control form-control-sm" type="date" name="q{{ i }}_exp" value="{{ q.expires_on or '' }}">
-        {% if q.file %}<div class="draft-src"><i class="bi bi-file-earmark-text"></i> {{ q.file }}</div>{% endif %}
-      </div></div>
-      {% endfor %}
-      <datalist id="gradeList">{% for g in qualification_grades %}<option value="{{ g }}"></option>{% endfor %}</datalist>
-    </div>
-    <div class="row g-2 mb-3">{{ inp('certificates', '기타 자격', col='col-12', ph='위 3가지 외 자격증') }}</div>
-    <h6 class="section-title mb-2">인사·고용 정보</h6>
-    <div class="row g-2 mb-3">
+  {% endcall %}
+
+  {% call sec('s-job', 2, '인사·고용 정보', '부서·직급·직책 목록은 구분값 설정에서 바꿀 수 있습니다.', 'bi-briefcase') %}
+    <div class="row g-3">
       {{ sel('department', '부서', depts) }}
       {{ sel('rank', '직급', ranks) }}
       {{ sel('title', '직책', titles) }}
-      {{ inp('job_duty', '담당업무') }}
+      {{ inp('job_duty', '담당업무', ph='예: 현장 공무, 회계') }}
       {% set custom = e.employment_type and e.employment_type not in employment_types %}
       <div class="col-md-3"><label class="form-label small">고용형태</label>
         <select class="form-select form-select-sm" name="employment_type" id="empType">
           {% for o in employment_types %}<option {% if e.employment_type == o or (custom and o == '기타') %}selected{% endif %}>{{ o }}</option>{% endfor %}</select>
-        <input class="form-control form-control-sm mt-1 {{ '' if custom or e.employment_type == '기타' else 'd-none' }}" name="employment_type_etc" id="empTypeEtc" value="{{ e.employment_type if custom else '' }}" placeholder="고용형태 직접입력"></div>
+        <input class="form-control form-control-sm mt-1 {{ '' if custom or e.employment_type == '기타' else 'd-none' }}" name="employment_type_etc" id="empTypeEtc" value="{{ e.employment_type if custom else '' }}" placeholder="고용형태 직접 입력"></div>
       {{ sel('work_location', '근무지', locations) }}
       {{ inp('hire_date', '입사일', 'date', req=True) }}
       {{ inp('probation_end', '수습 종료일', 'date') }}
@@ -91,38 +79,77 @@
       {{ inp('resign_date', '퇴사일', 'date') }}
       {{ inp('resign_reason', '퇴사사유', col='col-md-3') }}
       <div class="col-md-3"><label class="form-label small">발령 기준일 <i class="bi bi-info-circle" title="부서·직급·직책·고용형태 변경 시 인사발령 이력에 이 날짜로 자동 기록됩니다"></i></label>
-        <input class="form-control form-control-sm" type="date" name="appt_date" value="{{ today().isoformat() }}"></div>
-      {% else %}
+        <input class="form-control form-control-sm" type="date" name="appt_date" value="{{ today().isoformat() }}">
+        <div class="help">부서·직급을 바꾸면 이 날짜로 발령 기록</div></div>
+      {% endif %}
+    </div>
+  {% endcall %}
+
+  {% if is_new %}
+  {% call sec('s-pay', 3, '연봉·근로계약', '입사 연봉을 넣으면 연봉현황에 함께 등록됩니다.', 'bi-cash-coin') %}
+    <div class="row g-3">
       <div class="col-md-3"><label class="form-label small">입사 연봉(원)</label>
-        <input class="form-control form-control-sm" type="number" name="initial_salary" value="{{ e.initial_salary or '' }}" data-money="salHint" data-monthly="salMonthly" step="1000">
-        <div class="help" id="salHint"></div></div>
-      <div class="col-md-3"><label class="form-label small">월 급여(연봉 ÷ 12)</label>
-        <input class="form-control form-control-sm" id="salMonthly" readonly tabindex="-1"></div>
+        <input class="form-control form-control-sm" type="number" name="initial_salary" value="{{ e.initial_salary or '' }}" data-money="salHint" data-monthly="salMonthly" step="1000" placeholder="숫자만 (예: 42000000)">
+        <div class="help fw-semibold text-dark" id="salHint"></div></div>
+      <div class="col-md-3"><label class="form-label small">월 급여 <span class="badge text-bg-light border fw-normal">자동</span></label>
+        <input class="form-control form-control-sm" id="salMonthly" readonly tabindex="-1" placeholder="연봉 ÷ 12"></div>
       <div class="col-md-3"><label class="form-label small">근로계약</label>
         <select class="form-select form-select-sm" name="paper_contract">
           <option value="">미체결 (BMS에서 작성 예정)</option>
           <option value="1">체결 완료 (기존 서면계약)</option></select>
         <div class="help">이미 일하고 있는 직원이면 '체결 완료'</div></div>
-      <div class="col-md-3"><label class="form-label small">계약 종료일 (기간제만)</label>
+      <div class="col-md-3"><label class="form-label small">계약 종료일 <span class="text-muted fw-normal">(기간제만)</span></label>
         <input class="form-control form-control-sm" type="date" name="paper_contract_end"></div>
-      {% endif %}
     </div>
-    <h6 class="section-title mb-2">급여계좌·기타</h6>
-    <div class="row g-2">
-      {{ inp('bank_name', '은행') }}
-      {{ inp('bank_account', '계좌번호', ph='숫자만 입력 (- 없이)') }}
+  {% endcall %}
+  {% endif %}
+
+  {% call sec('s-bank', 4 if is_new else 3, '급여계좌·비고', '', 'bi-bank', optional=True) %}
+    <div class="row g-3">
+      {{ inp('bank_name', '은행', ph='예: 국민') }}
+      {{ inp('bank_account', '계좌번호', ph='숫자만 입력') }}
       <div class="col-md-6"><label class="form-label small">비고</label>
         <textarea class="form-control form-control-sm" name="memo" rows="2">{{ e.memo or '' }}</textarea></div>
     </div>
+  {% endcall %}
+
+  {% call sec('s-edu', 5 if is_new else 4, '최종학력', '', 'bi-mortarboard', optional=True) %}
+    <div class="row g-3">
+      {{ sel('edu_level', '학력', edu_levels, col='col-md-2') }}
+      {{ inp('edu_school', '학교명', col='col-md-4') }}
+      {{ inp('edu_major', '학과', col='col-md-4') }}
+      {{ inp('edu_grad_year', '졸업연도', 'number', col='col-md-2', ph='예: 2022') }}
+    </div>
+  {% endcall %}
+
+  {% call sec('s-qual', 6 if is_new else 5, '보유자격', '해당하는 자격만 채우세요. 빈 상자는 저장되지 않습니다.', 'bi-patch-check', optional=True) %}
+    <div class="row g-3">
+      {% for kind in qualification_kinds %}{% set q = quals.get(kind, {}) %}{% set i = loop.index0 %}
+      <div class="col-lg-4"><div class="field-box">
+        <div class="field-box-title"><i class="bi bi-award text-secondary"></i>{{ kind }}</div>
+        <div class="row g-2">
+          <div class="col-6"><label class="form-label small">기술자 자격번호</label><input class="form-control form-control-sm" name="q{{ i }}_no" value="{{ q.license_no or '' }}"></div>
+          <div class="col-6"><label class="form-label small">자격등급</label><input class="form-control form-control-sm" name="q{{ i }}_grade" value="{{ q.grade or '' }}" list="gradeList" placeholder="목록에서 고르기"></div>
+          <div class="col-12"><label class="form-label small">대표 국가기술자격증</label><input class="form-control form-control-sm" name="q{{ i }}_cert" value="{{ q.main_cert or '' }}" placeholder="예: 정보통신기사"></div>
+          <div class="col-12"><label class="form-label small">교육·갱신 만료일</label><input class="form-control form-control-sm" type="date" name="q{{ i }}_exp" value="{{ q.expires_on or '' }}"></div>
+        </div>
+        {% if q.file %}<div class="draft-src mt-1"><i class="bi bi-file-earmark-text"></i> {{ q.file }}</div>{% endif %}
+      </div></div>
+      {% endfor %}
+      <datalist id="gradeList">{% for g in qualification_grades %}<option value="{{ g }}"></option>{% endfor %}</datalist>
+      {{ inp('certificates', '기타 자격', col='col-12', ph='위 3가지 외 자격증 (쉼표로 구분)') }}
+    </div>
     <p class="help mt-3 mb-0"><i class="bi bi-shield-lock"></i> 주민등록번호는 급여·4대보험 신고 등 법령상 필요한 업무에만 쓰이며 암호화 저장됩니다. 화면·문서에는 생년월일만 표시되고, 원문 확인은 인사담당 이상이 버튼을 누를 때만 가능하며 접속기록에 남습니다.</p>
-  </div>
-  <div class="card-footer d-flex gap-2">
+  {% endcall %}
+
+  <div class="form-actions">
     {% if draft %}
     <a class="btn btn-sm btn-outline-secondary" href="/hr/employees" title="아무것도 바꾸지 않고 목록으로 돌아갑니다. 초안은 그대로 남습니다">닫기 (초안 유지)</a>
     {% else %}
     <a class="btn btn-sm btn-outline-secondary" href="{{ '/hr/employees' if is_new else '/hr/employees/' ~ e.id }}">취소</a>
     {% endif %}
-    <button class="btn btn-sm btn-primary ms-auto"><i class="bi bi-save"></i> {{ '확인 완료 · 임직원 등록' if draft else '저장' }}</button>
+    <span class="dirty-note"><i class="bi bi-pencil"></i> 저장하지 않은 변경이 있습니다</span>
+    <button class="btn btn-primary ms-auto"><i class="bi bi-save"></i> {{ '확인 완료 · 임직원 등록' if draft else ('임직원 등록' if is_new else '저장') }}</button>
   </div>
 </form>
 {% if draft %}
