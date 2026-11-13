@@ -158,7 +158,8 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         if path.startswith("/logout"):
             return None
         if not sess["mfa_passed"]:
-            if user["totp_enabled"]:
+            from app.security import mfa
+            if mfa.method_for(user):        # 메일 인증번호 또는 인증 앱
                 return None if path.startswith("/login/2fa") else "/login/2fa"
             if settings.require_2fa:
                 return None if path.startswith("/account/2fa") else "/account/2fa"

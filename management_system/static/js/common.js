@@ -9,6 +9,7 @@ const fmt = {
 const PALETTE = ['#2d5a8c', '#3fa7a3', '#f2a541', '#8e6cc4', '#e06c75', '#6c8ebf', '#9aa5b1', '#57b36b'];
 
 function toast(msg) {
+  if (!window.bootstrap) return;   // 로그인 화면 등 bootstrap 없는 화면
   let c = document.querySelector('.toast-container');
   if (!c) {
     c = document.createElement('div');

@@ -712,6 +712,16 @@ CREATE TABLE IF NOT EXISTS ga_events (                 -- 경조사 내역
     created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
+CREATE TABLE IF NOT EXISTS mfa_devices (               -- 2단계 인증을 30일 묻지 않는 PC (쿠키 열쇠의 해시만)
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash  TEXT NOT NULL UNIQUE,
+    expires     TEXT NOT NULL,
+    ip          TEXT,
+    user_agent  TEXT,
+    created_at  TEXT NOT NULL
+);
+
 -- ── 경영관리 ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS mgmt_fin_year (             -- 연도별 손익 요약 (fund 읽기 전용 또는 직접 입력)
     year        INTEGER PRIMARY KEY,
@@ -965,6 +975,8 @@ ADDED_COLUMNS = {
     "ga_contracts": ["amount_vat", "folder_name"],
     "ga_vehicle_logs": ["external_id", "external_updated", "external_purpose"],
     "ga_vehicles": ["qr_token", "oil_interval_km"],
+    "users": ["email"],                                            # 2단계 인증 메일 받을 회사 메일
+    "sessions": ["mail_code", "mail_exp", "mail_tries", "mail_sends"],  # 메일 인증번호(해시)·만료·시도
 }
 
 

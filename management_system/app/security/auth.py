@@ -78,7 +78,7 @@ def get_user(uid: int) -> dict | None:
 
 
 def list_users() -> list[dict]:
-    return query("SELECT id, username, display_name, role, is_active, totp_enabled, must_change_pw, "
+    return query("SELECT id, username, display_name, email, role, is_active, totp_enabled, must_change_pw, "
                  "failed_count, locked_until, last_login_at, last_login_ip, pw_changed_at, created_at "
                  "FROM users ORDER BY id")
 
@@ -220,6 +220,7 @@ def purge_expired():
     cutoff = _ts(_now() - timedelta(hours=settings.session_max_hours))
     execute("DELETE FROM sessions WHERE created_at < ?", (cutoff,))
     execute("DELETE FROM login_attempts WHERE created_at < ?", (_ts(_now() - timedelta(days=400)),))
+    execute("DELETE FROM mfa_devices WHERE expires < ?", (_ts(_now()),))
 
 
 # ════════════════════════════════════════════════════════════════════════

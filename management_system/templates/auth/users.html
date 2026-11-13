@@ -5,29 +5,41 @@
 {% if temp %}
 <div class="alert alert-warning">
   <b><i class="bi bi-key"></i> {{ temp_user }}</b> 임시 비밀번호: <code class="fs-5 user-select-all">{{ temp }}</code>
-  <div class="small mt-1">이 화면을 벗어나면 다시 볼 수 없습니다. 메신저·메일 대신 <b>직접 전달</b>하세요. 최초 로그인 시 변경과 2단계 인증 등록이 강제됩니다.</div>
+  <div class="small mt-1">이 화면을 벗어나면 다시 볼 수 없습니다. 메신저·메일 대신 <b>직접 전달</b>하세요. 최초 로그인 때 메일 인증번호 확인 후 비밀번호를 바꿉니다.</div>
 </div>
 {% endif %}
 <div class="row g-3">
+  <div class="col-12"><form class="card" method="post" action="/admin/mfa-method"><div class="card-body d-flex flex-wrap gap-3 align-items-center">
+    <div><div class="fw-semibold"><i class="bi bi-shield-lock me-1"></i>2단계 인증 방식</div>
+      <div class="help">메일: 로그인할 때 회사 메일로 6자리 번호를 보냅니다 (5분 유효). 메일 주소가 없거나 메일 발송이 안 되면 인증 앱으로 넘어갑니다.<br>
+        '이 PC 30일 기억'을 고른 PC는 30일 동안 다시 묻지 않습니다 (비밀번호 변경·2단계 초기화 시 해제).</div></div>
+    <select class="form-select form-select-sm w-auto ms-auto" name="method">{% for k, v in methods.items() %}<option value="{{ k }}" {{ 'selected' if mfa_method == k }}>{{ v }}</option>{% endfor %}</select>
+    <button class="btn btn-sm btn-primary">저장</button>
+    {% if mfa_method == 'email' and not mail_ok %}<div class="w-100 small text-danger"><i class="bi bi-exclamation-triangle"></i> 메일 발송 설정이 없어 지금은 모두 인증 앱으로 확인합니다. <a href="/settings#mail">메일 설정</a></div>{% endif %}
+    {% set no_mail = users|selectattr('is_active')|rejectattr('email')|map(attribute='display_name')|list %}
+    {% if mfa_method == 'email' and no_mail %}<div class="w-100 small text-warning-emphasis"><i class="bi bi-info-circle"></i> 인증 메일이 없는 사용자: {{ no_mail|join(', ') }} — 아래에서 회사 메일을 넣어 주세요.</div>{% endif %}
+  </div></form></div>
   <div class="col-12"><div class="card">
     <div class="card-header d-flex">사용자 목록 <span class="badge text-bg-secondary ms-2">{{ users|length }}명</span><span class="help ms-auto">권장 운영 인원 5명 이하 · 퇴사자는 즉시 '중지'</span></div>
     <div class="table-responsive"><table class="table table-sm align-middle mb-0">
-      <thead><tr><th>아이디</th><th>이름 / 권한 / 사용</th><th>2FA</th><th>상태</th><th>최근 로그인</th><th class="text-end">관리</th></tr></thead>
+      <thead><tr><th>아이디</th><th>이름 / 인증 메일 / 권한 / 사용</th><th>2단계 인증</th><th>상태</th><th>최근 로그인</th><th class="text-end">관리</th></tr></thead>
       <tbody>{% for u in users %}
       <tr>
         <td class="fw-semibold">{{ u.username }}</td>
         <td><form method="post" action="/admin/users/{{ u.id }}/update" class="d-flex gap-1 align-items-center">
-          <input class="form-control form-control-sm" style="width:110px" name="display_name" value="{{ u.display_name }}">
+          <input class="form-control form-control-sm" style="width:100px" name="display_name" value="{{ u.display_name }}">
+          <input class="form-control form-control-sm" style="width:200px" type="email" name="email" value="{{ u.email or '' }}" placeholder="회사 메일 (인증번호 받을 곳)">
           <select class="form-select form-select-sm" style="width:auto" name="role">{% for k, v in roles.items() %}<option value="{{ k }}" {% if u.role == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
           <label class="small text-nowrap"><input type="checkbox" class="form-check-input" name="is_active" value="1" {% if u.is_active %}checked{% endif %}> 사용</label>
           <button class="btn btn-sm btn-outline-primary">저장</button></form></td>
-        <td>{% if u.totp_enabled %}<i class="bi bi-shield-check text-success"></i>{% else %}<span class="small text-muted">미등록</span>{% endif %}</td>
+        <td class="small text-nowrap">{% if u.mfa_now == 'email' %}<i class="bi bi-envelope-check text-success"></i> 메일{% elif u.mfa_now == 'app' %}<i class="bi bi-phone text-success"></i> 앱{% else %}<span class="text-danger">없음</span>{% endif %}
+          {% if u.totp_enabled and u.mfa_now == 'email' %}<span class="text-muted">+앱</span>{% endif %}{% if u.devices %}<div class="text-muted">기억 PC {{ u.devices }}</div>{% endif %}</td>
         <td class="small">{% if not u.is_active %}<span class="badge text-bg-secondary">중지</span>{% elif u.locked_until and u.locked_until > now %}<span class="badge text-bg-danger">잠김</span>{% elif u.must_change_pw %}<span class="badge text-bg-warning">비번변경 대기</span>{% else %}정상{% endif %}</td>
         <td class="small text-muted">{{ u.last_login_at or '-' }}<br>{{ u.last_login_ip or '' }}</td>
         <td class="text-end text-nowrap">
           {% if u.locked_until and u.locked_until > now %}<form method="post" action="/admin/users/{{ u.id }}/unlock" class="d-inline"><button class="btn btn-sm btn-outline-success">잠금해제</button></form>{% endif %}
           <form method="post" action="/admin/users/{{ u.id }}/reset-password" class="d-inline" data-confirm="{{ u.username }}의 비밀번호를 초기화하고 임시 비밀번호를 발급할까요?"><button class="btn btn-sm btn-outline-secondary">비번 초기화</button></form>
-          <form method="post" action="/admin/users/{{ u.id }}/reset-2fa" class="d-inline" data-confirm="{{ u.username }}의 2단계 인증을 초기화할까요? (휴대폰 분실·교체 시)"><button class="btn btn-sm btn-outline-secondary">2FA 초기화</button></form>
+          <form method="post" action="/admin/users/{{ u.id }}/reset-2fa" class="d-inline" data-confirm="{{ u.username }}의 인증 앱 등록과 기억한 PC를 모두 초기화할까요? (휴대폰 분실·교체, PC 분실 시)"><button class="btn btn-sm btn-outline-secondary">2단계 초기화</button></form>
         </td>
       </tr>{% endfor %}</tbody>
     </table></div>
@@ -38,6 +50,7 @@
       <div class="card-body row g-2">
         <div class="col-6"><label class="form-label small">아이디</label><input class="form-control form-control-sm" name="username" pattern="[A-Za-z0-9._\-]{3,30}" required></div>
         <div class="col-6"><label class="form-label small">이름</label><input class="form-control form-control-sm" name="display_name" required></div>
+        <div class="col-12"><label class="form-label small">회사 메일 (2단계 인증번호 받을 곳)</label><input class="form-control form-control-sm" type="email" name="email" placeholder="예: name@company.com"></div>
         <div class="col-12"><label class="form-label small">권한</label><select class="form-select form-select-sm" name="role">{% for k, v in roles.items() %}<option value="{{ k }}" {% if k == 'hr' %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
         <div class="col-12 help">임시 비밀번호가 자동 발급됩니다.</div>
       </div>

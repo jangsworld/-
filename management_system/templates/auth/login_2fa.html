@@ -1,11 +1,36 @@
 {% extends "auth/_auth_base.html" %}
 {% block title %}2단계 인증{% endblock %}
 {% block content %}
+{% if method == 'email' %}
+  <div class="text-center mb-3">
+    <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-primary-subtle text-primary mb-2" style="width:52px;height:52px"><i class="bi bi-envelope-check fs-4"></i></div>
+    <div class="fw-semibold">메일로 받은 인증번호</div>
+    <div class="small text-muted"><b>{{ to }}</b> 로 보낸 6자리 숫자를 넣어 주세요. ({{ minutes }}분 안)</div>
+  </div>
+{% else %}
+  <div class="text-center mb-3">
+    <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-primary-subtle text-primary mb-2" style="width:52px;height:52px"><i class="bi bi-phone fs-4"></i></div>
+    <div class="fw-semibold">인증 앱 코드</div>
+    <div class="small text-muted">휴대폰 인증 앱(Google·Microsoft Authenticator)의 6자리 숫자를 넣어 주세요.</div>
+  </div>
+{% endif %}
 <form method="post" action="/login/2fa" autocomplete="off">
-  <input type="hidden" name="next" value="{{ next }}">
-  <p class="small">휴대폰 인증 앱(Google/Microsoft Authenticator)에 표시된 <b>6자리 코드</b>를 입력하세요.</p>
-  <input class="form-control form-control-lg text-center mb-3" name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" autocomplete="one-time-code" required autofocus style="letter-spacing:.4em">
-  <button class="btn btn-primary w-100">확인</button>
+  <input type="hidden" name="next" value="{{ next }}"><input type="hidden" name="method" value="{{ method }}">
+  <input class="form-control form-control-lg text-center mb-2 fw-bold" name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7"
+         autocomplete="one-time-code" required autofocus style="letter-spacing:.5em;font-size:1.6rem" placeholder="······" title="6자리 숫자를 넣어 주세요">
+  <label class="d-flex align-items-center gap-2 small mb-0"><input type="checkbox" class="form-check-input m-0" name="remember" value="1">
+    이 PC에서는 {{ days }}일 동안 묻지 않기</label>
+  <div class="help mb-3 ms-4">내 업무용 PC에서만 체크하세요 (공용 PC 제외)</div>
+  <button class="btn btn-primary w-100 py-2">확인</button>
 </form>
-<form method="post" action="/logout" class="mt-2"><button class="btn btn-link btn-sm w-100">다른 계정으로 로그인</button></form>
+<div class="d-flex flex-wrap justify-content-between gap-1 mt-3 small">
+  {% if method == 'email' %}
+    <form method="post" action="/login/2fa/send"><input type="hidden" name="next" value="{{ next }}"><button class="btn btn-link btn-sm p-0"><i class="bi bi-arrow-repeat"></i> 인증번호 다시 받기</button></form>
+    {% if has_app %}<a class="btn btn-link btn-sm p-0" href="/login/2fa?next={{ next|urlencode }}&use=app"><i class="bi bi-phone"></i> 인증 앱으로 하기</a>{% endif %}
+  {% elif email_ok %}
+    <a class="btn btn-link btn-sm p-0" href="/login/2fa?next={{ next|urlencode }}"><i class="bi bi-envelope"></i> 메일 인증번호로 하기</a>
+  {% endif %}
+  <form method="post" action="/logout" class="ms-auto"><button class="btn btn-link btn-sm p-0 text-muted">다른 계정으로 로그인</button></form>
+</div>
+{% if method == 'email' %}<div class="help mt-3">메일이 안 오면 스팸함을 확인하세요. 본인이 로그인하지 않았는데 이 메일을 받았다면 비밀번호를 바꾸고 관리자에게 알려 주세요.</div>{% endif %}
 {% endblock %}

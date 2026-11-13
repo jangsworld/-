@@ -7,7 +7,10 @@
     <dl class="info-grid">
       <dt>아이디</dt><dd>{{ u.username }}</dd><dt>이름</dt><dd>{{ u.display_name }}</dd>
       <dt>권한</dt><dd>{{ roles[u.role] }}</dd>
-      <dt>2단계 인증</dt><dd>{% if u.totp_enabled %}<span class="text-success"><i class="bi bi-shield-check"></i> 사용 중</span>{% else %}<a href="/account/2fa">등록하기</a>{% endif %}</dd>
+      <dt>2단계 인증</dt><dd>{% if mfa_method == 'email' %}<span class="text-success"><i class="bi bi-envelope-check"></i> 메일 인증번호</span> <span class="small text-muted">{{ mail_to }}</span>
+        {% elif mfa_method == 'app' %}<span class="text-success"><i class="bi bi-phone"></i> 인증 앱</span>{% else %}<span class="text-danger">없음</span>{% endif %}</dd>
+      <dt>인증 앱 (대체)</dt><dd>{% if u.totp_enabled %}<span class="text-success">등록됨</span>{% else %}<a href="/account/2fa">등록하기</a> <span class="small text-muted">메일이 안 될 때 대비</span>{% endif %}</dd>
+      <dt>기억한 PC</dt><dd>{{ devices|length }}대 {% if devices %}<form method="post" action="/account/devices/clear" class="d-inline" data-confirm="기억한 PC를 모두 해제할까요? 다음 로그인부터 다시 인증합니다."><button class="btn btn-sm btn-link p-0 text-danger">모두 해제</button></form>{% endif %}</dd>
       <dt>비밀번호 변경일</dt><dd>{{ u.pw_changed_at or '-' }}</dd>
       <dt>최근 로그인</dt><dd>{{ u.last_login_at or '-' }} ({{ u.last_login_ip or '' }})</dd>
     </dl>
