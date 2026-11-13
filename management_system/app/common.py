@@ -204,6 +204,7 @@ def _vatinfo(amount, vat_type) -> str:
 
 
 templates.env.filters["won"] = won
+templates.env.filters["monthly"] = lambda v: (-(-int(v) // 12)) if v not in (None, "") else None   # 월 급여 = 연봉 ÷ 12 (원 단위 올림)
 templates.env.filters["vatinfo"] = _vatinfo
 templates.env.filters["man_won"] = man_won
 templates.env.filters["pct"] = pct

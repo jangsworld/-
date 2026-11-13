@@ -50,7 +50,7 @@
         <td>{{ e.department or '' }}</td><td>{{ e.rank or '' }}</td><td class="small">{{ e.employment_type }}</td>
         <td class="num text-muted">{{ r.prev.annual_salary|won if r.prev else '-' }}{% if r.prev %}<div class="small">{{ r.prev.year }}</div>{% endif %}</td>
         <td class="num fw-semibold">{{ r.cur.annual_salary|won if r.cur else '' }}{% if not r.cur and not e.resign_date %}<span class="badge text-bg-warning">미책정</span>{% endif %}</td>
-        <td class="num text-muted">{{ (r.cur.annual_salary / 12)|won if r.cur else '' }}</td>
+        <td class="num text-muted">{{ r.cur.annual_salary|monthly|won if r.cur else '' }}</td>
         <td class="num {{ 'up' if (r.raise_amount or 0) > 0 else 'down' if (r.raise_amount or 0) < 0 }}">{{ r.raise_amount|won if r.raise_amount is not none else '' }}</td>
         <td class="num {{ 'up' if (r.raise_rate or 0) > 0 else 'down' if (r.raise_rate or 0) < 0 }}">{{ r.raise_rate|pct if r.raise_rate is not none else '' }}</td>
         <td>{% if r.raise_rate is not none %}<div class="progress" style="height:6px" title="{{ r.raise_rate|pct }}"><div class="progress-bar {{ 'bg-danger' if r.raise_rate >= 10 else 'bg-primary' }}" style="width: {{ [[r.raise_rate * 6.6, 0]|max, 100]|min }}%"></div></div>{% endif %}</td>
@@ -133,7 +133,7 @@ document.querySelectorAll('#salTable tbody tr').forEach(tr => tr.addEventListene
   mRate.disabled = !mPrev; mAmt.dispatchEvent(new Event('input', { bubbles: true })); modal.show();
 }));
 mRate.addEventListener('input', () => { if (mPrev) { mAmt.value = Math.round(mPrev * (1 + mRate.value / 100) / 10000) * 10000; mAmt.dispatchEvent(new Event('input', { bubbles: true })); } });
-mAmt.addEventListener('input', () => { if (mPrev && mAmt.value) mRate.value = ((mAmt.value - mPrev) / mPrev * 100).toFixed(1); });
+mAmt.addEventListener('input', () => { const v = moneyVal(mAmt.value); if (mPrev && v) mRate.value = ((v - mPrev) / mPrev * 100).toFixed(1); });
 
 // 일괄 인상 시뮬레이션
 let bRows = [];

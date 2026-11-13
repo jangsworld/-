@@ -53,9 +53,10 @@ document.addEventListener('submit', (e) => {
 document.addEventListener('input', (e) => {
   if (!e.target.matches('[data-money]')) return;
   const hint = document.getElementById(e.target.dataset.money);
-  if (hint) hint.textContent = e.target.value ? fmt.won(e.target.value) + '원' : '';
+  const v = moneyVal(e.target.value);
+  if (hint && !hint.classList.contains('monthly-hint') && !e.target.classList.contains('money-input')) hint.textContent = v ? fmt.won(v) + '원' : '';   // 칸에 콤마가 보이면 같은 숫자를 또 쓰지 않음
   const monthly = document.getElementById(e.target.dataset.monthly);
-  if (monthly) monthly.value = e.target.value ? fmt.won(Math.ceil(e.target.value / 12)) : '';  // 회사 연봉계약서 기준 원 단위 올림
+  if (monthly) monthly.value = v ? fmt.won(Math.ceil(v / 12)) : '';  // 회사 연봉계약서 기준 원 단위 올림
 });
 
 // 플래시 토스트 자동 숨김
@@ -292,4 +293,65 @@ document.addEventListener('click', (e) => {
   document.addEventListener('wheel', (e) => {
     if (e.target.matches && e.target.matches('input[type=number]') && document.activeElement === e.target) e.target.blur();
   }, { passive: true });
+})();
+
+// ════════════════════════════════════════════════════════════════════
+// 금액 칸: 입력하는 동안 1,000 단위 콤마 표시 → 저장할 때는 숫자만 보냄
+//          연봉 칸 아래에는 월 급여(연봉 ÷ 12, 원 단위 올림)를 바로 표시
+// 대상: data-money / data-won 속성, 이름이 금액 계열이거나 칸 이름에 '(원)'·'금액'·'연봉'이 들어간 칸
+// ════════════════════════════════════════════════════════════════════
+const moneyVal = (v) => { const s = String(v ?? '').replace(/[^\d-]/g, ''); return s && s !== '-' ? Number(s) : null; };
+(() => {
+  const NAME = /(salary|amount|cost|premium|price|budget|^total$|deposit|^pay_|insured_monthly|self_pay|monthly_cost|fuel_cost|toll_cost|repair_cost|sal_amount|ins_premium|^fine|^v\d+$)/i;
+  const LABEL = /\(원\)|금액|연봉|공제료|보증금|경조금|포상금|급여|수리비|유류비|통행료/;
+  const NOT = /(note|memo|pay_day|_date|rate|year|km|odometer|days|hours|count|copies|dependents|children|notice|alert|interval|useful|^month$|^day$)/i;
+  const ANNUAL = /(annual_salary|initial_salary|sal_amount)/i;
+  const labelOf = (el) => { const p = el.closest('[class*="col"], .mb-2, .mb-3, td, .field'); return p ? (p.querySelector('label')?.textContent || '') : ''; };
+  const isMoney = (el) => {
+    if (!el.matches('input') || el.dataset.noMoney !== undefined || ['hidden', 'date', 'checkbox', 'radio', 'file', 'email', 'password'].includes(el.type)) return false;
+    if (el.dataset.money !== undefined || el.dataset.won !== undefined) return true;
+    if (NOT.test(el.name || '')) return false;
+    return NAME.test(el.name || '') || (LABEL.test(labelOf(el)) && !/%|율|연도|일\)|시간/.test(labelOf(el)));
+  };
+  const fmtDigits = (raw) => { const neg = /^\s*-/.test(raw); const d = String(raw).replace(/[^\d]/g, '').replace(/^0+(?=\d)/, ''); return d ? (neg ? '-' : '') + Number(d).toLocaleString('ko-KR') : (neg ? '-' : ''); };
+  const monthlyHint = (el) => {
+    if ((!ANNUAL.test(el.name || '') && el.dataset.annual === undefined) || el.dataset.monthly) return;
+    let h = el.parentElement.querySelector(':scope > .monthly-hint');
+    if (!h) { h = document.createElement('div'); h.className = 'help monthly-hint'; (el.closest('.input-group') || el).after(h); }
+    const v = moneyVal(el.value);
+    h.innerHTML = v ? `월 급여 <b class="text-dark">${Math.ceil(v / 12).toLocaleString('ko-KR')}원</b> <span class="text-muted">(연봉 ÷ 12)</span>` : '';
+  };
+  const setup = (el) => {
+    if (el.dataset.moneyOn) return;
+    el.dataset.moneyOn = '1';
+    if (el.type === 'number') { el.type = 'text'; el.removeAttribute('step'); el.removeAttribute('min'); el.removeAttribute('max'); }
+    el.setAttribute('inputmode', 'numeric'); el.setAttribute('autocomplete', 'off');
+    el.classList.add('money-input');
+    if (el.value) el.value = fmtDigits(el.value);
+    monthlyHint(el);
+  };
+  const scan = (root = document) => root.querySelectorAll('input').forEach((el) => { if (isMoney(el)) setup(el); });
+  scan();
+  document.addEventListener('shown.bs.modal', (e) => scan(e.target));
+  new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType === 1) scan(n); }))).observe(document.body, { childList: true, subtree: true });
+  // 값이 코드로 바뀐 경우(수정 창 채우기 등)도 콤마로
+  document.addEventListener('bms:filled', (e) => e.target.querySelectorAll('.money-input').forEach((el) => { el.value = fmtDigits(el.value); monthlyHint(el); }));
+  document.addEventListener('shown.bs.modal', (e) => e.target.querySelectorAll('.money-input').forEach((el) => { el.value = fmtDigits(el.value); monthlyHint(el); }));
+  // 입력 중: 커서 위치를 지키며 콤마
+  document.addEventListener('input', (e) => {
+    const el = e.target;
+    if (!el.classList || !el.classList.contains('money-input')) return;
+    const before = el.value.slice(0, el.selectionStart ?? el.value.length).replace(/[^\d]/g, '').length;
+    el.value = fmtDigits(el.value);
+    let pos = 0, seen = 0;
+    while (pos < el.value.length && seen < before) { if (/\d/.test(el.value[pos])) seen++; pos++; }
+    try { el.setSelectionRange(pos, pos); } catch (_) {}
+    monthlyHint(el);
+  }, true);
+  // 저장: 숫자만 보내고, 저장이 취소되면 다시 콤마
+  document.addEventListener('submit', (e) => {
+    const f = e.target, els = [...f.querySelectorAll('.money-input')];
+    els.forEach((el) => { el.value = String(el.value).replace(/[^\d-]/g, ''); });
+    setTimeout(() => { if (e.defaultPrevented) els.forEach((el) => { el.value = fmtDigits(el.value); }); }, 0);
+  }, true);
 })();

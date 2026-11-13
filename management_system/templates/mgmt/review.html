@@ -94,7 +94,7 @@
   <form method="post" action="/mgmt/review/{{ year }}/items"><input type="hidden" name="department" value="{{ department }}">
   <div class="table-responsive" style="max-height:640px"><table class="table table-sm table-hover mb-0 align-middle"><thead class="sticky-top"><tr>
     <th>부서</th><th>성명</th><th>직급</th><th style="width:80px">등급</th><th class="num" style="width:90px">가산(%p)</th><th class="num" style="width:100px">최종 직접(%)</th><th class="num">최종</th>
-    <th class="num">기준 연봉</th><th class="num">새 연봉</th><th class="num">인상액</th><th>의견</th><th style="width:100px">평가자</th></tr></thead><tbody>
+    <th class="num">기준 연봉</th><th class="num">새 연봉</th><th class="num">새 월급</th><th class="num">인상액</th><th>의견</th><th style="width:100px">평가자</th></tr></thead><tbody>
   {% for r in rows %}{% set e = r.employee %}<tr class="{{ 'table-warning' if not r.base_salary or r.below_min }}">
     <td class="small">{{ e.department or '' }}</td><td><a href="/hr/employees/{{ e.id }}?tab=salary">{{ e.name }}</a><input type="hidden" name="employee_id" value="{{ e.id }}"></td><td class="small">{{ e.rank or '' }}</td>
     <td><select class="form-select form-select-sm" name="grade" {{ 'disabled' if c.locked }}><option value=""></option>{% for g, v in c.grades %}<option {{ 'selected' if r.grade == g }}>{{ g }}</option>{% endfor %}</select></td>
@@ -103,10 +103,11 @@
     <td class="num fw-semibold">{{ '%.2f'|format(r.final_rate) }}%</td>
     <td class="num">{{ r.base_salary|won }}{% if r.base_year and r.base_year != year %} <span class="badge text-bg-light border" title="{{ r.base_year }}년 연봉 사용">{{ r.base_year }}</span>{% endif %}{% if not r.base_salary %}<span class="badge text-bg-danger">없음</span>{% endif %}</td>
     <td class="num">{{ r.new_salary|won }}{% if r.below_min %} <span class="badge text-bg-danger">최저임금 미달</span>{% endif %}{% if r.already and c.status != '반영완료' %} <span class="badge text-bg-light border" title="이미 {{ c.apply_year }}년 연봉 {{ r.already|won }}원 등록됨">등록됨</span>{% endif %}</td>
+    <td class="num text-muted">{{ r.new_salary|monthly|won if r.new_salary else '-' }}</td>
     <td class="num">{{ r.raise|won if r.raise is not none else '-' }}</td>
     <td><input class="form-control form-control-sm" name="comment" value="{{ r.comment }}" {{ 'disabled' if c.locked }}></td>
     <td><input class="form-control form-control-sm" name="evaluator" value="{{ r.evaluator }}" placeholder="부서장" {{ 'disabled' if c.locked }}></td></tr>
-  {% else %}<tr><td colspan="12" class="text-muted text-center py-3">평가 대상이 없습니다</td></tr>{% endfor %}
+  {% else %}<tr><td colspan="13" class="text-muted text-center py-3">평가 대상이 없습니다</td></tr>{% endfor %}
   </tbody></table></div>
   {% if not c.locked and rows %}<div class="card-footer text-end"><button class="btn btn-sm btn-primary"><i class="bi bi-save"></i> {{ department or '전체' }} 평가 저장</button></div>{% endif %}
   </form></div>

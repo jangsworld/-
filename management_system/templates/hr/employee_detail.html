@@ -15,7 +15,7 @@
         {% else %}<span class="badge text-bg-light border text-success"><i class="bi bi-check2"></i> 이카운트 반영됨</span>{% endif %}</div>{% endif %}
     </div>
     {% if perms.salary %}<div class="ms-auto text-end">
-      <div class="small text-muted">현재 연봉</div><div class="fs-5 fw-bold">{{ e.annual_salary|won }}원</div>
+      <div class="small text-muted">현재 연봉</div><div class="fs-5 fw-bold">{{ e.annual_salary|won }}원</div>{% if e.annual_salary %}<div class="small text-muted">월 {{ e.annual_salary|monthly|won }}원</div>{% endif %}
     </div>{% endif %}
     {% if perms.write %}<div class="d-flex gap-2 {{ '' if perms.salary else 'ms-auto' }}">
       <a class="btn btn-sm btn-outline-primary" href="/hr/contracts/new?employee_id={{ e.id }}"><i class="bi bi-file-earmark-plus"></i> 계약서 작성</a>
@@ -102,7 +102,7 @@
   <div class="col-lg-5"><div class="card h-100"><div class="card-header">연봉 추이</div><div class="card-body"><div class="chart-box"><canvas id="cSal"></canvas></div></div></div></div>
   <div class="col-lg-7"><div class="card h-100"><div class="card-header d-flex">연봉 이력<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#salModal"><i class="bi bi-plus"></i> 연봉 등록</button></div>
     <table class="table table-sm mb-0"><thead><tr><th>연도</th><th>적용일</th><th class="num">연봉</th><th class="num">월 환산</th><th class="num">인상액</th><th class="num">인상률</th><th>사유</th><th></th></tr></thead><tbody>
-    {% for s in salaries %}<tr><td class="fw-semibold">{{ s.year }}</td><td>{{ s.effective_date or '' }}</td><td class="num">{{ s.annual_salary|won }}</td><td class="num text-muted">{{ (s.annual_salary/12)|won }}</td>
+    {% for s in salaries %}<tr><td class="fw-semibold">{{ s.year }}</td><td>{{ s.effective_date or '' }}</td><td class="num">{{ s.annual_salary|won }}</td><td class="num text-muted">{{ s.annual_salary|monthly|won }}</td>
       <td class="num {{ 'up' if (s.raise_amount or 0) > 0 else 'down' if (s.raise_amount or 0) < 0 }}">{{ s.raise_amount|won if s.raise_amount is not none else '-' }}</td>
       <td class="num {{ 'up' if (s.raise_rate or 0) > 0 else 'down' if (s.raise_rate or 0) < 0 }}">{{ s.raise_rate|pct }}</td><td>{{ s.reason or '' }}</td>
       <td><form method="post" action="/hr/salaries/{{ s.id }}/delete" data-confirm="{{ s.year }}년 연봉을 삭제할까요?"><input type="hidden" name="next" value="{{ back }}?tab=salary"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
