@@ -53,9 +53,24 @@ def required_roles(path: str, method: str) -> set:
     return ADMIN  # 규칙에 없는 경로는 기본 거부(관리자만)
 
 
+def _proxied(request: Request) -> bool:
+    """같은 서버의 프록시(예: Tailscale HTTPS)를 거쳐 들어온 요청인지. 사내 직접 접속은 False."""
+    peer = request.client.host if request.client else ""
+    if peer not in settings.trusted_proxies:
+        return False
+    return settings.behind_proxy or bool(request.headers.get("x-forwarded-for") or request.headers.get("x-forwarded-proto"))
+
+
+def is_https(request: Request) -> bool:
+    """이 요청이 브라우저↔서버 구간에서 HTTPS 인지 (요청마다 판단 → 사내 http 접속은 그대로 동작)."""
+    if settings.ssl_certfile or request.url.scheme == "https":
+        return True
+    return _proxied(request) and request.headers.get("x-forwarded-proto", "").lower() == "https"
+
+
 def client_ip(request: Request) -> str:
     peer = request.client.host if request.client else ""
-    if settings.behind_proxy and peer in settings.trusted_proxies:
+    if _proxied(request):
         xff = request.headers.get("x-forwarded-for", "")
         if xff:
             return xff.split(",")[0].strip()
@@ -82,9 +97,11 @@ def _origin_ok(request: Request) -> bool:
     src = request.headers.get("origin") or request.headers.get("referer")
     if not src:
         return False
-    host = request.headers.get("x-forwarded-host") if settings.behind_proxy else None
-    host = host or request.headers.get("host", "")
-    return urlparse(src).netloc == host
+    own = {request.headers.get("host", "")}
+    if _proxied(request):
+        own.add(request.headers.get("x-forwarded-host", ""))
+    own.discard("")
+    return urlparse(src).netloc in own
 
 
 async def _csrf_token_from(request: Request) -> str:
@@ -109,6 +126,8 @@ async def _csrf_token_from(request: Request) -> str:
 class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request.state.csp_nonce = secrets.token_urlsafe(16)
+        if is_https(request) and request.scope.get("scheme") == "http":
+            request.scope["scheme"] = "https"      # 메일 링크·QR 주소도 https 로
         request.state.user = None
         request.state.session = None
         ip = client_ip(request)
@@ -181,8 +200,11 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         h["Referrer-Policy"] = "same-origin"
         h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
         h["Cross-Origin-Opener-Policy"] = "same-origin"
-        if settings.https:
+        if settings.https or is_https(request):
             h["Strict-Transport-Security"] = "max-age=31536000"
+            # HTTPS 로 들어온 요청의 쿠키는 HTTPS 에서만 보내도록
+            h.raw[:] = [(k, v + b"; Secure") if k == b"set-cookie" and b"secure" not in v.lower() else (k, v)
+                        for k, v in h.raw]
         if not path.startswith("/static/"):
             h["Cache-Control"] = "no-store"  # 개인정보 화면을 브라우저·프록시 캐시에 남기지 않음
             h["Pragma"] = "no-cache"
