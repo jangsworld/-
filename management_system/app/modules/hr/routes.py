@@ -464,8 +464,91 @@ def _payroll_ctx(emp_id: int) -> dict:
 def employee_edit(request: Request, emp_id: int):
     e = _emp_or_404(emp_id)
     e["rrn_masked"] = repo.rrn_masked(emp_id)
-    return _render(request, "hr/employee_form.html", {"e": e, "is_new": False, "quals": repo.get_qualifications(emp_id),
-                                                      **_codes()}, "hr.employees")
+    year = today().year
+    sals = repo.employee_salaries(emp_id)
+    ins = repo.list_insurances(emp_id)
+    return _render(request, "hr/employee_form.html", {
+        "e": e, "is_new": False, "quals": repo.get_qualifications(emp_id), **_codes(),
+        # 한 화면 수정: 올해 연봉·급여·연말정산·상해공제·체크리스트도 같은 저장 버튼으로
+        "sal_year": year, "sal_cur": next((x for x in sals if x["year"] == year), None), "sal_hist": sals[:5],
+        "salary_reasons": get_codes("SALARY_REASON"),
+        "ins_cur": max(ins, key=lambda x: (x.get("end_date") or "", x["id"])) if ins else None, "ins_count": len(ins),
+        "checklists": {"ONBOARD": ("입사", get_codes("ONBOARD")), "OFFBOARD": ("퇴사", get_codes("OFFBOARD"))},
+        "checks": repo.list_checks(emp_id), **_payroll_ctx(emp_id),
+    }, "hr.employees")
+
+
+def _save_more(emp_id: int, raw: dict, by: str):
+    """수정 화면의 추가 구역(연봉·급여·연말정산·상해공제·체크리스트) 저장. 형식 오류는 ValueError."""
+    from app.modules.hr import ecount
+    num = lambda v: str(v or "").replace(",", "").strip()
+    # 연봉 (그 해 한 줄)
+    amt = num(raw.get("sal_amount"))
+    if amt:
+        if not amt.isdigit() or int(amt) <= 0:
+            raise ValueError("연봉은 0보다 큰 숫자로 넣어 주세요")
+        y = num(raw.get("sal_year"))
+        if not (y.isdigit() and 2000 <= int(y) <= 2100):
+            raise ValueError("연봉 적용연도를 확인해 주세요")
+        cur = next((x for x in repo.employee_salaries(emp_id) if x["year"] == int(y)), None)
+        eff = raw.get("sal_date") or None
+        if eff and not to_date(eff):
+            raise ValueError("연봉 적용일 형식이 맞지 않습니다")
+        if not cur or int(cur["annual_salary"]) != int(amt) or (eff and eff != cur.get("effective_date")) \
+                or (raw.get("sal_reason") or cur.get("reason")) != cur.get("reason"):
+            repo.upsert_salary(emp_id, int(y), int(amt), eff, raw.get("sal_reason") or "정기인상",
+                               (raw.get("sal_note") or (cur or {}).get("note") or ""))
+            audit("hr", "연봉 저장", f"emp#{emp_id}", f"{y}년 (인사기록 수정)")
+    # 급여·연말정산
+    if "insured_monthly" in raw:
+        def iv(k, lo, hi):
+            v = num(raw.get(k))
+            if not v:
+                return None
+            if not v.isdigit() or not lo <= int(v) <= hi:
+                raise ValueError("급여·연말정산 숫자 칸에는 0 이상의 숫자만 적어 주세요")
+            return int(v)
+        data = {"householder": raw.get("householder") if raw.get("householder") in ("Y", "N") else None,
+                "dependents": iv("dependents", 0, 30), "children_8_20": iv("children_8_20", 0, 20),
+                "insured_monthly": iv("insured_monthly", 0, 10**9), "note": (raw.get("pay_note") or "").strip()[:500],
+                "pay_items": {}}
+        for name in ecount.pay_items():
+            v = iv(f"pay_{name}", 0, 10**9)
+            if v:
+                data["pay_items"][name] = v
+        if data["children_8_20"] is not None and data["dependents"] is not None and data["children_8_20"] > data["dependents"]:
+            raise ValueError("8~20세 자녀 수가 부양가족 수보다 많습니다")
+        old = ecount.get_payroll(emp_id)
+        keys = ("householder", "dependents", "children_8_20", "insured_monthly", "note", "pay_items")
+        if old.get("saved") or any(data[k] for k in keys):
+            if not old.get("saved") or any((old.get(k) or None) != (data[k] or None) for k in keys):
+                ecount.save_payroll(emp_id, data)
+    # 상해공제 (가장 최근 기록 수정 또는 새로 등록)
+    prod = (raw.get("ins_product") or "").strip()
+    if prod:
+        d = {k: (raw.get("ins_" + k) or "").strip() for k in ("insurer", "joined_on", "start_date", "end_date", "policy_no", "premium", "note")}
+        for k in ("joined_on", "start_date", "end_date"):
+            if d[k] and not to_date(d[k]):
+                raise ValueError("상해공제 날짜 형식이 맞지 않습니다")
+        if d["start_date"] and d["end_date"] and d["end_date"] < d["start_date"]:
+            raise ValueError("상해공제 보장 종료일이 시작일보다 빠릅니다")
+        d["premium"] = re.sub(r"[^\d]", "", d["premium"])
+        d.update(product=prod, employee_id=emp_id)
+        ins_id = int(raw["ins_id"]) if str(raw.get("ins_id") or "").isdigit() else None
+        if ins_id and not repo.query_one("SELECT 1 x FROM employee_insurances WHERE id=? AND employee_id=?", (ins_id, emp_id)):
+            raise ValueError("상해공제 기록을 찾을 수 없습니다")
+        old = repo.query_one("SELECT * FROM employee_insurances WHERE id=?", (ins_id,)) if ins_id else None
+        cols = ("product", "insurer", "joined_on", "start_date", "end_date", "policy_no", "premium", "note")
+        if not old or any(str(old.get(c) or "") != str(d.get(c) or "") for c in cols):
+            repo.save_insurance(d, ins_id)
+    # 체크리스트
+    if raw.get("checks_shown"):
+        have = repo.list_checks(emp_id)
+        for kind in ("ONBOARD", "OFFBOARD"):
+            for i, item in enumerate(get_codes(kind)):
+                want = bool(raw.get(f"chk_{kind}_{i}"))
+                if want != ((kind, item) in have) and (kind == "ONBOARD" or raw.get(f"chk_{kind}_shown")):
+                    repo.set_check(emp_id, kind, item, want, by)
 
 
 @router.post("/employees/{emp_id}/edit")
@@ -473,15 +556,18 @@ async def employee_update(request: Request, emp_id: int):
     _emp_or_404(emp_id)
     raw = dict(await request.form())
     appt_date = raw.pop("appt_date", None) or None
+    back_tab = raw.pop("back_tab", "") or "info"
     try:
-        form, rrn, quals = _employee_form(raw)
-        repo.update_employee(emp_id, form, appt_date)
-        _save_extras(emp_id, rrn, quals)
+        with batch():                     # 한 번 저장: 하나라도 틀리면 아무것도 바뀌지 않음
+            form, rrn, quals = _employee_form(raw)
+            repo.update_employee(emp_id, form, appt_date)
+            _save_extras(emp_id, rrn, quals)
+            _save_more(emp_id, raw, request.state.user["display_name"])
     except ValueError as ex:
         return _redirect(f"/hr/employees/{emp_id}/edit", str(ex))
     except Exception as ex:
         return _redirect(f"/hr/employees/{emp_id}/edit", f"저장 실패: {ex}")
-    return _redirect(f"/hr/employees/{emp_id}", "저장되었습니다")
+    return _redirect(f"/hr/employees/{emp_id}?tab={back_tab}", "저장되었습니다")
 
 
 @router.get("/employees/{emp_id}/file")

@@ -85,11 +85,69 @@
     </div>
   {% endcall %}
 
+  {% if not is_new %}
+  {% call sec('s-salary', 3, '연봉', '올해 연봉을 넣거나 고치면 연봉현황에 같이 반영됩니다. 지난 해 연봉은 연봉 탭의 이력에서 봅니다.', 'bi-graph-up-arrow') %}
+    <div class="row g-3">
+      <div class="col-md-2"><label class="form-label small">적용연도</label>
+        <input class="form-control form-control-sm" type="number" name="sal_year" value="{{ sal_year }}" min="2000" max="2100"></div>
+      <div class="col-md-3"><label class="form-label small">연봉(원)</label>
+        <input class="form-control form-control-sm" type="number" step="1" name="sal_amount" value="{{ sal_cur.annual_salary if sal_cur else '' }}" data-money="salHint2" placeholder="숫자만 (예: 74614164)">
+        <div class="help fw-semibold text-dark" id="salHint2"></div></div>
+      <div class="col-md-2"><label class="form-label small">적용일</label>
+        <input class="form-control form-control-sm" type="date" name="sal_date" value="{{ sal_cur.effective_date if sal_cur else '' }}"></div>
+      <div class="col-md-2"><label class="form-label small">사유</label>
+        <select class="form-select form-select-sm" name="sal_reason">{% for r in salary_reasons %}<option {{ 'selected' if sal_cur and sal_cur.reason == r }}>{{ r }}</option>{% endfor %}</select></div>
+      <div class="col-md-3"><label class="form-label small">비고</label><input class="form-control form-control-sm" name="sal_note" value="{{ sal_cur.note if sal_cur and sal_cur.note else '' }}"></div>
+      {% if sal_hist %}<div class="col-12 small text-muted"><i class="bi bi-clock-history"></i> 최근 이력:
+        {% for x in sal_hist %}{{ x.year }}년 {{ x.annual_salary|won }}원{% if x.raise_rate is not none %} ({{ x.raise_rate|pct }}){% endif %}{{ ' · ' if not loop.last }}{% endfor %}</div>{% endif %}
+    </div>
+  {% endcall %}
+
+  {% if payroll is defined %}
+  {% call sec('s-payroll', 4, '급여·연말정산', '이카운트 사원등록 「급여지급사항·기타설정」에 들어갈 값입니다.', 'bi-receipt', optional=True) %}
+    <div class="row g-3">
+      <div class="col-lg-6"><div class="field-box"><div class="field-box-title">급여항목별 월 금액 (원)</div>
+        <div class="row g-2">
+        {% for name in pay_item_names %}{% set cur = payroll.pay_items.get(name) if payroll.saved else contract_pay.get(name) %}
+          <div class="col-6"><label class="form-label small">{{ name }}</label><input class="form-control form-control-sm text-end pay-item" name="pay_{{ name }}" inputmode="numeric" value="{{ cur or '' }}"></div>
+        {% endfor %}
+          <div class="col-12 small">합계 <b id="paySum2">-</b>원 {% if not payroll.saved and contract_pay %}<span class="help">· 최신 근로계약서 금액을 미리 채웠습니다</span>{% endif %}</div>
+        </div></div></div>
+      <div class="col-lg-6"><div class="row g-2">
+        <div class="col-7"><label class="form-label small">보수월액 (원)</label>
+          <input class="form-control form-control-sm text-end" name="insured_monthly" inputmode="numeric" value="{{ payroll.insured_monthly or '' }}">
+          {% if insured_suggest %}<div class="help">참고: 기준연봉 ÷ 12 = {{ insured_suggest|won }}원</div>{% endif %}</div>
+        <div class="col-5"><label class="form-label small">세대주</label>
+          <select class="form-select form-select-sm" name="householder"><option value="">-</option>
+            <option value="Y" {{ 'selected' if payroll.householder == 'Y' }}>세대주</option><option value="N" {{ 'selected' if payroll.householder == 'N' }}>세대원</option></select></div>
+        <div class="col-6"><label class="form-label small">부양가족 수 (본인 제외)</label><input class="form-control form-control-sm" name="dependents" type="number" min="0" max="30" value="{{ payroll.dependents if payroll.dependents is not none else '' }}"></div>
+        <div class="col-6"><label class="form-label small">8~20세 자녀 수</label><input class="form-control form-control-sm" name="children_8_20" type="number" min="0" max="20" value="{{ payroll.children_8_20 if payroll.children_8_20 is not none else '' }}"></div>
+        <div class="col-12"><label class="form-label small">메모</label><input class="form-control form-control-sm" name="pay_note" value="{{ payroll.note }}"></div>
+      </div></div>
+    </div>
+  {% endcall %}
+  {% endif %}
+
+  {% call sec('s-ins', 5, '상해공제', ('가장 최근 가입 기록을 고칩니다. 지난 기록·새 기록 추가는 상해공제 탭에서 합니다. (기록 ' ~ ins_count ~ '건)') if ins_cur else '가입했으면 공제명을 넣어 주세요. 비워 두면 저장하지 않습니다.', 'bi-shield-plus', optional=True) %}
+    <input type="hidden" name="ins_id" value="{{ ins_cur.id if ins_cur else '' }}">
+    <div class="row g-3">
+      <div class="col-md-4"><label class="form-label small">공제명</label><input class="form-control form-control-sm" name="ins_product" value="{{ ins_cur.product if ins_cur else '' }}" placeholder="예: 근로자 상해공제"></div>
+      <div class="col-md-4"><label class="form-label small">보험사·공제사</label><input class="form-control form-control-sm" name="ins_insurer" value="{{ ins_cur.insurer if ins_cur and ins_cur.insurer else '' }}"></div>
+      <div class="col-md-4"><label class="form-label small">증권·가입번호</label><input class="form-control form-control-sm" name="ins_policy_no" value="{{ ins_cur.policy_no if ins_cur and ins_cur.policy_no else '' }}"></div>
+      <div class="col-md-3"><label class="form-label small">가입일</label><input class="form-control form-control-sm" type="date" name="ins_joined_on" value="{{ ins_cur.joined_on if ins_cur and ins_cur.joined_on else '' }}"></div>
+      <div class="col-md-3"><label class="form-label small">보장 시작</label><input class="form-control form-control-sm" type="date" name="ins_start_date" value="{{ ins_cur.start_date if ins_cur and ins_cur.start_date else '' }}"></div>
+      <div class="col-md-3"><label class="form-label small">보장 종료(만기)</label><input class="form-control form-control-sm" type="date" name="ins_end_date" value="{{ ins_cur.end_date if ins_cur and ins_cur.end_date else '' }}"></div>
+      <div class="col-md-3"><label class="form-label small">공제료(원)</label><input class="form-control form-control-sm" name="ins_premium" inputmode="numeric" value="{{ ins_cur.premium if ins_cur and ins_cur.premium else '' }}"></div>
+      <div class="col-12"><label class="form-label small">비고</label><input class="form-control form-control-sm" name="ins_note" value="{{ ins_cur.note if ins_cur and ins_cur.note else '' }}"></div>
+    </div>
+  {% endcall %}
+  {% endif %}
+
   {% if is_new %}
   {% call sec('s-pay', 3, '연봉·근로계약', '입사 연봉을 넣으면 연봉현황에 함께 등록됩니다.', 'bi-cash-coin') %}
     <div class="row g-3">
       <div class="col-md-3"><label class="form-label small">입사 연봉(원)</label>
-        <input class="form-control form-control-sm" type="number" name="initial_salary" value="{{ e.initial_salary or '' }}" data-money="salHint" data-monthly="salMonthly" step="1000" placeholder="숫자만 (예: 42000000)">
+        <input class="form-control form-control-sm" type="number" name="initial_salary" value="{{ e.initial_salary or '' }}" data-money="salHint" data-monthly="salMonthly" step="1" placeholder="숫자만 (예: 42000000)">
         <div class="help fw-semibold text-dark" id="salHint"></div></div>
       <div class="col-md-3"><label class="form-label small">월 급여 <span class="badge text-bg-light border fw-normal">자동</span></label>
         <input class="form-control form-control-sm" id="salMonthly" readonly tabindex="-1" placeholder="연봉 ÷ 12"></div>
@@ -104,7 +162,7 @@
   {% endcall %}
   {% endif %}
 
-  {% call sec('s-bank', 4 if is_new else 3, '급여계좌·비고', '', 'bi-bank', optional=True) %}
+  {% call sec('s-bank', 4 if is_new else 6, '급여계좌·비고', '', 'bi-bank', optional=True) %}
     <div class="row g-3">
       {{ inp('bank_name', '은행', ph='예: 국민') }}
       {{ inp('bank_account', '계좌번호', ph='숫자만 입력') }}
@@ -113,7 +171,7 @@
     </div>
   {% endcall %}
 
-  {% call sec('s-edu', 5 if is_new else 4, '최종학력', '', 'bi-mortarboard', optional=True) %}
+  {% call sec('s-edu', 5 if is_new else 7, '최종학력', '', 'bi-mortarboard', optional=True) %}
     <div class="row g-3">
       {{ sel('edu_level', '학력', edu_levels, col='col-md-2') }}
       {{ inp('edu_school', '학교명', col='col-md-4') }}
@@ -122,7 +180,7 @@
     </div>
   {% endcall %}
 
-  {% call sec('s-qual', 6 if is_new else 5, '보유자격', '해당하는 자격만 채우세요. 빈 상자는 저장되지 않습니다.', 'bi-patch-check', optional=True) %}
+  {% call sec('s-qual', 6 if is_new else 8, '보유자격', '해당하는 자격만 채우세요. 빈 상자는 저장되지 않습니다.', 'bi-patch-check', optional=True) %}
     <div class="row g-3">
       {% for kind in qualification_kinds %}{% set q = quals.get(kind, {}) %}{% set i = loop.index0 %}
       <div class="col-lg-4"><div class="field-box">
@@ -142,7 +200,24 @@
     <p class="help mt-3 mb-0"><i class="bi bi-shield-lock"></i> 주민등록번호는 급여·4대보험 신고 등 법령상 필요한 업무에만 쓰이며 암호화 저장됩니다. 화면·문서에는 생년월일만 표시되고, 원문 확인은 인사담당 이상이 버튼을 누를 때만 가능하며 접속기록에 남습니다.</p>
   {% endcall %}
 
+  {% if not is_new %}
+  {% call sec('s-check', 9, '입·퇴사 체크리스트', '처리한 항목에 체크하세요.', 'bi-list-check', optional=True) %}
+    <input type="hidden" name="checks_shown" value="1">
+    <div class="row g-3">
+    {% for kind, (label, items) in checklists.items() %}{% if kind == 'ONBOARD' or e.resign_date %}
+      <div class="col-lg-6"><div class="field-box"><div class="field-box-title">{{ label }} 처리</div>
+        <input type="hidden" name="chk_{{ kind }}_shown" value="1">
+        {% for item in items %}{% set c = checks.get((kind, item)) %}
+        <label class="d-flex align-items-center gap-2 small py-1"><input type="checkbox" class="form-check-input m-0" name="chk_{{ kind }}_{{ loop.index0 }}" value="1" {{ 'checked' if c }}>
+          {{ item }}{% if c %}<span class="ms-auto text-muted">{{ c.done_date }} · {{ c.done_by or '' }}</span>{% endif %}</label>
+        {% else %}<div class="small text-muted">항목이 없습니다 (구분값 설정에서 추가)</div>{% endfor %}
+      </div></div>
+    {% endif %}{% endfor %}
+    </div>
+  {% endcall %}
+  {% endif %}
   <div class="form-actions">
+    <input type="hidden" name="back_tab" value="{{ request.query_params.get('back', '') }}">
     {% if draft %}
     <a class="btn btn-sm btn-outline-secondary" href="/hr/employees" title="아무것도 바꾸지 않고 목록으로 돌아갑니다. 초안은 그대로 남습니다">닫기 (초안 유지)</a>
     {% else %}
@@ -180,6 +255,9 @@ if (rrnBtn) rrnBtn.addEventListener('click', async () => {
   } catch (e) { alert('조회 실패: ' + e.message); }
 });
 {% endif %}
+const paySum = () => { const el = document.getElementById('paySum2'); if (!el) return;
+  let t = 0; document.querySelectorAll('.pay-item').forEach(i => t += Number(String(i.value).replace(/[^0-9]/g, '')) || 0); el.textContent = fmt.won(t); };
+document.addEventListener('input', (e) => { if (e.target.classList.contains('pay-item')) paySum(); }); paySum();
 const initialSalary = document.querySelector('[data-monthly]');
 if (initialSalary) initialSalary.dispatchEvent(new Event('input', { bubbles: true }));
 </script>

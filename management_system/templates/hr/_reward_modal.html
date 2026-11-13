@@ -14,7 +14,7 @@
     <div class="col-md-3 d-none" id="rwEtcBox"><label class="form-label small">종류 직접입력</label><input class="form-control form-control-sm" name="category_etc" id="rwEtc" placeholder="예: 시말서"></div>
     <div class="col-md-3"><label class="form-label small">일자</label><input type="date" class="form-control form-control-sm" name="action_date" value="{{ today().isoformat() }}" required></div>
     <div class="col-md-8"><label class="form-label small">사유</label><input class="form-control form-control-sm" name="reason" required></div>
-    <div class="col-md-4 rw-reward"><label class="form-label small">포상금(원)</label><input type="number" class="form-control form-control-sm" name="amount" step="10000"></div>
+    <div class="col-md-4 rw-reward"><label class="form-label small">포상금(원)</label><input type="number" class="form-control form-control-sm" name="amount" step="1"></div>
     <div class="col-md-4 rw-disc d-none"><label class="form-label small">징계기간 시작</label><input type="date" class="form-control form-control-sm" name="period_start"></div>
     <div class="col-md-4 rw-disc d-none"><label class="form-label small">징계기간 종료</label><input type="date" class="form-control form-control-sm" name="period_end"></div>
     <div class="col-md-4 rw-disc d-none"><label class="form-label small">말소예정일</label><input type="date" class="form-control form-control-sm" name="expunge_date">

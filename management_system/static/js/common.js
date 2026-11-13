@@ -70,7 +70,7 @@ if (location.search.includes('msg=')) {
 const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || '';
 document.addEventListener('submit', (e) => {
   const f = e.target;
-  if (f.method?.toLowerCase() === 'post' && CSRF && !f.querySelector('input[name="csrf_token"]')) {
+  if ((f.getAttribute('method') || '').toLowerCase() === 'post' && CSRF && !f.querySelector('input[name="csrf_token"]')) {
     const i = document.createElement('input'); i.type = 'hidden'; i.name = 'csrf_token'; i.value = CSRF; f.prepend(i);
   }
 }, true);
@@ -275,4 +275,21 @@ document.addEventListener('click', (e) => {
   document.addEventListener('reset', (e) => setTimeout(() => markAll(e.target), 0));
 
   markAll(); addStars();
+})();
+
+// ── 숫자 칸: 화살표 단위(step) 때문에 정상 금액이 '틀림'으로 막히지 않게 + 마우스 휠로 값이 바뀌지 않게 ──
+(() => {
+  const fixStep = (root = document) => root.querySelectorAll('input[type=number]').forEach((el) => {
+    if (el.dataset.stepStrict !== undefined) return;
+    const st = el.getAttribute('step');
+    if (st && st !== 'any' && (Number(st) % 1 !== 0)) el.setAttribute('step', 'any');   // 소수: 6.35% 같은 값 허용
+    else if (!st || Number(st) > 1) el.setAttribute('step', '1');                       // 금액·개수: 1원 단위까지 허용
+  });
+  fixStep();
+  document.addEventListener('shown.bs.modal', (e) => fixStep(e.target));
+  new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType === 1) fixStep(n); })))
+    .observe(document.body, { childList: true, subtree: true });
+  document.addEventListener('wheel', (e) => {
+    if (e.target.matches && e.target.matches('input[type=number]') && document.activeElement === e.target) e.target.blur();
+  }, { passive: true });
 })();

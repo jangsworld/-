@@ -126,6 +126,25 @@ async def http_error(request: Request, exc: StarletteHTTPException):
                                       status_code=exc.status_code)
 
 
+@app.exception_handler(ValueError)
+@app.exception_handler(KeyError)
+async def input_error(request: Request, exc: Exception):
+    """숫자·날짜 칸이 비었거나 형식이 다를 때: 서버 오류(500) 대신 원래 화면으로 돌아가 안내."""
+    log.warning("입력값 오류 %s %s: %s", request.method, request.url.path, type(exc).__name__)
+    msg = "입력값을 확인해 주세요 (빈 칸이거나 숫자·날짜 형식이 맞지 않습니다)"
+    if request.url.path.startswith("/hr/api/") or "/api/" in request.url.path:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"ok": False, "message": msg}, status_code=400)
+    ref = request.headers.get("referer") or ""
+    from urllib.parse import urlparse
+    u = urlparse(ref)
+    if request.method == "POST" and u.netloc == request.headers.get("host", "") and u.path.startswith("/"):
+        back = u.path + ("?" + u.query if u.query else "")
+        back = back.split("msg=")[0].rstrip("&?")
+        return RedirectResponse(back + ("&" if "?" in back else "?") + "msg=" + quote(msg), status_code=303)
+    return templates.TemplateResponse(request, "error.html", {"status": 400, "message": msg}, status_code=400)
+
+
 @app.exception_handler(Exception)
 async def server_error(request: Request, exc: Exception):
     log.exception("Unhandled error on %s", request.url.path)  # 상세 내용은 서버 로그에만 기록

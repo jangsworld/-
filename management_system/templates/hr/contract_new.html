@@ -31,7 +31,7 @@
         <div class="col-md-2"><label class="form-label small">종업</label><input type="time" class="form-control form-control-sm" name="end_time" value="{{ p.end_time }}"></div>
         <div class="col-md-2"><label class="form-label small">휴게시간</label><input class="form-control form-control-sm" name="break_time" value="{{ p.break_time }}"></div>
         <div class="col-md-2"><label class="form-label small">주 소정시간</label><input type="number" step="0.5" class="form-control form-control-sm" name="weekly_hours" value="{{ p.weekly_hours }}"></div>
-        <div class="col-md-4"><label class="form-label small">연봉(원)</label><input type="number" step="10000" class="form-control form-control-sm" name="annual_salary" value="{{ p.annual_salary }}" data-money="salHint"><div class="help" id="salHint"></div></div>
+        <div class="col-md-4"><label class="form-label small">연봉(원)</label><input type="number" step="1" class="form-control form-control-sm" name="annual_salary" value="{{ p.annual_salary }}" data-money="salHint"><div class="help" id="salHint"></div></div>
         <div class="col-md-4"><label class="form-label small">시급(원) <span class="help">단시간</span></label><input type="number" class="form-control form-control-sm" name="hourly_wage" value="{{ p.hourly_wage }}"></div>
         <div class="col-md-4"><label class="form-label small">일급(원) <span class="help">일용직</span></label><input type="number" class="form-control form-control-sm" name="daily_wage" value="{{ p.daily_wage }}"></div>
         <div class="col-md-3"><label class="form-label small">기본급(월)</label><input type="number" class="form-control form-control-sm" name="pay_base"></div>

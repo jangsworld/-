@@ -20,7 +20,7 @@
     {% if perms.write %}<div class="d-flex gap-2 {{ '' if perms.salary else 'ms-auto' }}">
       <a class="btn btn-sm btn-outline-primary" href="/hr/contracts/new?employee_id={{ e.id }}"><i class="bi bi-file-earmark-plus"></i> 계약서 작성</a>
       <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#certModal"><i class="bi bi-patch-check"></i> 증명서</button>
-      <a class="btn btn-sm btn-primary" href="/hr/employees/{{ e.id }}/edit"><i class="bi bi-pencil"></i> 수정</a>
+      {% set secmap = {'info': 's-basic', 'salary': 's-salary', 'payroll': 's-payroll', 'insurance': 's-ins', 'check': 's-check', 'history': 's-job'} %}<a class="btn btn-sm btn-primary" href="/hr/employees/{{ e.id }}/edit?back={{ tab }}#{{ secmap.get(tab, 's-basic') }}" title="기본정보·인사·연봉·급여·상해공제·자격·체크리스트를 한 화면에서 고치고 한 번에 저장"><i class="bi bi-pencil-square"></i> 한 화면에서 수정</a>
     </div>{% endif %}
   </div>
   <div class="card-footer bg-white p-0">
@@ -239,7 +239,7 @@
   <div class="modal-body row g-2">
     <div class="col-4"><label class="form-label small">적용연도</label><input type="number" class="form-control form-control-sm" name="year" value="{{ today().year }}" required></div>
     <div class="col-8"><label class="form-label small">적용일</label><input type="date" class="form-control form-control-sm" name="effective_date"></div>
-    <div class="col-8"><label class="form-label small">연봉(원)</label><input type="number" step="10000" class="form-control form-control-sm" name="annual_salary" data-money="salHint2" required>
+    <div class="col-8"><label class="form-label small">연봉(원)</label><input type="number" step="1" class="form-control form-control-sm" name="annual_salary" data-money="salHint2" required>
       <div class="help" id="salHint2">{% if salaries %}직전 연봉 {{ salaries[0].annual_salary|won }}원{% endif %}</div></div>
     <div class="col-4"><label class="form-label small">사유</label><select class="form-select form-select-sm" name="reason">{% for x in salary_reasons %}<option>{{ x }}</option>{% endfor %}</select></div>
     <div class="col-12"><label class="form-label small">비고</label><input class="form-control form-control-sm" name="note"></div>
