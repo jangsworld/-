@@ -41,7 +41,7 @@ def mail(monkeypatch):
     set_setting("mail_host", "smtp.example.test")
     set_setting("mail_user", "bms@example.test")
     set_setting("mfa_method", "email")
-    monkeypatch.setattr(mailer, "send", lambda to, subject, body, attachments=None: sent.append((to, subject, body)))
+    monkeypatch.setattr(mailer, "send", lambda to, subject, body, attachments=None, **kw: sent.append((to, subject, body, kw)))
     yield sent
     for k, v in before.items():
         set_setting(k, v or "")
@@ -62,6 +62,50 @@ def _login(c, name):
 
 def _code(sent):
     return re.search(r"\b(\d{6})\b", sent[-1][2]).group(1)
+
+
+def test_code_mail_format(mail):
+    """제목에 번호(폰 알림에서 바로 보임) + [BMS시스템], 본문은 CPO 형식(HTML + 일반 텍스트)."""
+    uid = _user("mf_fmt", "mf.fmt@example.test")
+    with TestClient(app) as c:
+        _login(c, "mf_fmt")
+    execute("DELETE FROM sessions WHERE user_id=?", (uid,))     # 끝내지 않은 인증 세션 정리(다른 시험에 영향 없게)
+    to, subject, body, kw = mail[-1]
+    code = _code(mail)
+    assert subject == f"[BMS시스템] 로그인 인증번호 {code}"
+    assert kw["from_name"] == "BMS시스템" and kw["plain"] is True
+    assert body.startswith("mf_fmt님, 로그인 인증번호는") and "5분 안에 입력해 주세요" in body and "접속 위치:" in body
+    h = kw["html"]
+    assert f">{code}</p>" in h and "font-weight:700" in h and "letter-spacing" in h
+    assert "#c62828" in h and "본인이 로그인한 것이 아니면 비밀번호를 바꾸고 관리자에게 알려 주세요." in h
+    assert h.index("로그인 인증번호는") < h.index(code) < h.index("입니다.") < h.index("본인이") < h.index("접속 위치")
+
+
+def test_mailer_html_plain(monkeypatch):
+    import smtplib
+    sent = {}
+
+    class FakeSMTP:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def login(self, *a): pass
+        def send_message(self, msg): sent["msg"] = msg
+
+    keys = ("mail_host", "mail_user", "mail_port", "mail_cc", "mail_signature", "mail_from_name")
+    before = {k: get_settings().get(k) for k in keys}
+    for k, v in zip(keys, ("smtp.example.test", "bms@example.test", "465", "cc@example.test", "서명", "회사")):
+        set_setting(k, v)
+    try:
+        monkeypatch.setattr(smtplib, "SMTP_SSL", FakeSMTP)
+        mailer.send("u@example.test", "제목", "본문", html="<p>본문</p>", from_name="BMS시스템", plain=True)
+        m = sent["msg"]
+        assert "BMS" in m["From"] and m["Cc"] is None
+        assert m.get_body(("plain",)).get_content().strip() == "본문"
+        assert "<p>본문</p>" in m.get_body(("html",)).get_content()
+    finally:
+        for k, v in before.items():
+            set_setting(k, v or "")
 
 
 def test_email_code_login(mail):

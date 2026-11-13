@@ -11,6 +11,7 @@ import hmac
 import re
 import secrets
 from datetime import datetime, timedelta
+from html import escape as html_escape
 
 from app import mailer
 from app.db import audit, execute, get_settings, query, query_one
@@ -60,6 +61,25 @@ class MfaError(Exception):
     pass
 
 
+MAIL_TAG = "BMS시스템"      # 제목 머리말·보내는 사람 이름 (FUND시스템·CPO 와 같은 형식)
+
+
+def code_mail(name: str, code: str, ip: str, at: str) -> tuple[str, str]:
+    """인증번호 메일 본문 (일반 텍스트, HTML). 제목에 번호가 있어 폰 알림에서 바로 보임."""
+    warn = "본인이 로그인한 것이 아니면 비밀번호를 바꾸고 관리자에게 알려 주세요."
+    text = (f"{name}님, 로그인 인증번호는\n\n    {code}\n\n입니다. {CODE_MINUTES}분 안에 입력해 주세요.\n\n"
+            f"{warn}\n접속 위치: {ip} · {at}")
+    e = html_escape
+    page = (
+        '<div style="font-family:\'Malgun Gothic\',\'Apple SD Gothic Neo\',sans-serif;font-size:15px;color:#222;line-height:1.6">'
+        f'<p style="margin:0 0 8px">{e(name)}님, 로그인 인증번호는</p>'
+        f'<p style="margin:12px 0;font-size:32px;font-weight:700;letter-spacing:8px;color:#111">{e(code)}</p>'
+        f'<p style="margin:0 0 16px">입니다. {CODE_MINUTES}분 안에 입력해 주세요.</p>'
+        f'<p style="margin:0 0 8px;color:#c62828">{e(warn)}</p>'
+        f'<p style="margin:0;font-size:12px;color:#888">접속 위치: {e(ip)} · {e(at)}</p></div>')
+    return text, page
+
+
 def send_code(user: dict, sess: dict, token: str, ip: str) -> str:
     if not email_ready(user):
         raise MfaError("메일 인증을 쓸 수 없습니다. 인증 앱으로 확인하거나 관리자에게 메일 주소 등록을 요청하세요.")
@@ -70,10 +90,9 @@ def send_code(user: dict, sess: dict, token: str, ip: str) -> str:
     if sends and sends[-1] > _ts(now - timedelta(seconds=30)):
         raise MfaError("방금 보냈습니다. 메일함(스팸함 포함)을 확인하고, 30초 뒤에 다시 받을 수 있습니다.")
     code = f"{secrets.randbelow(1_000_000):06d}"
-    body = (f"{user['display_name']}님, 경영관리시스템 로그인 인증번호는\n\n    {code}\n\n입니다. {CODE_MINUTES}분 안에 입력해 주세요.\n\n"
-            f"본인이 로그인한 것이 아니면 바로 비밀번호를 바꾸고 관리자에게 알려 주세요.\n접속 위치: {ip} · {_ts(now)}")
+    body, html = code_mail(user["display_name"], code, ip, _ts(now))
     try:
-        mailer.send(user["email"], f"[경영관리시스템] 로그인 인증번호 {code}", body)
+        mailer.send(user["email"], f"[{MAIL_TAG}] 로그인 인증번호 {code}", body, html=html, from_name=MAIL_TAG, plain=True)
     except mailer.MailError as ex:
         audit("auth", "로그인 인증 메일 실패", user["username"], str(ex)[:60])
         raise MfaError("인증 메일을 보내지 못했습니다. 인증 앱으로 확인하거나 관리자에게 알려 주세요.") from ex

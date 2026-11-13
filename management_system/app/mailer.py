@@ -47,19 +47,23 @@ def _password() -> str:
     return ""
 
 
-def send(to: str, subject: str, body: str, attachments: list[tuple[str, bytes]] | None = None):
+def send(to: str, subject: str, body: str, attachments: list[tuple[str, bytes]] | None = None,
+         html: str | None = None, from_name: str | None = None, plain: bool = False):
+    """plain=True: 참조·서명 없이 받는 사람에게만 (로그인 인증번호 등)."""
     c = config()
     if not c["host"] or not c["from"]:
         raise MailError("메일 서버가 설정되지 않았습니다")
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = formataddr((c["name"], c["from"]))
+    msg["From"] = formataddr((from_name if from_name is not None else c["name"], c["from"]))
     msg["To"] = to
-    if c["cc"]:
+    if c["cc"] and not plain:
         msg["Cc"] = c["cc"]
-    if c["reply_to"]:
+    if c["reply_to"] and not plain:
         msg["Reply-To"] = c["reply_to"]
-    msg.set_content(f"{body}\n\n{c['signature']}" if c["signature"] else body)
+    msg.set_content(f"{body}\n\n{c['signature']}" if c["signature"] and not plain else body)
+    if html:
+        msg.add_alternative(html, subtype="html")
     for name, data in attachments or []:
         msg.add_attachment(data, maintype="application", subtype="pdf", filename=name)
     ctx = ssl.create_default_context()
