@@ -100,8 +100,8 @@
 </div>
 
 {# ③ 직원별 조정 #}
-<h6 id="eval">③ 직원별 조정 <span class="help">고른 고정인상률({{ ('%g'|format(c.base_rate) ~ '%') if c.base_rate is not none else '미정' }})이 모두에게 먼저 들어갑니다. 바꿀 사람만 「최종 %」를 넣으세요. 등급 가산은 쓰고 싶을 때만.</span></h6>
-<div class="row g-3 mb-3">
+<h6 id="eval">③ 직원별 조정 <span class="help">고른 고정인상률({{ ('%g'|format(c.base_rate) ~ '%') if c.base_rate is not none else '미정' }})이 모두에게 먼저 들어갑니다. 바꿀 사람만 「최종 %」를 넣으세요. 등급 가산은 쓰고 싶을 때만. <b>바꾸면 바로 저장되고 아래 숫자에 바로 반영됩니다.</b></span></h6>
+<div class="row g-3 mb-3" id="evalKpi">
   {{ m.kpi('대상', res.count ~ '명', '직접 조정 ' ~ (res.rows|selectattr('override', 'ne', none)|list|length) ~ '명') }}
   {{ m.kpi('평균 최종 인상률', p2(res.avg_rate), '고정 ' ~ (('%g'|format(c.base_rate) ~ '%') if c.base_rate is not none else '미정')) }}
   {{ m.kpi('총액 인상률', p2(res.increase_rate), m.eok(res.total_base) ~ ' → ' ~ m.eok(res.total_new)) }}
@@ -111,29 +111,31 @@
 </div>
 <div class="card mb-4"><div class="card-header d-flex flex-wrap align-items-center gap-2">
   <form method="get" class="d-flex gap-1"><input type="hidden" name="year" value="{{ year }}"><select class="form-select form-select-sm" name="department" data-autosubmit><option value="">전체 부서</option>{% for d in depts %}<option {{ 'selected' if department == d }}>{{ d }}</option>{% endfor %}</select></form>
-  <span class="help ms-auto">최종 % 칸을 비우면 고정인상률(+등급 가산)을 따릅니다</span></div>
-  <form method="post" action="/mgmt/review/{{ year }}/items"><input type="hidden" name="department" value="{{ department }}">
+  <span class="help ms-auto">최종 % 칸을 비우면 고정인상률(+등급 가산)을 따릅니다</span>
+  {% if not c.locked %}<span class="small text-success" id="liveState"><i class="bi bi-cloud-check"></i> 바꾸면 바로 저장</span>{% endif %}</div>
+  <form method="post" action="/mgmt/review/{{ year }}/items" id="evalForm" data-live-url="/mgmt/api/review/{{ year }}/item"><input type="hidden" name="department" value="{{ department }}">
   <div class="table-responsive" style="max-height:640px"><table class="table table-sm table-hover mb-0 align-middle"><thead class="sticky-top"><tr>
     <th>부서</th><th>성명</th><th>직급</th><th class="num">기준 연봉</th><th style="width:80px">등급(선택)</th><th class="num" style="width:110px">최종 직접(%)</th><th class="num">최종</th>
     <th class="num">새 연봉</th><th class="num">새 월급</th><th class="num">인상액</th><th>메모</th></tr></thead><tbody>
-  {% for r in rows %}{% set e = r.employee %}<tr class="{{ 'table-warning' if not r.base_salary }}">
+  {% for r in rows %}{% set e = r.employee %}<tr class="{{ 'table-warning' if not r.base_salary }}" data-emp="{{ e.id }}">
     <td class="small">{{ e.department or '' }}</td><td><a href="/hr/employees/{{ e.id }}?tab=salary">{{ e.name }}</a><input type="hidden" name="employee_id" value="{{ e.id }}">
       <input type="hidden" name="add_rate" value="{{ r.add_rate if r.add_custom else '' }}"><input type="hidden" name="evaluator" value="{{ r.evaluator }}"></td><td class="small">{{ e.rank or '' }}</td>
     <td class="num">{{ r.base_salary|won }}{% if r.base_year and r.base_year != year %} <span class="badge text-bg-light border" title="{{ r.base_year }}년 연봉 사용">{{ r.base_year }}</span>{% endif %}{% if not r.base_salary %}<span class="badge text-bg-danger">없음</span>{% endif %}</td>
     <td><select class="form-select form-select-sm" name="grade" {{ 'disabled' if c.locked }} title="{% for g, v in c.grades %}{{ g }} {{ '%+g'|format(v) }}%p{{ ' · ' if not loop.last }}{% endfor %}"><option value=""></option>{% for g, v in c.grades %}<option value="{{ g }}" {{ 'selected' if r.grade == g }}>{{ g }} ({{ '%+g'|format(v) }})</option>{% endfor %}</select></td>
     <td><input class="form-control form-control-sm text-end" name="final_rate" value="{{ r.override if r.override is not none else '' }}" placeholder="{{ '%g'|format((c.base_rate or 0) + r.add_rate) }}" {{ 'disabled' if c.locked }}></td>
-    <td class="num fw-semibold {{ 'up' if c.base_rate is not none and r.final_rate > c.base_rate + 0.005 else ('down' if c.base_rate is not none and r.final_rate < c.base_rate - 0.005) }}">{{ '%.2f'|format(r.final_rate) }}%</td>
-    <td class="num">{{ r.new_salary|won }}{% if r.min_fix %} <span class="badge text-bg-warning" title="{{ c.apply_year }}년 최저임금 기준선까지 자동으로 올림">최저임금 맞춤</span>{% endif %}{% if r.already and c.status != '반영완료' %} <span class="badge text-bg-light border" title="이미 {{ c.apply_year }}년 연봉 {{ r.already|won }}원 등록됨">등록됨</span>{% endif %}</td>
-    <td class="num text-muted">{{ r.new_salary|monthly|won if r.new_salary else '-' }}</td>
-    <td class="num">{{ r.raise|won if r.raise is not none else '-' }}</td>
+    <td data-live class="num fw-semibold {{ 'up' if c.base_rate is not none and r.final_rate > c.base_rate + 0.005 else ('down' if c.base_rate is not none and r.final_rate < c.base_rate - 0.005) }}">{{ '%.2f'|format(r.final_rate) }}%</td>
+    <td data-live class="num">{{ r.new_salary|won }}{% if r.min_fix %} <span class="badge text-bg-warning" title="{{ c.apply_year }}년 최저임금 기준선까지 자동으로 올림">최저임금 맞춤</span>{% endif %}{% if r.already and c.status != '반영완료' %} <span class="badge text-bg-light border" title="이미 {{ c.apply_year }}년 연봉 {{ r.already|won }}원 등록됨">등록됨</span>{% endif %}</td>
+    <td data-live class="num text-muted">{{ r.new_salary|monthly|won if r.new_salary else '-' }}</td>
+    <td data-live class="num">{{ r.raise|won if r.raise is not none else '-' }}</td>
     <td><input class="form-control form-control-sm" name="comment" value="{{ r.comment }}" {{ 'disabled' if c.locked }}></td></tr>
   {% else %}<tr><td colspan="11" class="text-muted text-center py-3">대상이 없습니다</td></tr>{% endfor %}
   </tbody></table></div>
-  {% if not c.locked and rows %}<div class="card-footer text-end"><button class="btn btn-sm btn-primary"><i class="bi bi-save"></i> {{ department or '전체' }} 조정 저장</button></div>{% endif %}
+  <noscript>{% if not c.locked and rows %}<div class="card-footer text-end"><button class="btn btn-sm btn-primary">저장</button></div>{% endif %}</noscript>
   </form></div>
 
 {# ④ 확정 전 비교 #}
 <h6 id="compare">④ 확정 전 비교 <span class="help">고른 고정인상률을 모두에게 똑같이 줬을 때와, 직원별 조정 후 실제 결과</span></h6>
+<div id="cmpBox">
 {% if cmp %}
 <div class="row g-3 mb-3">
   <div class="col-lg-5"><div class="card h-100"><div class="table-responsive"><table class="table table-sm mb-0">
@@ -158,31 +160,87 @@
   {% else %}<span class="small text-success"><i class="bi bi-check2-circle"></i> {{ c.apply_year }}년 연봉에 반영했습니다.</span>{% endif %}
 </div></div>
 {% else %}<div class="card mb-3"><div class="card-body text-muted small">② 에서 고정인상률을 정하면 비교가 나옵니다.</div></div>{% endif %}
+<script type="application/json" id="cmpData">{{ cmp|tojson }}</script>
+</div>
 {% endif %}
 {% endblock %}
 {% block scripts %}
 {% if c %}
 <script nonce="{{ csp_nonce }}" src="/static/vendor/chartjs/chart.umd.min.js"></script>
 <script nonce="{{ csp_nonce }}">
-const S = {{ sc.rows|tojson }}, CMP = {{ cmp|tojson }};
+const S = {{ sc.rows|tojson }};
 if (S.length) new Chart(document.getElementById('cScen'), {
   data: { labels: S.map(r => r.rate + '% ' + r.names.join('·')), datasets: [
     { type: 'bar', label: '회사 실부담(만원)', data: S.map(r => r.real_cost / 1e4), backgroundColor: S.map(r => r.chosen ? '#2d5a8c' : '#9db4d0'), yAxisID: 'y' },
     { type: 'line', label: '영업이익 대비(%)', data: S.map(r => r.op_share), borderColor: '#c0392b', backgroundColor: '#c0392b', yAxisID: 'y1', spanGaps: true } ] },
   options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
     scales: { x: { grid: { display: false } }, y: { title: { display: true, text: '만원' } }, y1: { position: 'right', grid: { display: false }, title: { display: true, text: '%' } } } } });
-if (CMP) {
-  new Chart(document.getElementById('cCmpDept'), { type: 'bar',
+
+// ④ 비교 그래프 (직원별 조정을 바꿀 때마다 다시 그림)
+function drawCmp(root) {
+  const node = (root || document).querySelector('#cmpData');
+  let CMP = null;
+  try { CMP = node ? JSON.parse(node.textContent) : null; } catch (_) {}
+  const a = document.getElementById('cCmpDept'), b = document.getElementById('cCmpDist');
+  if (!CMP || !a || !b) return;
+  [a, b].forEach(cv => { const old = Chart.getChart(cv); if (old) old.destroy(); });
+  new Chart(a, { type: 'bar',
     data: { labels: CMP.dept.map(d => d.department), datasets: [
       { label: '고정 일괄', data: CMP.dept.map(d => d.fixed), backgroundColor: '#9db4d0', borderRadius: 3 },
       { label: '조정 후', data: CMP.dept.map(d => d.final), backgroundColor: '#2d5a8c', borderRadius: 3 } ] },
-    options: { maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: c => ` ${c.dataset.label} ${c.raw == null ? '-' : c.raw.toFixed(2) + '%'}` } } },
+    options: { maintainAspectRatio: false, animation: false, plugins: { tooltip: { callbacks: { label: c => ` ${c.dataset.label} ${c.raw == null ? '-' : c.raw.toFixed(2) + '%'}` } } },
       scales: { x: { grid: { display: false } }, y: { title: { display: true, text: '%' } } } } });
-  new Chart(document.getElementById('cCmpDist'), { type: 'bar',
+  new Chart(b, { type: 'bar',
     data: { labels: CMP.dist.map(d => d.label), datasets: [{ data: CMP.dist.map(d => d.count), backgroundColor: '#3fa7a3', borderRadius: 4 }] },
-    options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${c.raw}명` } } },
+    options: { maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${c.raw}명` } } },
       scales: { x: { grid: { display: false } }, y: { ticks: { stepSize: 1 } } } } });
 }
+drawCmp();
+
+// ③ 직원별 조정: 바꾸는 즉시 저장하고, 화면을 옮기지 않은 채 계산 결과만 바꿔 끼움
+(() => {
+  const form = document.getElementById('evalForm');
+  if (!form) return;
+  const state = document.getElementById('liveState');
+  const say = (html, cls) => { if (state) { state.className = 'small ' + cls; state.innerHTML = html; } };
+  form.addEventListener('submit', (e) => { e.preventDefault(); if (document.activeElement) document.activeElement.blur(); });
+  let seq = 0;
+  async function refresh(mine) {
+    const html = await (await fetch(location.href, { headers: { 'X-Requested-With': 'fetch' } })).text();
+    if (mine !== seq) return;                       // 더 새로운 변경이 있으면 그쪽 결과만 씀
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('#evalForm tr[data-emp]').forEach((nr) => {
+      const or = form.querySelector(`tr[data-emp="${nr.dataset.emp}"]`);
+      if (!or) return;
+      const a = or.querySelectorAll('[data-live]'), b = nr.querySelectorAll('[data-live]');
+      a.forEach((td, i) => { if (b[i]) { td.innerHTML = b[i].innerHTML; td.className = b[i].className; } });
+      const pa = or.querySelector('[name=final_rate]'), pb = nr.querySelector('[name=final_rate]');
+      if (pa && pb) pa.placeholder = pb.placeholder;
+    });
+    ['evalKpi', 'cmpBox'].forEach((id) => { const a = document.getElementById(id), b = doc.getElementById(id); if (a && b) a.innerHTML = b.innerHTML; });
+    drawCmp();
+  }
+  form.addEventListener('change', async (e) => {
+    const tr = e.target.closest('tr[data-emp]');
+    if (!tr || !e.target.name) return;
+    const body = { employee_id: tr.dataset.emp };
+    tr.querySelectorAll('[name]').forEach((el) => { if (el.name !== 'employee_id') body[el.name] = el.value; });
+    const mine = ++seq;
+    say('<i class="bi bi-arrow-repeat"></i> 저장 중…', 'text-muted');
+    try {
+      await postJSON(form.dataset.liveUrl, body);
+      e.target.classList.remove('is-invalid');
+      await refresh(mine);
+      if (mine === seq) say('<i class="bi bi-cloud-check"></i> 저장됨 ' + new Date().toTimeString().slice(0, 8), 'text-success');
+    } catch (ex) {
+      let m = '저장하지 못했습니다';
+      try { m = JSON.parse(ex.message).message || m; } catch (_) {}
+      e.target.classList.add('is-invalid');
+      say('<i class="bi bi-exclamation-triangle"></i> ' + m, 'text-danger');
+      toast(m);
+    }
+  });
+})();
 </script>
 {% endif %}
 {% endblock %}

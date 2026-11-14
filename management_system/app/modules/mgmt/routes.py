@@ -6,7 +6,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 
 from app.common import templates, today
 from app.db import audit, get_settings, set_setting
@@ -253,6 +253,26 @@ async def review_items(request: Request, year: int):
     except review.ReviewError as ex:
         return _go(f"/mgmt/review?year={year}&department={quote(dept)}#eval", str(ex))
     return _go(f"/mgmt/review?year={year}&department={quote(dept)}#eval", f"{n}명 평가를 저장했습니다")
+
+
+@router.post("/api/review/{year}/item")
+async def review_item_live(request: Request, year: int):
+    """직원 한 명의 조정을 바로 저장 (화면은 그대로 두고 계산 결과만 다시 받아 감)."""
+    c = _cycle(year)
+    try:
+        data = await request.json()
+    except ValueError:
+        return JSONResponse({"ok": False, "message": "요청 형식이 올바르지 않습니다"}, status_code=400)
+    if not isinstance(data, dict) or not str(data.get("employee_id", "")).isdigit():
+        return JSONResponse({"ok": False, "message": "직원을 확인할 수 없습니다"}, status_code=400)
+    row = {k: str(data.get(k) or "")[:300] for k in ("employee_id", "grade", "add_rate", "final_rate", "comment", "evaluator")}
+    try:
+        n = review.save_items(c, [row], _who(request))
+    except review.ReviewError as ex:
+        return JSONResponse({"ok": False, "message": str(ex)}, status_code=400)
+    if not n:
+        return JSONResponse({"ok": False, "message": "이번 조정 대상이 아닌 직원입니다"}, status_code=400)
+    return {"ok": True}
 
 
 @router.post("/review/{year}/status")

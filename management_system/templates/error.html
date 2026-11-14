@@ -5,6 +5,7 @@
 <div class="text-center py-4">
   <div class="display-6 text-muted">{{ status }}</div>
   <p class="mt-2">{{ message }}</p>
-  <a href="/" class="btn btn-sm btn-outline-primary">처음으로</a>
+  {% if current_user %}<a href="/" class="btn btn-sm btn-outline-primary">처음으로</a>
+  {% else %}<a href="/login" class="btn btn-sm btn-outline-primary">로그인 화면으로</a>{% endif %}
 </div>
 {% endblock %}

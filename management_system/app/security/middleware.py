@@ -145,13 +145,17 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         token = request.cookies.get(auth.COOKIE_NAME)
         sess, user = auth.load_session(token)
         request.state.user, request.state.session = user, sess
+        # 로그인 절차(2단계 인증·비밀번호 변경)를 모두 마친 사용자만 메뉴·이름을 화면에 보임
+        request.state.full_auth = bool(user) and self._gate(user, sess, "/") is None
         actor = current_actor.set((user["id"], user["username"], ip) if user else (None, "anonymous", ip))
         try:
             # CSRF: 상태 변경 요청은 Origin 확인 + (로그인 후) 세션 토큰 확인
             if request.method not in SAFE_METHODS:
                 if not _origin_ok(request):
                     return _deny(request, 403, "요청 출처를 확인할 수 없습니다 (CSRF 차단)")
-                if sess and not hmac.compare_digest(await _csrf_token_from(request), sess["csrf_token"]):
+                # 로그인 제출(/login)은 출처 확인만: 옛 화면(뒤로가기)에서 다시 로그인해도 막히지 않게.
+                # 로그인하면 이전 세션은 바로 폐기되므로 세션 토큰 확인이 필요 없음.
+                if sess and path != "/login" and                         not hmac.compare_digest(await _csrf_token_from(request), sess["csrf_token"]):
                     return _deny(request, 403, "보안 토큰이 만료되었습니다. 페이지를 새로고침하세요")
 
             if not is_public:

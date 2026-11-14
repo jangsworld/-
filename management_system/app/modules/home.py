@@ -1,4 +1,4 @@
-"""총괄 대시보드: 인사·교육·법정의무·총무에서 '지금 챙겨야 할 것'만 모아 봅니다.
+"""총괄 대시보드: 인사·총무 대시보드의 핵심 카드·그래프를 한 화면에, 아래에 '지금 챙길 일'을 모아 봅니다.
 
 권한에 맞는 구역만 계산합니다 (조회자에게 연봉·인사 알림·법정의무를 계산하거나 보내지 않음).
 """
@@ -57,12 +57,9 @@ def _duties() -> list[dict]:
     return _sorted(out)
 
 
-def _ga() -> list[dict]:
-    from app.modules.ga import repo, services
-    alert_days = int(get_settings().get("alert_days") or 60)
-    assets = services.enrich_assets(repo.list_assets())
-    contracts = [services.contract_view(c) for c in repo.list_contracts(status="유효")]
-    return _sorted(services.build_alerts(assets, repo.list_vehicles(), contracts, alert_days))
+def _ga() -> dict:
+    from app.modules.ga import services
+    return services.dashboard()
 
 
 def build(role: str) -> dict:
@@ -80,6 +77,22 @@ def build(role: str) -> dict:
             return {"labor_total": ov["total"]["total"], "labor_ratio": ov["labor_ratio"],
                     "contract_missing": k.get("contract_missing", 0)}
         kpi.update(_safe(labor_kpi, {}))
+    # 인사 현황 카드·그래프 (연봉 정보는 관리자·인사담당에게만)
+    hc = hd.get("charts", {})
+    hr_view = {"kpi": {x: k.get(x, 0) for x in ("hires_year", "resign_year", "turnover", "avg_tenure", "female_ratio")},
+               "charts": {"dept": hc.get("dept", []), "type": hc.get("type", []), "flow": hc.get("flow", [])}}
+    if staff:
+        hr_view["kpi"].update({x: k.get(x, 0) for x in ("avg_salary", "payroll", "contract_missing")})
+        hr_view["charts"]["salary_trend"] = hc.get("salary_trend", [])
+    # 총무 현황 카드·그래프 (경조금은 총무 담당자 이상만)
+    gd = _safe(_ga, {"kpi": {}, "charts": {}, "alerts": [], "vstat": {}})
+    gk = dict(gd.get("kpi", {}))
+    if not ga_staff:
+        gk.pop("events_year", None)
+        gk.pop("events_count", None)
+    gc = gd.get("charts", {})
+    ga_view = {"kpi": gk, "year": (gd.get("vstat") or {}).get("year", today().year),
+               "charts": {"asset_cat": gc.get("asset_cat", []), "fixed": gc.get("fixed", []), "vehicle": gc.get("vehicle", [])}}
     sections = []
     if staff:
         sections.append({"key": "hr", "title": "인사", "icon": "bi-people", "alerts": _safe(lambda: _hr(kpi), []),
@@ -87,7 +100,7 @@ def build(role: str) -> dict:
     if ga_staff:
         sections.append({"key": "duty", "title": "교육 · 법정의무", "icon": "bi-calendar2-check", "alerts": _safe(_duties, []),
                          "link": "/mgmt/compliance"})
-    ga_items = _safe(_ga, [])
+    ga_items = _sorted(list(gd.get("alerts", [])))
     if not ga_staff:                        # 경조사(가족 사망·질병 등)는 총무 담당자 이상만
         ga_items = [a for a in ga_items if a["category"] != "경조금"]
     sections.append({"key": "ga", "title": "총무", "icon": "bi-building", "alerts": ga_items, "link": "/ga/dashboard"})
@@ -95,4 +108,4 @@ def build(role: str) -> dict:
         s["counts"] = {lv: sum(1 for a in s["alerts"] if a["level"] == lv) for lv in LEVELS}
     kpi["urgent"] = sum(s["counts"]["danger"] for s in sections)
     kpi["soon"] = sum(s["counts"]["warning"] for s in sections)
-    return {"kpi": kpi, "sections": sections, "today": today()}
+    return {"kpi": kpi, "sections": sections, "today": today(), "hr": hr_view, "ga": ga_view}

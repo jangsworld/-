@@ -1,4 +1,4 @@
-"""2단계 인증: 메일 인증번호(기본), 인증 앱 대체, 이 PC 30일 기억, 관리자 설정."""
+"""2단계 인증: 메일 인증번호(기본), 인증 앱 대체, 매 로그인 확인(기억 없음), 뒤로가기 보안, 로그인 확인 화면."""
 import re
 import sqlite3
 import os
@@ -125,7 +125,7 @@ def test_email_code_login(mail):
         r = c.post("/login/2fa", data={"code": bad, "csrf_token": tok, "next": "/hr/dashboard"}, headers=O)
         assert r.status_code == 401 and "남은 시도 4번" in r.text
         r = c.post("/login/2fa", data={"code": code, "csrf_token": tok, "next": "/hr/dashboard"}, headers=O, follow_redirects=False)
-        assert r.status_code == 303 and r.headers["location"] == "/hr/dashboard"
+        assert r.status_code == 303 and r.headers["location"] == "/login/welcome?next=/hr/dashboard"
         assert c.get("/hr/dashboard").status_code == 200
         assert "bms_dev" not in r.cookies                                      # 기억 안 함
         # 같은 번호 다시 못 씀
@@ -148,35 +148,95 @@ def test_resend_limits_and_five_wrong(mail):
         assert auth.query_one("SELECT locked_until FROM users WHERE username='mf_lim'")["locked_until"]
 
 
-def test_remember_pc_skips_then_password_change_clears(mail):
+def test_no_remember_every_login_asks(mail):
+    """'이 PC 30일 기억' 폐지: 체크 칸이 없고, remember 값을 보내도·예전 쿠키가 있어도 매번 인증."""
     uid = _user("mf_rem", "mf.rem@example.test")
+    execute("INSERT INTO mfa_devices(user_id, token_hash, expires, ip, user_agent, created_at) VALUES (?,?,?,?,?,?)",
+            (uid, mfa._h("old-device-key"), "2099-01-01 00:00:00", "127.0.0.1", "t", "2026-01-01 00:00:00"))
     with TestClient(app) as c:
         _login(c, "mf_rem")
+        page = c.get("/login/2fa").text
+        assert "묻지 않기" not in page and 'name="remember"' not in page
         tok = _csrf(c, "/login/2fa")
         r = c.post("/login/2fa", data={"code": _code(mail), "remember": "1", "csrf_token": tok, "next": "/hr/dashboard"},
                    headers=O, follow_redirects=False)
-        assert r.status_code == 303 and "bms_dev" in r.headers.get("set-cookie", "")
-        raw = r.cookies.get("bms_dev") or re.search(r"bms_dev=([^;]+)", r.headers["set-cookie"]).group(1)
-        assert _raw("SELECT COUNT(*) FROM mfa_devices WHERE user_id=?", (uid,))[0][0] == 1
-        assert all(raw not in x[0] for x in _raw("SELECT token_hash FROM mfa_devices"))
+        assert r.status_code == 303 and "bms_dev" not in r.headers.get("set-cookie", "")
+        assert "기억한 PC" not in c.get("/account").text
         c.post("/logout", data={"csrf_token": _csrf(c, "/account")}, headers=O)
         n = len(mail)
-        c.cookies.set("bms_dev", raw)
+        c.cookies.set("bms_dev", "old-device-key")                              # 예전에 받은 기억 쿠키
         r = _login(c, "mf_rem")
-        assert r.headers["location"] == "/hr/dashboard" and len(mail) == n        # 메일 없이 바로 들어감
-        assert "기억한 PC" in c.get("/account").text
-        # 비밀번호 바꾸면 기억한 PC 해제
-        tok = _csrf(c, "/account/password")
-        c.post("/account/password", data={"current": PW, "new": "Mf-Changed-Pass-2!", "new2": "Mf-Changed-Pass-2!", "csrf_token": tok}, headers=O)
-        assert _raw("SELECT COUNT(*) FROM mfa_devices WHERE user_id=?", (uid,))[0][0] == 0
-        auth.set_password(uid, PW, must_change=False)
+        assert r.headers["location"].startswith("/login/2fa") and len(mail) == n + 1   # 다시 인증번호
+        assert c.get("/hr/dashboard", follow_redirects=False).headers["location"] == "/login/2fa"
+    auth.purge_expired()
+    assert _raw("SELECT COUNT(*) FROM mfa_devices")[0][0] == 0                  # 남은 기억 기록은 정리 때 모두 삭제
+
+
+def test_back_button_before_2fa(mail):
+    """2단계 인증 화면에서 뒤로가기: 메뉴·이름이 보이면 안 되고, 로그인 화면으로 돌아가 처음부터."""
+    _user("mf_back", "mf.back@example.test")
+    with TestClient(app) as c:
+        old = _csrf(c, "/login")                                               # 로그인 전 화면의 토큰(빈 값)
+        _login(c, "mf_back")
+        # 1) 인증 전 상태에서 오류 화면이 나와도 메뉴·이름·로그아웃 메뉴가 없어야 함
+        r = c.post("/hr/employees/new", data={"csrf_token": "wrong"}, headers=O)
+        assert r.status_code == 403
+        for leak in ("mf_back", "인사관리", "임직원 현황", "내 계정", "sidebar"):
+            assert leak not in r.text, leak
+        assert "로그인 화면으로" in r.text
+        r = c.get("/admin/users", follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/login/2fa"
+        # 2) 뒤로가기 = /login 다시 열기 → 아이디·비밀번호 화면, 하다 만 로그인은 폐기
+        r = c.get("/login")
+        assert r.status_code == 200 and 'name="password"' in r.text and "mf_back" not in r.text
+        assert _raw("SELECT COUNT(*) FROM sessions s JOIN users u ON u.id=s.user_id WHERE u.username='mf_back'")[0][0] == 0
+        assert c.get("/login/2fa", follow_redirects=False).headers["location"] == "/login"       # 앞으로가기도 로그인으로
+        assert c.get("/login/welcome", follow_redirects=False).headers["location"] == "/login"
+        assert c.get("/hr/dashboard", follow_redirects=False).headers["location"].startswith("/login")
+        # 3) 옛 화면에 남은 토큰으로 다시 로그인해도 오류 없이 진행
+        r = c.post("/login", data={"username": "mf_back", "password": PW, "next": "/hr/dashboard", "csrf_token": old},
+                   headers=O, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].startswith("/login/2fa")
+        # 4) 인증 전 세션이 살아 있는 채로 로그인 제출을 또 해도(옛 화면) 403이 아니라 새 로그인
+        r = c.post("/login", data={"username": "mf_back", "password": PW, "next": "/hr/dashboard", "csrf_token": old},
+                   headers=O, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].startswith("/login/2fa")
+        assert _raw("SELECT COUNT(*) FROM sessions s JOIN users u ON u.id=s.user_id WHERE u.username='mf_back'")[0][0] == 1
+        # 5) 출처가 다른 로그인 제출은 여전히 차단
+        r = c.post("/login", data={"username": "mf_back", "password": PW}, headers={"origin": "http://evil.test"})
+        assert r.status_code == 403
+
+
+def test_welcome_page_shows_login_record(mail):
+    """2단계 인증 뒤 로그인 확인 화면: 이번·지난 로그인과 그 사이 실패 횟수."""
+    _user("mf_wel", "mf.wel@example.test")
+    with TestClient(app) as c:
+        def full_login():
+            _login(c, "mf_wel")
+            tok = _csrf(c, "/login/2fa")
+            return c.post("/login/2fa", data={"code": _code(mail), "csrf_token": tok, "next": "/hr/dashboard"}, headers=O,
+                          follow_redirects=False)
+        r = full_login()
+        assert r.headers["location"] == "/login/welcome?next=/hr/dashboard"
+        page = c.get(r.headers["location"]).text
+        assert "반갑습니다" in page and "첫 로그인입니다" in page and 'href="/hr/dashboard"' in page
+        assert "sidebar" not in page                                           # 메뉴 없는 확인 화면
+        c.post("/logout", data={"csrf_token": _csrf(c, "/account")}, headers=O)
+        c.post("/login", data={"username": "mf_wel", "password": "wrong-pw"}, headers=O)       # 실패 1번
+        execute("UPDATE sessions SET mail_sends='' WHERE 1=1")
+        r = full_login()
+        page = c.get(r.headers["location"]).text
+        assert "첫 로그인입니다" not in page and "지난 로그인" in page
+        assert re.search(r"그 사이 실패한 로그인</dt>\s*<dd[^>]*>1번", page) and "비밀번호를 바꿔 주세요" in page
+        # 바깥 주소로 보내는 next 는 무시
+        assert 'href="/"' in c.get("/login/welcome?next=//evil.test/x").text
 
 
 def test_fallbacks_without_mail(mail, monkeypatch):
     # 메일 주소 없음 + 앱 없음 → (테스트 설정은 2단계 필수가 아니므로) 바로 로그인
     _user("mf_none", None)
     with TestClient(app) as c:
-        assert _login(c, "mf_none").headers["location"] == "/hr/dashboard"
+        assert _login(c, "mf_none").headers["location"] == "/login/welcome?next=/hr/dashboard"
     monkeypatch.setattr(auth.settings, "require_2fa", True)
     with TestClient(app) as c:
         assert _login(c, "mf_none").headers["location"] == "/account/2fa"     # 2단계 필수면 앱 등록으로
@@ -192,7 +252,7 @@ def test_fallbacks_without_mail(mail, monkeypatch):
         assert "인증 앱 코드" in c.get("/login/2fa").text
         tok = _csrf(c, "/login/2fa")
         r = c.post("/login/2fa", data={"code": auth.totp_now(secret), "method": "app", "csrf_token": tok}, headers=O, follow_redirects=False)
-        assert r.status_code == 303 and r.headers["location"] == "/"
+        assert r.status_code == 303 and r.headers["location"] == "/login/welcome?next=/"
     # 메일 방식이어도 앱으로 바꿔 확인 가능
     set_setting("mfa_method", "email")
     execute("UPDATE users SET totp_last_step=NULL WHERE id=?", (uid,))

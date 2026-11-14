@@ -220,7 +220,7 @@ def purge_expired():
     cutoff = _ts(_now() - timedelta(hours=settings.session_max_hours))
     execute("DELETE FROM sessions WHERE created_at < ?", (cutoff,))
     execute("DELETE FROM login_attempts WHERE created_at < ?", (_ts(_now() - timedelta(days=400)),))
-    execute("DELETE FROM mfa_devices WHERE expires < ?", (_ts(_now()),))
+    execute("DELETE FROM mfa_devices")       # '이 PC 30일 기억' 폐지: 남은 기록을 모두 지움
 
 
 # ════════════════════════════════════════════════════════════════════════

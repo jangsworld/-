@@ -419,3 +419,49 @@ def test_review_min_wage_lift_and_compare(env):
     assert "물가보전안" in page and "2.5%" in page and "④ 확정 전 비교" in page and "최저임금 맞춤" in page
     assert adm.post("/mgmt/review/2026/setup", data={"cpi": "abc"}, follow_redirects=False).headers["location"].find("msg=") > 0
     assert review.get(2026)["inputs"]["cpi"] == "2.5"       # 잘못된 값은 저장 안 됨
+
+
+def test_home_dashboard_cards_and_charts(env):
+    """총괄 대시보드에 인사·총무 카드와 그래프가 함께 나오고, 조회자에게는 연봉 자료를 보내지 않음."""
+    adm = env["admin"].get("/").text
+    for word in ("인사 현황", "총무 현황", "챙길 일", 'id="cDept"', 'id="cFlow"', 'id="cPay"', 'id="cAsset"', 'id="cVeh"',
+                 "평균 근속", "보유 자산", "월 고정비", "평균 연봉"):
+        assert word in adm, word
+    assert adm.index("인사 현황") < adm.index("총무 현황") < adm.index("챙길 일")      # 할 일은 맨 아래
+    vw = env["viewer"].get("/").text
+    assert 'id="cDept"' in vw and 'id="cAsset"' in vw
+    for word in ('id="cPay"', '"salary_trend":', "평균 연봉", "계약서 미체결", "올해 경조금"):
+        assert word not in vw, word
+
+
+def test_review_live_item_save(env):
+    """직원별 조정: 한 명씩 바로 저장하는 경로 (권한·검증·확정 후 잠금)."""
+    adm = env["admin"]
+    adm.post("/mgmt/review/create", data={"year": "2026"})
+    adm.post("/mgmt/review/2026/setup", data={"base_rate": "3"})
+    c = review.get(2026)
+    if c["locked"]:
+        adm.post("/mgmt/review/2026/status", data={"status": "평가중"})
+        c = review.get(2026)
+    row = next(x for x in review.compute(c)["rows"] if x["base_salary"] and not x["min_fix"])
+    eid = row["employee"]["id"]
+    grade = c["grades"][0][0]
+    r = adm.post("/mgmt/api/review/2026/item", json={"employee_id": str(eid), "grade": grade, "final_rate": "", "comment": "실시간"})
+    assert r.status_code == 200 and r.json()["ok"]
+    now = next(x for x in review.compute(review.get(2026))["rows"] if x["employee"]["id"] == eid)
+    assert now["grade"] == grade and now["comment"] == "실시간"
+    r = adm.post("/mgmt/api/review/2026/item", json={"employee_id": str(eid), "grade": "", "final_rate": "7.5"})
+    assert r.status_code == 200
+    now = next(x for x in review.compute(review.get(2026))["rows"] if x["employee"]["id"] == eid)
+    assert now["grade"] == "" and abs(now["final_rate"] - 7.5) < 1e-9
+    page = adm.get("/mgmt/review?year=2026").text
+    assert f'data-emp="{eid}"' in page and 'id="cmpData"' in page and "data-live-url" in page
+    # 잘못된 값·없는 직원·권한 없는 사용자
+    assert adm.post("/mgmt/api/review/2026/item", json={"employee_id": str(eid), "final_rate": "abc"}).status_code == 400
+    assert adm.post("/mgmt/api/review/2026/item", json={"employee_id": "99999999", "final_rate": "1"}).status_code == 400
+    assert adm.post("/mgmt/api/review/2026/item", json={"employee_id": "x"}).status_code == 400
+    assert env["viewer"].post("/mgmt/api/review/2026/item", json={"employee_id": str(eid), "final_rate": "50"}).status_code == 403
+    assert env["ga"].post("/mgmt/api/review/2026/item", json={"employee_id": str(eid), "final_rate": "50"}).status_code == 403
+    now = next(x for x in review.compute(review.get(2026))["rows"] if x["employee"]["id"] == eid)
+    assert abs(now["final_rate"] - 7.5) < 1e-9
+    adm.post("/mgmt/api/review/2026/item", json={"employee_id": str(eid), "grade": "", "final_rate": ""})

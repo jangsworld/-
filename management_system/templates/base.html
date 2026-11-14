@@ -8,7 +8,7 @@
   <title>{% block title %}BMS시스템{% endblock %}</title>
   <link rel="stylesheet" href="/static/vendor/bootstrap/bootstrap.min.css">
   <link rel="stylesheet" href="/static/vendor/bootstrap-icons/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ asset_v }}">
   <style>{{ doc_font_css()|safe }}</style>{# 정해진 글꼴 목록에서만 만들어지는 CSS #}
   {% block head %}{% endblock %}
 </head>
@@ -81,8 +81,8 @@
 {% endif %}
 
 <script nonce="{{ csp_nonce }}" src="/static/vendor/bootstrap/bootstrap.bundle.min.js"></script>
-<script nonce="{{ csp_nonce }}" src="/static/js/common.js"></script>
-<script nonce="{{ csp_nonce }}" src="/static/js/tablefilter.js"></script>
+<script nonce="{{ csp_nonce }}" src="/static/js/common.js?v={{ asset_v }}"></script>
+<script nonce="{{ csp_nonce }}" src="/static/js/tablefilter.js?v={{ asset_v }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

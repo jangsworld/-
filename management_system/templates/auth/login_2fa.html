@@ -23,10 +23,7 @@
   <input type="hidden" name="next" value="{{ next }}"><input type="hidden" name="method" value="{{ method }}">
   <input class="form-control form-control-lg text-center mb-2 fw-bold" name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7"
          autocomplete="one-time-code" required autofocus style="letter-spacing:.5em;font-size:1.6rem" placeholder="······" title="6자리 숫자를 넣어 주세요">
-  <label class="d-flex align-items-center gap-2 small mb-0"><input type="checkbox" class="form-check-input m-0" name="remember" value="1">
-    이 PC에서는 {{ days }}일 동안 묻지 않기</label>
-  <div class="help mb-3 ms-4">내 업무용 PC에서만 체크하세요 (공용 PC 제외)</div>
-  <button class="btn btn-primary w-100 py-2">확인</button>
+  <button class="btn btn-primary w-100 py-2 mt-2">확인</button>
 </form>
 <div class="d-flex flex-wrap justify-content-between gap-1 mt-3 small">
   {% if method == 'email' %}

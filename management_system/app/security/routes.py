@@ -48,10 +48,21 @@ def healthz():
 # ── 로그인 ──────────────────────────────────────────────────────────────
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, next: str = "/", ended: str = ""):
-    if request.state.user and request.state.session["mfa_passed"]:
+    user, sess = request.state.user, request.state.session
+    if user and sess["mfa_passed"]:
         return _go(_safe_next(next))
     notice = "접속이 종료되었습니다. 같은 계정이 다른 곳에서 로그인했거나 오래 사용하지 않았습니다" if ended else ""
-    return _r(request, "auth/login.html", {"next": _safe_next(next), "notice": notice})
+    if user:
+        # 2단계 인증을 마치지 않고 돌아온 경우(뒤로가기 등): 하다 만 로그인을 버리고 처음부터 다시
+        auth.destroy_session(request.cookies.get(auth.COOKIE_NAME))
+        audit("auth", "로그인 중단(2단계 인증 전)", user["username"], "")
+        request.state.user = request.state.session = None
+        request.state.full_auth = False
+        notice = ""
+    resp = _r(request, "auth/login.html", {"next": _safe_next(next), "notice": notice})
+    if user:
+        resp.delete_cookie(auth.COOKIE_NAME, path="/")
+    return resp
 
 
 @router.post("/login")
@@ -65,18 +76,17 @@ async def login(request: Request):
     auth.destroy_session(request.cookies.get(auth.COOKIE_NAME))  # 세션 고정 공격 방지
     method = mfa.method_for(user)
     mfa_needed = bool(method) or settings.require_2fa
-    skip = mfa_needed and bool(method) and mfa.remembered(user, request.cookies.get(mfa.DEVICE_COOKIE))
-    passed = (not mfa_needed) or skip
+    passed = not mfa_needed          # 2단계 인증은 로그인할 때마다 (기억한 PC 건너뛰기 없음)
     token = auth.create_session(user, request.state.ip, request.headers.get("user-agent", ""), passed)
     if passed:
         auth.revoke_sessions(user["id"], except_token=token)    # 계정당 한 곳만 접속
     execute("UPDATE users SET last_login_at=datetime('now','localtime'), last_login_ip=? WHERE id=?",
             (request.state.ip, user["id"]))
-    audit("auth", "로그인 성공(기억한 PC, 2단계 생략)" if skip else "로그인(1단계)", user["username"], "")
+    audit("auth", "로그인 성공" if passed else "로그인(1단계)", user["username"], "")
     if passed:
-        return _set_cookie(_go(nxt), token)
+        return _forget_device(request, _set_cookie(_welcome(nxt), token))
     if not method:
-        return _set_cookie(_go("/account/2fa"), token)
+        return _forget_device(request, _set_cookie(_go("/account/2fa"), token))
     msg = ""
     if method == "email":
         sess = {"token_hash": auth._hash_token(token), "mail_sends": ""}
@@ -84,7 +94,36 @@ async def login(request: Request):
             msg = f"{mfa.send_code(user, sess, token, request.state.ip)} 로 인증번호를 보냈습니다"
         except mfa.MfaError as ex:
             msg = str(ex)
-    return _set_cookie(_go("/login/2fa?next=" + quote(nxt), msg), token)
+    return _forget_device(request, _set_cookie(_go("/login/2fa?next=" + quote(nxt), msg), token))
+
+
+def _welcome(nxt: str):
+    return _go("/login/welcome?next=" + quote(nxt))
+
+
+def _forget_device(request, resp):
+    """예전 '이 PC 30일 기억' 쿠키가 남아 있으면 지움 (기능 폐지)."""
+    if request.cookies.get(mfa.OLD_DEVICE_COOKIE):
+        resp.delete_cookie(mfa.OLD_DEVICE_COOKIE, path="/")
+    return resp
+
+
+@router.get("/login/welcome", response_class=HTMLResponse)
+def login_welcome(request: Request, next: str = "/"):
+    """로그인 확인 화면: 이번·지난 로그인 시각과 위치, 그 사이 실패한 시도."""
+    user = request.state.user
+    if not user:
+        return _go("/login")
+    if not getattr(request.state, "full_auth", False):
+        return _go(_safe_next(next))        # 남은 절차(2단계 인증·비밀번호 변경) 화면으로 안내됨
+    rows = query("SELECT created_at, ip FROM audit_logs WHERE module='auth' AND action LIKE '로그인 성공%' AND target=? "
+                 "ORDER BY id DESC LIMIT 2", (user["username"],))
+    now, prev = (rows[0] if rows else None), (rows[1] if len(rows) > 1 else None)
+    fails = 0
+    if now:
+        fails = query("SELECT COUNT(*) c FROM login_attempts WHERE username=? AND success=0 AND created_at<=? AND created_at>=?",
+                      (user["username"], now["created_at"], prev["created_at"] if prev else ""))[0]["c"]
+    return _r(request, "auth/welcome.html", {"next": _safe_next(next), "u": user, "now": now, "prev": prev, "fails": fails})
 
 
 def _mfa_ctx(user, nxt, use="", sess=None):
@@ -92,7 +131,7 @@ def _mfa_ctx(user, nxt, use="", sess=None):
     if use == "app" and user["totp_enabled"]:
         method = "app"
     return {"next": nxt, "method": method, "to": mfa.mask(user.get("email")), "has_app": bool(user["totp_enabled"]),
-            "email_ok": mfa.email_ready(user), "days": mfa.DEVICE_DAYS, "minutes": mfa.CODE_MINUTES,
+            "email_ok": mfa.email_ready(user), "minutes": mfa.CODE_MINUTES,
             "left": mfa.seconds_left(sess) if method == "email" else 0}
 
 
@@ -140,12 +179,7 @@ async def login_2fa(request: Request):
         auth.revoke_sessions(user["id"], except_token=token)    # 계정당 한 곳만 접속
         execute("UPDATE users SET failed_count=0 WHERE id=?", (user["id"],))
         audit("auth", f"로그인 성공(2단계·{mfa.METHODS[use]})", user["username"], "")
-        resp = _go(nxt)
-        if f.get("remember"):
-            raw = mfa.remember(user, request.state.ip, request.headers.get("user-agent", ""))
-            resp.set_cookie(mfa.DEVICE_COOKIE, raw, max_age=mfa.DEVICE_DAYS * 86400, httponly=True,
-                            secure=settings.secure_cookie, samesite="strict", path="/")
-        return resp
+        return _welcome(nxt)
     fails = user["failed_count"] + 1
     execute("UPDATE users SET failed_count=? WHERE id=?", (fails, user["id"]))
     audit("auth", "2단계 인증 실패", user["username"], f"{mfa.METHODS[use]} {fails}회")
@@ -180,17 +214,7 @@ def account(request: Request):
     return _r(request, "auth/account.html", {"u": u, "sessions": sessions, "logins": logins,
                                              "roles": auth.ROLES, "active_menu": "account",
                                              "mfa_method": mfa.method_for(u), "methods": mfa.METHODS,
-                                             "mail_to": mfa.mask(u.get("email")), "devices": mfa.devices(u["id"])})
-
-
-@router.post("/account/devices/clear")
-def account_devices_clear(request: Request):
-    u = request.state.user
-    n = mfa.forget_devices(u["id"])
-    audit("auth", "기억한 PC 모두 해제", u["username"], f"{n}대")
-    resp = _go("/account", f"기억한 PC {n}대를 해제했습니다. 다음 로그인부터 다시 인증합니다")
-    resp.delete_cookie(mfa.DEVICE_COOKIE, path="/")
-    return resp
+                                             "mail_to": mfa.mask(u.get("email"))})
 
 
 @router.post("/account/logout-others")
@@ -226,7 +250,6 @@ async def password_change(request: Request):
         return _r(request, "auth/password.html", {"u": u, "error": err, "forced": bool(u["must_change_pw"]),
                                                   "min_len": settings.password_min_length}, 400)
     auth.set_password(u["id"], new)  # 모든 세션 폐기
-    mfa.forget_devices(u["id"])      # 기억한 PC도 모두 해제
     audit("auth", "비밀번호 변경", u["username"], "")
     import os
     init_file = os.path.join(settings.secrets_dir, "initial_admin_password.txt")
@@ -278,7 +301,6 @@ def users_page(request: Request):
     users = auth.list_users()
     for x in users:
         x["mfa_now"] = mfa.method_for(x)
-        x["devices"] = len(mfa.devices(x["id"]))
     return _r(request, "auth/users.html", {"users": users, "roles": auth.ROLES, "active_menu": "admin.users",
                                            "temp": temp, "temp_user": temp_user, "methods": mfa.METHODS,
                                            "mfa_method": mfa.system_method(), "mail_ok": mailer.configured(),
@@ -337,10 +359,9 @@ def users_reset_pw(request: Request, uid: int):
 def users_reset_2fa(request: Request, uid: int):
     u = auth.get_user(uid)
     auth.reset_totp(uid)
-    mfa.forget_devices(uid)
     auth.revoke_sessions(uid)
     audit("auth", "2단계 인증 초기화", u["username"], "관리자")
-    return _go("/admin/users", f"{u['username']}의 인증 앱·기억한 PC를 초기화했습니다")
+    return _go("/admin/users", f"{u['username']}의 인증 앱 등록을 초기화했습니다")
 
 
 @router.post("/admin/users/{uid}/unlock")
@@ -364,7 +385,6 @@ async def users_update(request: Request, uid: int):
     if email and not mfa.EMAIL_RE.match(email):
         return _go("/admin/users", "메일 주소 형식이 아닙니다")
     if email != (u.get("email") or ""):
-        mfa.forget_devices(uid)           # 인증 메일 주소가 바뀌면 기억한 PC 해제
         audit("auth", "2단계 인증 메일 변경", u["username"], mfa.mask(email))
     execute("UPDATE users SET role=?, is_active=?, display_name=?, email=? WHERE id=?",
             (role, active, str(f.get("display_name") or u["display_name"]), email or None, uid))

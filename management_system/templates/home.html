@@ -22,6 +22,43 @@
   {% endif %}
 </div>
 
+{% macro mini(label, value, sub, href='') %}
+<div class="col-6 col-md-4 col-xl"><a class="card kpi h-100 text-decoration-none" {% if href %}href="{{ href }}"{% endif %}>
+  <div class="kpi-label">{{ label }}</div><div class="kpi-value fs-5">{{ value }}</div><div class="kpi-sub">{{ sub }}</div></a></div>
+{% endmacro %}
+{% set h = d.hr.kpi %}{% set g = d.ga.kpi %}
+<div class="d-flex align-items-center mb-2"><h6 class="mb-0 fw-semibold"><i class="bi bi-people me-1"></i>인사 현황</h6><a class="ms-auto small" href="/hr/dashboard">인사 대시보드 <i class="bi bi-chevron-right"></i></a></div>
+<div class="row g-3 mb-3">
+  {{ mini('올해 입사 / 퇴사', h.hires_year ~ ' / ' ~ h.resign_year, '연간 이직률 ' ~ '%.1f'|format(h.turnover) ~ '%') }}
+  {{ mini('평균 근속', '%.1f'|format(h.avg_tenure) ~ '년', '여성 비율 ' ~ '%.0f'|format(h.female_ratio) ~ '%') }}
+  {% if perms.salary %}
+  {{ mini('평균 연봉', h.avg_salary|man_won ~ '원', '연봉 합계 ' ~ (h.payroll / 100000000)|round(2) ~ '억', '/hr/salaries') }}
+  {{ mini('계약서 미체결', h.contract_missing ~ '명', '근로기준법 제17조', '/hr/contracts') }}
+  {% endif %}
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-md-6 col-xl-3"><div class="card h-100"><div class="card-header">부서별 인원</div><div class="card-body"><div class="chart-box"><canvas id="cDept"></canvas></div></div></div></div>
+  <div class="col-md-6 col-xl-3"><div class="card h-100"><div class="card-header">고용형태 구성</div><div class="card-body"><div class="chart-box"><canvas id="cType"></canvas></div></div></div></div>
+  <div class="col-md-6 col-xl-{{ 3 if perms.salary else 6 }}"><div class="card h-100"><div class="card-header">월별 입사·퇴사 (최근 12개월)</div><div class="card-body"><div class="chart-box"><canvas id="cFlow"></canvas></div></div></div></div>
+  {% if perms.salary %}<div class="col-md-6 col-xl-3"><div class="card h-100"><div class="card-header">연도별 인건비·평균인상률</div><div class="card-body"><div class="chart-box"><canvas id="cPay"></canvas></div></div></div></div>{% endif %}
+</div>
+
+<div class="d-flex align-items-center mb-2"><h6 class="mb-0 fw-semibold"><i class="bi bi-building me-1"></i>총무 현황</h6><a class="ms-auto small" href="/ga/dashboard">총무 대시보드 <i class="bi bi-chevron-right"></i></a></div>
+<div class="row g-3 mb-3">
+  {{ mini('보유 자산', g.assets ~ '건', '장부가 ' ~ g.asset_book|man_won ~ '원', '/ga/assets') }}
+  {{ mini('법인차량', g.vehicles ~ '대', '올해 ' ~ g.km_year|won ~ 'km', '/ga/vehicles') }}
+  {{ mini('업무사용비율', ('%.1f'|format(g.biz_ratio) ~ '%') if g.biz_ratio is not none else '-', '운행기록부 기준', '/ga/vehicles') }}
+  {{ mini('월 고정비', g.fixed_monthly|man_won ~ '원', '유효 계약 ' ~ g.contracts ~ '건', '/ga/contracts') }}
+  {{ mini('이번 달 수발 문서', g.docs_month ~ '건', '보증금 ' ~ g.deposits|man_won ~ '원', '/ga/docs') }}
+  {% if perms.ga_events and g.events_year is defined %}{{ mini('올해 경조금', g.events_year|man_won ~ '원', g.events_count ~ '건 지원', '/ga/events') }}{% endif %}
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-md-6 col-xl-3"><div class="card h-100"><div class="card-header">분류별 자산 장부가</div><div class="card-body"><div class="chart-box"><canvas id="cAsset"></canvas></div></div></div></div>
+  <div class="col-md-6 col-xl-3"><div class="card h-100"><div class="card-header">계약 구분별 월 고정비</div><div class="card-body"><div class="chart-box"><canvas id="cFixed"></canvas></div></div></div></div>
+  <div class="col-xl-6"><div class="card h-100"><div class="card-header">월별 차량 운행거리 · 유류비 ({{ d.ga.year }}년)</div><div class="card-body"><div class="chart-box"><canvas id="cVeh"></canvas></div></div></div></div>
+</div>
+
+<div class="d-flex align-items-center mb-2"><h6 class="mb-0 fw-semibold"><i class="bi bi-bell me-1"></i>챙길 일</h6></div>
 <div class="row g-3">
   {% for s in d.sections %}
   <div class="col-xl-{{ 12 // d.sections|length if d.sections|length > 1 else 12 }} col-lg-6">
@@ -33,7 +70,7 @@
         {% if s.counts.info %}<span class="badge text-bg-light border">참고 {{ s.counts.info }}</span>{% endif %}
         <a class="ms-auto small" href="{{ s.link }}">자세히 <i class="bi bi-chevron-right"></i></a>
       </div>
-      <div style="max-height:560px;overflow-y:auto">
+      <div style="max-height:280px;overflow-y:auto">
         {% for a in s.alerts %}
         <div class="alert-item lv-{{ a.level }}">
           <span class="alert-dot"></span>
@@ -55,4 +92,39 @@
   {% endfor %}
 </div>
 <div class="help mt-2">빨강: 기한이 지났거나 법적 위험 · 노랑: 기한이 가까움 · 파랑: 참고. 기준 일수는 회사정보·환경설정의 「만료·복직 사전알림(일)」을 따릅니다.</div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}" src="/static/vendor/chartjs/chart.umd.min.js"></script>
+<script nonce="{{ csp_nonce }}">
+const H = {{ d.hr.charts|tojson }}, G = {{ d.ga.charts|tojson }};
+Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+Chart.defaults.plugins.legend.labels.boxWidth = 12;
+const el = id => document.getElementById(id);
+const doughnut = (id, rows, val, tip) => new Chart(el(id), { type: 'doughnut',
+  data: { labels: rows.map(r => r.label), datasets: [{ data: rows.map(val), backgroundColor: PALETTE, borderWidth: 2 }] },
+  options: { maintainAspectRatio: false, cutout: '62%', plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: tip } } } } });
+doughnut('cDept', H.dept, r => r.count, c => ` ${c.label}: ${c.raw}명`);
+doughnut('cType', H.type, r => r.count, c => ` ${c.label}: ${c.raw}명`);
+new Chart(el('cFlow'), { type: 'bar',
+  data: { labels: H.flow.map(r => r.label), datasets: [
+    { label: '입사', data: H.flow.map(r => r.hire), backgroundColor: '#2d5a8c', borderRadius: 3 },
+    { label: '퇴사', data: H.flow.map(r => -r.resign), backgroundColor: '#e06c75', borderRadius: 3 } ] },
+  options: { maintainAspectRatio: false, scales: { x: { stacked: true, grid: { display: false } },
+    y: { stacked: true, ticks: { stepSize: 1, callback: v => Math.abs(v) } } },
+    plugins: { tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${Math.abs(c.raw)}명` } } } } });
+if (el('cPay') && H.salary_trend) new Chart(el('cPay'), {
+  data: { labels: H.salary_trend.map(r => r.year), datasets: [
+    { type: 'bar', label: '인건비(억)', data: H.salary_trend.map(r => r.total / 1e8), backgroundColor: '#2d5a8c', borderRadius: 4, yAxisID: 'y' },
+    { type: 'line', label: '평균인상률(%)', data: H.salary_trend.map(r => r.avg_rate), borderColor: '#f2a541', backgroundColor: '#f2a541', yAxisID: 'y1', tension: .3 } ] },
+  options: { maintainAspectRatio: false, scales: { x: { grid: { display: false } }, y: { position: 'left' }, y1: { position: 'right', grid: { display: false } } } } });
+doughnut('cAsset', G.asset_cat, r => r.book, c => ` ${c.label}: ${fmt.won(c.raw)}원 (${G.asset_cat[c.dataIndex].count}건)`);
+new Chart(el('cFixed'), { type: 'bar',
+  data: { labels: G.fixed.map(r => r.label), datasets: [{ data: G.fixed.map(r => r.value / 1e4), backgroundColor: '#3fa7a3', borderRadius: 4 }] },
+  options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` 월 ${fmt.won(c.raw)}만원` } } }, scales: { y: { grid: { display: false } } } } });
+new Chart(el('cVeh'), {
+  data: { labels: G.vehicle.map(r => r.label), datasets: [
+    { type: 'bar', label: '운행거리(km)', data: G.vehicle.map(r => r.km), backgroundColor: '#2d5a8c', borderRadius: 3, yAxisID: 'y' },
+    { type: 'line', label: '유류·통행료(만원)', data: G.vehicle.map(r => r.fuel / 1e4), borderColor: '#f2a541', backgroundColor: '#f2a541', yAxisID: 'y1', tension: .3 } ] },
+  options: { maintainAspectRatio: false, scales: { x: { grid: { display: false } }, y: { title: { display: true, text: 'km' } }, y1: { position: 'right', grid: { display: false }, title: { display: true, text: '만원' } } } } });
+</script>
 {% endblock %}

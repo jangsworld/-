@@ -1,10 +1,9 @@
-"""2단계 인증: 메일 인증번호(기본) + 인증 앱(TOTP, 대체 수단) + 이 PC 30일 기억.
+"""2단계 인증: 메일 인증번호(기본) + 인증 앱(TOTP, 대체 수단). 로그인할 때마다 확인.
 
 - 메일 인증: 6자리 번호를 사용자에게 등록된 회사 메일로 보냄. 3분 유효, 5번 틀리면 무효,
   15분에 5번까지 다시 받기. DB 에는 (세션 토큰 + 번호)의 해시만 저장.
 - 메일을 쓸 수 없으면(메일 설정 없음·사용자 메일 없음) 인증 앱으로 넘어감.
-- 이 PC 기억: 2단계 인증을 통과할 때 고르면 30일 동안 같은 PC·브라우저에서 메일 인증을 묻지 않음.
-  쿠키에는 무작위 열쇠만, DB 에는 해시만. 비밀번호를 바꾸거나 관리자가 2단계 인증을 초기화하면 모두 해제.
+- '이 PC 30일 기억'은 폐지 (2026-11): 예전 쿠키는 로그인 때 지우고, 기억 표(mfa_devices)는 정리할 때 비움.
 """
 import hashlib
 import hmac
@@ -16,8 +15,7 @@ from html import escape as html_escape
 from app import mailer
 from app.db import audit, execute, get_settings, query, query_one
 
-DEVICE_COOKIE = "bms_dev"
-DEVICE_DAYS = 30
+OLD_DEVICE_COOKIE = "bms_dev"   # 폐지된 '이 PC 기억' 쿠키 이름 (남아 있으면 지우기만 함)
 CODE_MINUTES = 3
 MAX_TRIES = 5
 SEND_LIMIT = (5, 15)          # 15분에 5번
@@ -132,36 +130,3 @@ def verify_code(user: dict, sess: dict, token: str, code: str) -> tuple[bool, st
         return False, f"인증번호가 맞지 않습니다 (남은 시도 {left}번)" if left else "인증번호가 맞지 않습니다. 다시 받아 주세요."
     execute("UPDATE sessions SET mail_code=NULL, mail_exp=NULL, mail_tries=NULL WHERE token_hash=?", (sess["token_hash"],))
     return True, ""
-
-
-# ── 이 PC 기억 ──────────────────────────────────────────────────────────
-def remember(user: dict, ip: str, ua: str) -> str:
-    raw = secrets.token_urlsafe(32)
-    now = datetime.now()
-    execute("INSERT INTO mfa_devices(user_id, token_hash, expires, ip, user_agent, created_at) VALUES (?,?,?,?,?,?)",
-            (user["id"], _h(raw), _ts(now + timedelta(days=DEVICE_DAYS)), ip, (ua or "")[:200], _ts(now)))
-    audit("auth", f"이 PC {DEVICE_DAYS}일 기억", user["username"], ip)
-    return raw
-
-
-def remembered(user: dict, raw: str | None) -> bool:
-    if not raw or len(raw) > 100:
-        return False
-    r = query_one("SELECT id FROM mfa_devices WHERE user_id=? AND token_hash=? AND expires>?",
-                  (user["id"], _h(raw), _ts(datetime.now())))
-    return bool(r)
-
-
-def devices(uid: int) -> list[dict]:
-    return query("SELECT id, ip, user_agent, created_at, expires FROM mfa_devices WHERE user_id=? AND expires>? ORDER BY id DESC",
-                 (uid, _ts(datetime.now())))
-
-
-def forget_devices(uid: int) -> int:
-    n = len(devices(uid))
-    execute("DELETE FROM mfa_devices WHERE user_id=?", (uid,))
-    return n
-
-
-def purge():
-    execute("DELETE FROM mfa_devices WHERE expires<?", (_ts(datetime.now()),))

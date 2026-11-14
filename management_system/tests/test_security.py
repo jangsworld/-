@@ -106,7 +106,7 @@ def test_totp_flow(anon):
     code = auth._hotp(secret, int(time.time() // 30))
     r = c.post("/login/2fa", data={"code": code, "csrf_token": tok, "next": "/hr/dashboard"}, headers=ORIGIN,
                follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/hr/dashboard"
+    assert r.status_code == 303 and r.headers["location"] == "/login/welcome?next=/hr/dashboard"
     assert c.get("/hr/dashboard").status_code == 200
     # 같은 코드 재사용 불가
     u = auth.query_one("SELECT * FROM users WHERE username='sec_2fa'")

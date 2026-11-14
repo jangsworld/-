@@ -12,9 +12,11 @@ def _security_context(request) -> dict:
     """모든 화면 공통: 로그인 사용자, 권한, CSRF 토큰, CSP nonce."""
     user = getattr(request.state, "user", None)
     sess = getattr(request.state, "session", None)
-    role = user["role"] if user else None
+    # 2단계 인증·비밀번호 변경을 마치기 전에는 메뉴·이름·권한을 화면에 내보내지 않음
+    full = bool(user) and getattr(request.state, "full_auth", True)
+    role = user["role"] if full else None
     return {
-        "current_user": user,
+        "current_user": user if full else None,
         "csrf_token": sess["csrf_token"] if sess else "",
         "csp_nonce": getattr(request.state, "csp_nonce", ""),
         "idle_minutes": settings.session_idle_minutes,
@@ -216,3 +218,16 @@ templates.env.globals["timedelta"] = timedelta
 templates.env.globals["now"] = datetime.now
 templates.env.globals["doc_font_css"] = doc_font_css
 templates.env.globals["DOC_FONTS"] = DOC_FONTS
+
+
+def _asset_version() -> str:
+    """내 스크립트·스타일 주소 뒤에 붙는 판 번호 (파일이 바뀌면 브라우저가 새로 받도록)."""
+    newest = 0.0
+    for sub in ("js", "css"):
+        d = os.path.join(BASE_DIR, "static", sub)
+        for name in os.listdir(d) if os.path.isdir(d) else []:
+            newest = max(newest, os.path.getmtime(os.path.join(d, name)))
+    return str(int(newest))
+
+
+templates.env.globals["asset_v"] = _asset_version()

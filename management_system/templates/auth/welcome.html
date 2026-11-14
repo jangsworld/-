@@ -1,0 +1,30 @@
+{% extends "auth/_auth_base.html" %}
+{% block title %}로그인 확인{% endblock %}
+{% block content %}
+<div class="text-center mb-3">
+  <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-success-subtle text-success mb-2" style="width:52px;height:52px"><i class="bi bi-check2-circle fs-3"></i></div>
+  <div class="fw-semibold fs-5">{{ u.display_name }}님, 반갑습니다</div>
+  <div class="small text-muted">로그인되었습니다.</div>
+</div>
+<dl class="small mb-3" id="welcomeBox" data-next="{{ next }}">
+  <div class="d-flex justify-content-between border-bottom py-2"><dt class="fw-normal text-muted">이번 로그인</dt>
+    <dd class="mb-0 text-end">{% if now %}{{ now.created_at[:16] }}<br><span class="text-muted">{{ now.ip }}</span>{% else %}-{% endif %}</dd></div>
+  <div class="d-flex justify-content-between border-bottom py-2"><dt class="fw-normal text-muted">지난 로그인</dt>
+    <dd class="mb-0 text-end">{% if prev %}{{ prev.created_at[:16] }}<br><span class="text-muted">{{ prev.ip }}</span>{% else %}첫 로그인입니다{% endif %}</dd></div>
+  <div class="d-flex justify-content-between py-2"><dt class="fw-normal text-muted">그 사이 실패한 로그인</dt>
+    <dd class="mb-0 text-end {{ 'text-danger fw-semibold' if fails else '' }}">{{ fails }}번</dd></div>
+</dl>
+{% if fails %}<div class="alert alert-warning py-2 small">내가 틀린 것이 아니라면 누군가 로그인을 시도한 것입니다. 비밀번호를 바꿔 주세요.</div>{% endif %}
+<a class="btn btn-primary w-100 py-2" id="welcomeGo" href="{{ next }}">시작하기</a>
+<p class="help mt-3 mb-0">지난 로그인이 내가 한 것이 아니면 비밀번호를 바꾸고 관리자에게 알려 주세요. 자세한 기록은 「내 계정 · 보안」에서 볼 수 있습니다.</p>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var box = document.getElementById('welcomeBox'), go = document.getElementById('welcomeGo');
+  var next = box.dataset.next || '/';
+  go.addEventListener('click', function (e) { e.preventDefault(); location.replace(next); });
+  {% if not fails %}setTimeout(function () { location.replace(next); }, 4000);{% endif %}
+})();
+</script>
+{% endblock %}

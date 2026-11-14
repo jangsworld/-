@@ -91,7 +91,27 @@ document.addEventListener('click', (e) => {
   const row = e.target.closest('[data-href]');
   if (row) location.href = row.dataset.href;
 });
-document.querySelectorAll('[data-autosubmit]').forEach(el => el.addEventListener('change', () => el.form.submit()));
+document.querySelectorAll('[data-autosubmit]').forEach(el => el.addEventListener('change', () => { keepScroll(); el.form.submit(); }));
+
+// ── 저장·필터 뒤에도 보던 위치 그대로: 같은 화면으로 돌아오면 스크롤 위치를 되돌림 ──
+function keepScroll() {
+  try { sessionStorage.setItem('bms_scroll', JSON.stringify({ p: location.pathname, y: window.scrollY, t: Date.now() })); } catch (_) {}
+}
+document.addEventListener('submit', (e) => { if (!e.defaultPrevented) keepScroll(); });
+document.addEventListener('click', (e) => {          // 같은 화면 안의 탭·연도·필터 링크
+  const a = e.target.closest('a[href]');
+  if (!a || a.target || a.origin !== location.origin || a.pathname !== location.pathname || a.getAttribute('href').startsWith('#')) return;
+  keepScroll();
+});
+(() => {
+  let s = null;
+  try { s = JSON.parse(sessionStorage.getItem('bms_scroll') || 'null'); sessionStorage.removeItem('bms_scroll'); } catch (_) {}
+  if (!s || s.p !== location.pathname || Date.now() - s.t > 20000 || !s.y) return;
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  const back = () => window.scrollTo({ top: s.y, left: 0, behavior: 'instant' });   // 부드러운 이동 없이 바로
+  back();
+  window.addEventListener('load', () => { back(); setTimeout(back, 60); });   // '#위치'로 튀는 것보다 나중에 되돌림
+})();
 
 // ── 유휴 시간 표시 및 자동 로그아웃 안내 ─────────────────────────────────
 (() => {
