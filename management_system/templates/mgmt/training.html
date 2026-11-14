@@ -51,7 +51,7 @@
 {% else %}
 <div class="card"><div class="card-header d-flex align-items-center">교육 과정 <span class="help ms-2">기본 과정은 예시입니다. 법령·회사 상황에 맞게 시간·주기·대상을 고치거나 끄세요.</span>
   <button class="btn btn-sm btn-outline-primary ms-auto" data-bs-toggle="modal" data-bs-target="#courseModal" data-fill='{}'><i class="bi bi-plus-lg"></i> 과정 추가</button></div>
-  <div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle"><thead><tr><th>과정</th><th>구분</th><th>주기</th><th class="num">시간</th><th>대상</th><th>근거</th><th>메모</th><th>사용</th><th></th></tr></thead><tbody>
+  <div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle" data-excel><thead><tr><th>과정</th><th>구분</th><th>주기</th><th class="num">시간</th><th>대상</th><th>근거</th><th>메모</th><th>사용</th><th data-nofilter></th></tr></thead><tbody>
   {% for c in courses_all %}<tr class="{{ 'text-muted' if not c.is_active }}"><td class="fw-semibold">{{ c.name }}</td><td>{{ c.category }}</td><td>{{ c.cycle }}</td><td class="num">{{ '%g'|format(c.hours or 0) }}</td>
     <td>{{ c.target }}{% if c.target == '지정 직원' %} <span class="badge text-bg-light border">{{ (targets.get(c.id) or [])|length }}명</span>{% endif %}</td>
     <td class="small">{{ c.basis or '' }}</td><td class="small">{{ c.note or '' }}</td><td>{{ '사용' if c.is_active else '끔' }}</td>

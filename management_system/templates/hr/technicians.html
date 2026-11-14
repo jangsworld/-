@@ -8,7 +8,7 @@
       {% for k in kinds %}<option {% if kind == k %}selected{% endif %}>{{ k }}</option>{% endfor %}</select></div>
     <div class="col text-end"><a class="btn btn-sm btn-outline-secondary" href="/hr/technicians/export.csv{{ '?kind=' ~ kind|urlencode if kind }}"><i class="bi bi-download"></i> 기술자 명단(CSV)</a></div>
   </form></div>
-  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel>
     <thead><tr><th>구분</th><th>성명</th><th>부서</th><th>직급</th><th>자격번호</th><th>등급</th><th>대표 국가기술자격증</th><th>교육·갱신 만료일</th></tr></thead>
     <tbody>{% for r in rows %}
       <tr data-href="/hr/employees/{{ r.employee_id }}"><td>{{ r.kind }}</td><td class="fw-semibold">{{ r.name }}</td><td>{{ r.department or '' }}</td><td>{{ r.rank or '' }}</td>

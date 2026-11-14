@@ -18,10 +18,17 @@ from xml.sax.saxutils import escape
 from app.common import today
 from app.db import audit, execute, get_settings, query, query_one, set_setting
 
-PAY_ITEMS_DEFAULT = "기본급,연장근로수당,연구보조비,보육수당,식대,자가운전보조금"
+PAY_ITEMS_DEFAULT = ("기본급,시간외수당(월24시간),야간수당(월8시간),식대,연구보조비,보육수당,자가운전보조금(비과세),통신비지원,"
+                     "문화생활관광비,정착수당,전담인력활동수당,교육훈련비,직무발명보상금,당직수당,연차수당,기타수당,"
+                     "내일채움공제(기업기여금),기타상여,해고예고수당,퇴직위로금")
+# 예전 항목 이름 → 지금 이름 (이미 저장된 직원별 금액·엑셀 양식 칸을 옮길 때 사용)
+PAY_ITEM_RENAMES = {"연장근로수당": "시간외수당(월24시간)", "자가운전보조금": "자가운전보조금(비과세)"}
+# 이카운트 화면·엑셀에서 같은 항목으로 볼 다른 이름
+PAY_ITEM_ALIASES = {"시간외수당(월24시간)": ["연장근로수당", "시간외수당", "연장수당", "고정연장수당"],
+                    "야간수당(월8시간)": ["야간수당", "야간근로수당"]}
 
 # 계약서 조건(params) → 급여항목 이름 (급여 정보가 비어 있을 때 최신 근로계약서에서 가져올 값)
-CONTRACT_PAY_KEYS = {"pay_base": "기본급", "pay_overtime": "연장근로수당", "pay_research": "연구보조비",
+CONTRACT_PAY_KEYS = {"pay_base": "기본급", "pay_overtime": "시간외수당(월24시간)", "pay_research": "연구보조비",
                      "pay_childcare": "보육수당"}
 
 # BMS 항목: key, 화면 이름, 구역, 이카운트 칸 이름 후보(엑셀 머리글·도우미 화면 글자 찾기에 사용)
@@ -74,7 +81,9 @@ def all_targets() -> list[tuple[str, str, list[str]]]:
     """엑셀 칸·도우미가 채울 수 있는 전체 항목: (key, 이름, 이카운트 칸 이름 후보)."""
     out = [(k, label, aliases) for k, label, _s, aliases in FIELDS]
     for p in pay_items():
-        out.append((f"pay:{p}", p, [p] + (["시간외수당", "연장수당", "고정연장수당"] if p == "연장근로수당" else [])))
+        short = re.sub(r"\(.*?\)", "", p).strip()
+        aliases = [p] + ([short] if short != p else []) + PAY_ITEM_ALIASES.get(p, [])
+        out.append((f"pay:{p}", p, list(dict.fromkeys(aliases))))
     return out
 
 

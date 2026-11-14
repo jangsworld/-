@@ -11,7 +11,7 @@
 <div class="row g-3">
   <div class="col-12"><form class="card" method="post" action="/admin/mfa-method"><div class="card-body d-flex flex-wrap gap-3 align-items-center">
     <div><div class="fw-semibold"><i class="bi bi-shield-lock me-1"></i>2단계 인증 방식</div>
-      <div class="help">메일: 로그인할 때 회사 메일로 6자리 번호를 보냅니다 (5분 유효). 메일 주소가 없거나 메일 발송이 안 되면 인증 앱으로 넘어갑니다.<br>
+      <div class="help">메일: 로그인할 때 회사 메일로 6자리 번호를 보냅니다 (3분 유효). 메일 주소가 없거나 메일 발송이 안 되면 인증 앱으로 넘어갑니다.<br>
         '이 PC 30일 기억'을 고른 PC는 30일 동안 다시 묻지 않습니다 (비밀번호 변경·2단계 초기화 시 해제).</div></div>
     <select class="form-select form-select-sm w-auto ms-auto" name="method">{% for k, v in methods.items() %}<option value="{{ k }}" {{ 'selected' if mfa_method == k }}>{{ v }}</option>{% endfor %}</select>
     <button class="btn btn-sm btn-primary">저장</button>

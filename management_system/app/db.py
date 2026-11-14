@@ -926,7 +926,34 @@ def init_db() -> bool:
                 conn.execute("INSERT INTO codes(group_code, name, sort_order, behavior) VALUES (?,?,?,?)",
                              (group, n, i, ASSET_EVENT_BEHAVIOR.get(n) if group == "ASSET_EVENT" else None))
         _seed_mgmt(conn)
+        _migrate_pay_items(conn)
     return is_new
+
+
+def _migrate_pay_items(conn):
+    """급여항목 목록을 새 구성(2026-11)으로 한 번 바꾸고, 저장된 금액·엑셀 양식의 예전 이름을 새 이름으로 옮깁니다."""
+    if conn.execute("SELECT 1 FROM settings WHERE key='pay_items_v2'").fetchone():
+        return
+    import json
+    from app.modules.hr.ecount import PAY_ITEM_RENAMES, PAY_ITEMS_DEFAULT
+    conn.execute("INSERT INTO settings(key, value) VALUES ('ecount_pay_items', ?) "
+                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (PAY_ITEMS_DEFAULT,))
+    for r in conn.execute("SELECT employee_id, pay_items FROM employee_payroll").fetchall():
+        try:
+            items = json.loads(r[1] or "{}")
+        except ValueError:
+            continue
+        new = {PAY_ITEM_RENAMES.get(k, k): v for k, v in items.items()}
+        if new != items:
+            conn.execute("UPDATE employee_payroll SET pay_items=? WHERE employee_id=?",
+                         (json.dumps(new, ensure_ascii=False), r[0]))
+    row = conn.execute("SELECT value FROM settings WHERE key='ecount_template'").fetchone()
+    if row and row[0]:
+        raw = row[0]
+        for old, new in PAY_ITEM_RENAMES.items():
+            raw = raw.replace(f'"pay:{old}"', f'"pay:{new}"')
+        conn.execute("UPDATE settings SET value=? WHERE key='ecount_template'", (raw,))
+    conn.execute("INSERT INTO settings(key, value) VALUES ('pay_items_v2', '1')")
 
 
 def _seed_mgmt(conn):

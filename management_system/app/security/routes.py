@@ -87,12 +87,13 @@ async def login(request: Request):
     return _set_cookie(_go("/login/2fa?next=" + quote(nxt), msg), token)
 
 
-def _mfa_ctx(user, nxt, use=""):
+def _mfa_ctx(user, nxt, use="", sess=None):
     method = mfa.method_for(user)
     if use == "app" and user["totp_enabled"]:
         method = "app"
     return {"next": nxt, "method": method, "to": mfa.mask(user.get("email")), "has_app": bool(user["totp_enabled"]),
-            "email_ok": mfa.email_ready(user), "days": mfa.DEVICE_DAYS, "minutes": mfa.CODE_MINUTES}
+            "email_ok": mfa.email_ready(user), "days": mfa.DEVICE_DAYS, "minutes": mfa.CODE_MINUTES,
+            "left": mfa.seconds_left(sess) if method == "email" else 0}
 
 
 @router.get("/login/2fa", response_class=HTMLResponse)
@@ -101,7 +102,7 @@ def login_2fa_page(request: Request, next: str = "/", use: str = ""):
         return _go("/login")
     if request.state.session["mfa_passed"]:
         return _go(_safe_next(next))
-    return _r(request, "auth/login_2fa.html", _mfa_ctx(request.state.user, _safe_next(next), use))
+    return _r(request, "auth/login_2fa.html", _mfa_ctx(request.state.user, _safe_next(next), use, request.state.session))
 
 
 @router.post("/login/2fa/send")
@@ -153,7 +154,7 @@ async def login_2fa(request: Request):
                 (f"+{settings.lockout_minutes} minutes", user["id"]))
         auth.revoke_sessions(user["id"])
         return _go("/login", "2단계 인증 실패가 반복되어 계정이 잠겼습니다")
-    ctx = _mfa_ctx(user, nxt, use)
+    ctx = _mfa_ctx(user, nxt, use, sess)
     ctx["error"] = err
     return _r(request, "auth/login_2fa.html", ctx, 401)
 

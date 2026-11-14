@@ -74,7 +74,7 @@ def test_code_mail_format(mail):
     code = _code(mail)
     assert subject == f"[BMS시스템] 로그인 인증번호 {code}"
     assert kw["from_name"] == "BMS시스템" and kw["plain"] is True
-    assert body.startswith("mf_fmt님, 로그인 인증번호는") and "5분 안에 입력해 주세요" in body and "접속 위치:" in body
+    assert body.startswith("mf_fmt님, 로그인 인증번호는") and "3분 안에 입력해 주세요" in body and "접속 위치:" in body
     h = kw["html"]
     assert f">{code}</p>" in h and "font-weight:700" in h and "letter-spacing" in h
     assert "#c62828" in h and "본인이 로그인한 것이 아니면 비밀번호를 바꾸고 관리자에게 알려 주세요." in h
@@ -226,3 +226,18 @@ def test_admin_settings(mail):
                                          "csrf_token": tok}, headers=O, follow_redirects=False)
         assert r.status_code == 303
         assert auth.query_one("SELECT email FROM users WHERE username='mf_new'")["email"] == "mf.new@example.test"
+
+
+def test_code_countdown_3min(mail):
+    """메일 인증번호는 3분 유효, 화면에 남은 시간(02:59 …) 카운트다운."""
+    uid = _user("mf_cd", "mf.cd@example.test")
+    assert mfa.CODE_MINUTES == 3
+    with TestClient(app) as c:
+        _login(c, "mf_cd")
+        page = c.get("/login/2fa").text
+        assert "유효시간" in page and 'id="mfaClock"' in page
+        left = int(re.search(r'data-left="(\d+)"', page).group(1))
+        assert 170 <= left <= 180
+        assert re.search(r">0[23]:\d\d<", page)
+        assert "BMS시스템" in page and "경영관리업무시스템" not in page
+    execute("DELETE FROM sessions WHERE user_id=?", (uid,))

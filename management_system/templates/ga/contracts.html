@@ -43,8 +43,8 @@
     <div class="col text-end">{% if can_write %}<a class="btn btn-sm btn-outline-secondary" href="/ga/contracts/export.csv"><i class="bi bi-download"></i> CSV</a>
       <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#contractModal" data-fill='{"status":"유효","pay_cycle":"월","notice_days":30}'><i class="bi bi-plus"></i> 계약 등록</button>{% endif %}</div>
   </form></div>
-  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
-    <thead><tr><th>구분</th><th>계약명</th><th>상대방</th><th>계약기간</th><th>만료</th><th class="num">금액</th><th class="num text-nowrap">월 환산</th><th class="num">보증금</th><th>갱신</th><th>해지·갱신 통보기한</th><th>상태</th><th>담당</th><th></th></tr></thead>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel>
+    <thead><tr><th>구분</th><th>계약명</th><th>상대방</th><th>계약기간</th><th>만료</th><th class="num">금액</th><th class="num text-nowrap">월 환산</th><th class="num">보증금</th><th>갱신</th><th>해지·갱신 통보기한</th><th>상태</th><th>담당</th><th data-nofilter></th></tr></thead>
     <tbody>{% for c in rows %}<tr>
       <td><span class="badge text-bg-light border">{{ c.category }}</span></td><td class="fw-semibold">{{ c.title }}<div class="small text-muted">{{ c.contract_no or '' }}</div>
         {% if c.files and can_write %}<div class="dropdown d-inline"><button class="btn btn-sm btn-link p-0 small" data-bs-toggle="dropdown" type="button"><i class="bi bi-folder2-open"></i> 서류 {{ c.files|length }}</button>

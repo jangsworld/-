@@ -43,7 +43,7 @@
 {% else %}<div class="text-muted text-center py-4">{{ '할 일이 없습니다 👍' if show == 'todo' else '일정이 없습니다' }}</div>{% endfor %}
 
 <div class="card mt-4" id="tasks"><div class="card-header">직접 관리하는 의무 일정 <span class="help ms-2">기본 목록은 예시입니다(12월 결산 법인 기준). 회사에 해당 없는 항목은 끄고, 기한이 휴일이면 다음 영업일로 보세요.</span></div>
-  <div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle"><thead><tr><th>일정</th><th>구분</th><th>주기</th><th>기한</th><th>근거</th><th>담당</th><th>메모</th><th>사용</th><th></th></tr></thead><tbody>
+  <div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle" data-excel><thead><tr><th>일정</th><th>구분</th><th>주기</th><th>기한</th><th>근거</th><th>담당</th><th>메모</th><th>사용</th><th data-nofilter></th></tr></thead><tbody>
   {% for t in tasks %}<tr class="{{ 'text-muted' if not t.is_active }}"><td>{{ t.title }}</td><td>{{ t.category }}</td><td>{{ t.cycle }}</td>
     <td class="small">{% if t.cycle == '한 번' %}{{ t.due_date }}{% elif t.cycle == '매년' %}{{ t.month }}월 {{ t.day or '말' }}일{% elif t.cycle == '매월' %}매월 {{ t.day or '말' }}일{% else %}기간 마지막 달 {{ t.day or '말' }}일{% endif %}</td>
     <td class="small">{{ t.basis or '' }}</td><td class="small">{{ t.owner or '' }}</td><td class="small">{{ t.note or '' }}</td><td>{{ '사용' if t.is_active else '끔' }}</td>

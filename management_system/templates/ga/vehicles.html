@@ -39,7 +39,7 @@
 <div class="card">
   <div class="card-header d-flex align-items-center">차량 대장
     {% if can_write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#vehicleModal" data-fill="{}"><i class="bi bi-plus"></i> 차량 등록</button>{% endif %}</div>
-  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel>
     <thead><tr><th>차량번호</th><th>차종</th><th>소유형태</th><th>현재 사용자</th><th class="num">현재 km</th><th class="num">올해 km</th><th>업무비율</th><th>보험 만기</th><th>정기검사</th><th>리스 만기</th><th>상태</th></tr></thead>
     <tbody>{% for v in rows %}
       <tr data-href="/ga/vehicles/{{ v.id }}">
@@ -64,7 +64,7 @@
 <div class="card"><div class="card-header d-flex align-items-center gap-2">사진 점검
   <div class="btn-group btn-group-sm ms-2">{% for s, l in [('', '전체'), ('촬영중','촬영중'), ('확인대기','확정 대기'), ('확정','확정')] %}<a class="btn btn-outline-secondary {% if status == s %}active{% endif %}" href="?tab=inspections&status={{ s }}">{{ l }}</a>{% endfor %}</div>
   {% if can_write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#inspModal" data-fill="{}"><i class="bi bi-camera"></i> 점검 시작</button>{% endif %}</div>
-  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel>
     <thead><tr><th>점검일</th><th>차량</th><th>구분</th><th>인계자 → 인수자</th><th class="num">사진</th><th>상태</th><th>결과</th></tr></thead>
     <tbody>{% for i in insp_rows %}<tr data-href="/ga/vehicles/{{ i.vehicle_id }}/inspections/{{ i.id }}">
       <td>{{ i.insp_date }}</td><td class="fw-semibold">{{ i.plate_no }} <span class="small text-muted">{{ i.model }}</span></td><td>{{ i.kind }}</td>
@@ -104,8 +104,8 @@
 {% set c = cost %}
 <div class="card"><div class="card-header d-flex align-items-center">차량별 비용 ({{ c.year }}년)
   <form class="ms-auto d-flex gap-2" method="get"><input type="hidden" name="tab" value="cost"><select class="form-select form-select-sm" name="year">{% for y in range(today().year, today().year - 4, -1) %}<option {{ 'selected' if y == c.year }}>{{ y }}</option>{% endfor %}</select><button class="btn btn-sm btn-outline-secondary text-nowrap">보기</button></form></div>
-  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
-    <thead><tr><th>차량</th><th>사용자</th><th class="num">리스·렌트</th><th class="num">유류·통행</th><th class="num">정비·보험·세금</th><th class="num">파손 회사부담</th><th class="num">합계</th><th class="num">월평균</th><th class="num">주행</th><th class="num">km당</th><th>과태료</th><th></th></tr></thead>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel>
+    <thead><tr><th>차량</th><th>사용자</th><th class="num">리스·렌트</th><th class="num">유류·통행</th><th class="num">정비·보험·세금</th><th class="num">파손 회사부담</th><th class="num">합계</th><th class="num">월평균</th><th class="num">주행</th><th class="num">km당</th><th>과태료</th><th data-nofilter></th></tr></thead>
     <tbody>{% for r in c.rows %}<tr data-href="/ga/vehicles/{{ r.id }}">
       <td class="fw-semibold">{{ r.plate_no }} <span class="small text-muted">{{ r.model }}</span></td><td>{{ r.user }}</td>
       <td class="num">{{ r.lease|man_won }}</td><td class="num">{{ r.fuel|man_won }}</td><td class="num">{{ r.maint|man_won }}</td><td class="num">{{ r.damage|man_won if r.damage else '' }}</td>

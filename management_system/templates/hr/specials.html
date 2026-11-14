@@ -25,8 +25,8 @@
     <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">조회</button></div>
     <div class="col text-end"><button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#specialModal"><i class="bi bi-plus"></i> 등록</button></div>
   </form></div>
-  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
-    <thead><tr><th>구분</th><th>상태</th><th>성명</th><th>부서</th><th>기간</th><th class="num">일수</th><th>남은기간</th><th>단축 후</th><th>대상 자녀</th><th>대체인력</th><th>정부지원금</th><th>법적근거</th><th></th></tr></thead>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel>
+    <thead><tr><th>구분</th><th>상태</th><th>성명</th><th>부서</th><th>기간</th><th class="num">일수</th><th>남은기간</th><th>단축 후</th><th>대상 자녀</th><th>대체인력</th><th>정부지원금</th><th>법적근거</th><th data-nofilter></th></tr></thead>
     <tbody>{% for s in rows %}{% set left = (s.actual_end or s.end_date)|dday %}
       <tr><td>{{ s.category }}</td><td><span class="st st-{{ s.status }}">{{ s.status }}</span></td>
         <td><a href="/hr/employees/{{ s.employee_id }}?tab=special" class="fw-semibold">{{ s.name }}</a></td><td>{{ s.department or '' }}</td>

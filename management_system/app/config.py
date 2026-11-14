@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SYSTEM_CODE = "BMS"
-SYSTEM_NAME = "경영관리업무시스템"
+SYSTEM_NAME = "BMS시스템"
 
 
 @dataclass

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <meta name="robots" content="noindex, nofollow">
-  <title>{% block title %}경영관리업무시스템{% endblock %}</title>
+  <title>{% block title %}BMS시스템{% endblock %}</title>
   <link rel="stylesheet" href="/static/vendor/bootstrap/bootstrap.min.css">
   <link rel="stylesheet" href="/static/vendor/bootstrap-icons/bootstrap-icons.min.css">
   <link rel="stylesheet" href="/static/css/app.css">
@@ -17,7 +17,7 @@
   <aside class="sidebar no-print" id="sidebar">
     <a class="brand" href="/">
       <i class="bi bi-buildings-fill"></i>
-      <div><div class="brand-title">경영관리시스템</div><div class="brand-sub">{{ company() }}</div></div>
+      <div><div class="brand-title">BMS시스템</div><div class="brand-sub">{{ company() }}</div></div>
     </a>
     <nav class="side-nav">
       {% for m in MODULES %}

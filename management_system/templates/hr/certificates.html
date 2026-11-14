@@ -24,7 +24,7 @@
 </div></div>
 <div class="card">
   <div class="card-header"><form class="d-flex gap-2" method="get"><input class="form-control form-control-sm" style="max-width:240px" name="q" value="{{ q }}" placeholder="성명 검색"><button class="btn btn-sm btn-outline-secondary">조회</button></form></div>
-  <table class="table table-sm table-hover mb-0"><thead><tr><th>발급번호</th><th>종류</th><th>성명</th><th>부서</th><th>용도</th><th>발급일</th><th>메일</th><th>상태</th></tr></thead><tbody>
+  <table class="table table-sm table-hover mb-0" data-excel><thead><tr><th>발급번호</th><th>종류</th><th>성명</th><th>부서</th><th>용도</th><th>발급일</th><th>메일</th><th>상태</th></tr></thead><tbody>
   {% for d in docs %}<tr data-href="/hr/documents/{{ d.id }}"><td>{{ d.doc_no }}</td><td>{{ d.category }}</td><td class="fw-semibold">{{ d.name }}</td><td>{{ d.department or '' }}</td>
     <td>{{ d.purpose or '' }}</td><td>{{ d.signed_date or d.created_at[:10] }}</td>
     <td>{% if d.emailed_at %}<span class="text-success small"><i class="bi bi-envelope-check"></i> {{ d.emailed_at[5:10] }}</span>{% endif %}</td>

@@ -223,7 +223,7 @@ async def settings_mail(request: Request):
 @app.post("/settings/mail/test")
 def settings_mail_test(request: Request, to: str = Form("")):
     try:
-        mailer.send(to, "[BMS] 시험 메일", "경영관리업무시스템 메일 설정이 정상입니다.")
+        mailer.send(to, "[BMS] 시험 메일", "BMS시스템 메일 설정이 정상입니다.")
     except mailer.MailError as ex:
         return _settings_redirect(str(ex), "mail")
     audit("system", "시험 메일 발송", "", "")

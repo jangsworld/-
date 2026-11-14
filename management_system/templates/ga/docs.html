@@ -19,8 +19,8 @@
       <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#docModal" data-fill='{"direction":"수신","status":"접수"}'><i class="bi bi-inbox"></i> 수신 등록 <span class="small opacity-75">{{ next_in }}</span></button>
       <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#docModal" data-fill='{"direction":"발신","status":"완료"}'><i class="bi bi-send"></i> 발신 등록 <span class="small opacity-75">{{ next_out }}</span></button></div>{% endif %}
   </form></div>
-  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
-    <thead><tr><th>구분</th><th>문서번호</th><th>일자</th><th>{{ '발신처 / 수신처' }}</th><th>제목</th><th>담당</th><th>방법</th><th>상태</th><th>회신기한</th><th>보존</th><th></th></tr></thead>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel>
+    <thead><tr><th>구분</th><th>문서번호</th><th>일자</th><th>{{ '발신처 / 수신처' }}</th><th>제목</th><th>담당</th><th>방법</th><th>상태</th><th>회신기한</th><th>보존</th><th data-nofilter></th></tr></thead>
     <tbody>{% for d in rows %}<tr>
       <td><span class="st {{ 'st-진행중' if d.direction == '발신' else 'st-예정' }}">{{ d.direction }}</span></td>
       <td class="fw-semibold text-nowrap">{{ d.doc_no }}</td><td class="small text-nowrap">{{ d.doc_date }}</td><td>{{ d.counterpart }}</td><td>{{ d.title }}</td>

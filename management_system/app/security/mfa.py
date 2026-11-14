@@ -1,6 +1,6 @@
 """2단계 인증: 메일 인증번호(기본) + 인증 앱(TOTP, 대체 수단) + 이 PC 30일 기억.
 
-- 메일 인증: 6자리 번호를 사용자에게 등록된 회사 메일로 보냄. 5분 유효, 5번 틀리면 무효,
+- 메일 인증: 6자리 번호를 사용자에게 등록된 회사 메일로 보냄. 3분 유효, 5번 틀리면 무효,
   15분에 5번까지 다시 받기. DB 에는 (세션 토큰 + 번호)의 해시만 저장.
 - 메일을 쓸 수 없으면(메일 설정 없음·사용자 메일 없음) 인증 앱으로 넘어감.
 - 이 PC 기억: 2단계 인증을 통과할 때 고르면 30일 동안 같은 PC·브라우저에서 메일 인증을 묻지 않음.
@@ -18,7 +18,7 @@ from app.db import audit, execute, get_settings, query, query_one
 
 DEVICE_COOKIE = "bms_dev"
 DEVICE_DAYS = 30
-CODE_MINUTES = 5
+CODE_MINUTES = 3
 MAX_TRIES = 5
 SEND_LIMIT = (5, 15)          # 15분에 5번
 METHODS = {"email": "메일 인증번호", "app": "인증 앱"}
@@ -101,6 +101,20 @@ def send_code(user: dict, sess: dict, token: str, ip: str) -> str:
             (_h(token, code), _ts(now + timedelta(minutes=CODE_MINUTES)), ",".join(sends), sess["token_hash"]))
     audit("auth", "로그인 인증 메일 발송", user["username"], mask(user["email"]))
     return mask(user["email"])
+
+
+def seconds_left(sess: dict | None) -> int:
+    """지금 유효한 인증번호의 남은 초 (없거나 만료면 0). 화면 카운트다운용."""
+    if not sess:
+        return 0
+    s = query_one("SELECT mail_code, mail_exp FROM sessions WHERE token_hash=?", (sess["token_hash"],)) or {}
+    if not s.get("mail_code") or not s.get("mail_exp"):
+        return 0
+    try:
+        left = (datetime.strptime(s["mail_exp"], "%Y-%m-%d %H:%M:%S") - datetime.now()).total_seconds()
+    except ValueError:
+        return 0
+    return max(0, min(int(left), CODE_MINUTES * 60))
 
 
 def verify_code(user: dict, sess: dict, token: str, code: str) -> tuple[bool, str]:

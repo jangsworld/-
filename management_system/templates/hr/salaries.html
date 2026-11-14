@@ -40,15 +40,15 @@
     {% if ov.missing %}<span class="badge text-bg-warning ms-2">미책정 {{ ov.missing|length }}명</span>{% endif %}
     <span class="help ms-auto">행 클릭 → 연봉 등록/수정 · 인상률은 직전 등록연도 대비</span></div>
   <div class="table-responsive">
-  <table class="table table-sm table-hover align-middle mb-0" id="salTable">
+  <table class="table table-sm table-hover align-middle mb-0" data-excel id="salTable">
     <thead><tr><th>사번</th><th>성명</th><th>부서</th><th>직급</th><th>고용형태</th><th class="num">직전 연봉</th><th class="num">{{ year }}년 연봉</th><th class="num">월 환산</th>
-      <th class="num">인상액</th><th class="num">인상률</th><th style="width:120px"></th><th>사유</th><th>점검</th></tr></thead>
+      <th class="num">인상액</th><th class="num">인상률</th><th data-nofilter style="width:120px"></th><th>사유</th><th>점검</th></tr></thead>
     <tbody>
     {% for r in ov.rows %}{% set e = r.employee %}
       <tr style="cursor:pointer" data-emp="{{ e.id }}" data-name="{{ e.name }}" data-cur="{{ r.cur.annual_salary if r.cur else '' }}" data-prev="{{ r.prev.annual_salary if r.prev else '' }}" data-reason="{{ r.cur.reason if r.cur else '정기인상' }}" data-note="{{ r.cur.note if r.cur and r.cur.note else '' }}">
         <td class="text-muted">{{ e.emp_no }}</td><td class="fw-semibold">{{ e.name }}{% if e.resign_date %} <span class="small text-muted">(퇴사)</span>{% endif %}</td>
         <td>{{ e.department or '' }}</td><td>{{ e.rank or '' }}</td><td class="small">{{ e.employment_type }}</td>
-        <td class="num text-muted">{{ r.prev.annual_salary|won if r.prev else '-' }}{% if r.prev %}<div class="small">{{ r.prev.year }}</div>{% endif %}</td>
+        <td class="num text-muted" data-v="{{ r.prev.annual_salary if r.prev else '' }}">{{ r.prev.annual_salary|won if r.prev else '-' }}{% if r.prev %}<div class="small">{{ r.prev.year }}</div>{% endif %}</td>
         <td class="num fw-semibold">{{ r.cur.annual_salary|won if r.cur else '' }}{% if not r.cur and not e.resign_date %}<span class="badge text-bg-warning">미책정</span>{% endif %}</td>
         <td class="num text-muted">{{ r.cur.annual_salary|monthly|won if r.cur else '' }}</td>
         <td class="num {{ 'up' if (r.raise_amount or 0) > 0 else 'down' if (r.raise_amount or 0) < 0 }}">{{ r.raise_amount|won if r.raise_amount is not none else '' }}</td>

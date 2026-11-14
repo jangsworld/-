@@ -31,7 +31,7 @@ def local_ip() -> str:
 if __name__ == "__main__":
     scheme = "https" if settings.ssl_certfile else "http"
     print()
-    print(f"  🏢 [{SYSTEM_CODE}] 경영관리업무시스템 시작")
+    print(f"  🏢 [{SYSTEM_CODE}] BMS시스템 시작")
     if settings.host in ("127.0.0.1", "localhost"):
         print(f"  💻 접속 주소: {scheme}://localhost:{settings.port}  (이 PC 에서만 접속)")
     else:
