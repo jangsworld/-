@@ -71,7 +71,7 @@ def test_csv_adds_new_codes_automatically(client):
     assert get_codes("DEPT").count("가상신설팀") == 1
     import_employees_csv(HEAD + ",하나셋,2026-06-01,,가상신설팀,,,\n")              # 이미 있으면 다시 추가 안 함
     assert get_codes("DEPT").count("가상신설팀") == 1
-    page = client.get("/hr/salaries").text                                       # 연봉현황 부서 목록에도 보임
+    page = client.get("/hr/employees").text                                      # 임직원 현황 부서 목록에도 보임
     assert "<option >가상신설팀</option>" in page or ">가상신설팀</option>" in page
 
 

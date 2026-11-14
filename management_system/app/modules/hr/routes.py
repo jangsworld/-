@@ -1081,17 +1081,35 @@ async def certificate_create(request: Request):
 # 3. 연봉현황
 # ════════════════════════════════════════════════════════════════════════
 @router.get("/salaries", response_class=HTMLResponse)
-def salaries(request: Request, year: int | None = None, department: str = ""):
-    audit("hr", "연봉현황 열람", f"{year or today().year}년", department)
-    years = repo.salary_years()
-    year = year or today().year
+def salaries(request: Request, year: int | None = None, department: str = "", tab: str = "summary"):
+    """인건비·연봉 (예전 '연봉현황' + 경영관리 '인건비 총괄'을 합친 화면). 현황 탭 / 개인별 탭."""
+    from app.modules.mgmt import fin, incentive, labor
+    from app.modules.mgmt.constants import FIN_ITEMS
+    audit("hr", "인건비·연봉 열람", f"{year or today().year}년", department)
+    years = sorted(set(repo.salary_years()) | set(incentive.years()) | {today().year})
+    year = year if (year and 2000 <= year <= 2100) else today().year
+    if year not in years:
+        years = sorted(years + [year])
+    tab = tab if tab in ("summary", "people") else "summary"
     ov = services.salary_overview(year)
+    lab = labor.overview(year)
+    by_emp = {p["id"]: p for p in lab["people"]}
+    for r in ov["rows"]:
+        r["labor"] = by_emp.get(r["employee"]["id"])
     if department:
         ov["rows"] = [r for r in ov["rows"] if r["employee"]["department"] == department]
+    rate_by_year = {t["year"]: t for t in services.salary_trend()}
+    trend = labor.trend([x for x in years if x <= today().year][-6:])
+    for t in trend:
+        t["avg_rate"] = (rate_by_year.get(t["year"]) or {}).get("avg_rate")
+        t["avg"] = (rate_by_year.get(t["year"]) or {}).get("avg")
+    dept_avg = {d["name"]: d["avg"] for d in ov["dept_avg"]}
+    for d in lab["rows"]:
+        d["avg_salary"] = dept_avg.get(d["department"])
     return _render(request, "hr/salaries.html", {
-        "ov": ov, "years": years, "year": year, "trend": services.salary_trend(),
+        "ov": ov, "lab": lab, "years": years, "year": year, "trend": trend, "tab": tab,
         "department": department, "depts": repo.codes_with_used("DEPT"), "reasons": get_codes("SALARY_REASON"),
-        "settings": get_settings(),
+        "settings": get_settings(), "fin_items": FIN_ITEMS, "fund_ready": fin.fund_configured(),
     }, "hr.salaries")
 
 

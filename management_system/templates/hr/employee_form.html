@@ -86,7 +86,7 @@
   {% endcall %}
 
   {% if not is_new %}
-  {% call sec('s-salary', 3, '연봉', '올해 연봉을 넣거나 고치면 연봉현황에 같이 반영됩니다. 지난 해 연봉은 연봉 탭의 이력에서 봅니다.', 'bi-graph-up-arrow') %}
+  {% call sec('s-salary', 3, '연봉', '올해 연봉을 넣거나 고치면 인건비·연봉에 같이 반영됩니다. 지난 해 연봉은 연봉 탭의 이력에서 봅니다.', 'bi-graph-up-arrow') %}
     <div class="row g-3">
       <div class="col-md-2"><label class="form-label small">적용연도</label>
         <input class="form-control form-control-sm" type="number" name="sal_year" value="{{ sal_year }}" min="2000" max="2100"></div>
@@ -144,7 +144,7 @@
   {% endif %}
 
   {% if is_new %}
-  {% call sec('s-pay', 3, '연봉·근로계약', '입사 연봉을 넣으면 연봉현황에 함께 등록됩니다.', 'bi-cash-coin') %}
+  {% call sec('s-pay', 3, '연봉·근로계약', '입사 연봉을 넣으면 인건비·연봉에 함께 등록됩니다.', 'bi-cash-coin') %}
     <div class="row g-3">
       <div class="col-md-3"><label class="form-label small">입사 연봉(원)</label>
         <input class="form-control form-control-sm" type="number" name="initial_salary" value="{{ e.initial_salary or '' }}" data-money="salHint" data-monthly="salMonthly" step="1" placeholder="숫자만 (예: 42000000)">

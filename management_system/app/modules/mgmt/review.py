@@ -1,11 +1,13 @@
-"""인사평가·연봉조정.
+"""인사평가·연봉조정 (2026-11 개편: 평가표 없이 기준값으로 고정인상률 안을 자동 산출).
 
-흐름: ① 성과연도 손익(fund)으로 고정인상률 안(5·6·7% 등) 비교 → ② 부서장 평가 등급 입력(관리부가 입력하거나 CSV 올리기)
-→ ③ 직원별 최종 인상률 = 고정 + 등급 가산(개별 조정 가능) → ④ 확정 → 연봉현황에 반영.
+흐름: ① 기준값(물가상승률·최저임금·손익) → ② 고정인상률 안 자동 산출·비교(물가보전·최저임금연동·성과공유·지불능력·직접)
+→ ③ 고른 안을 전원에 먼저 적용, 직원별 최종 %를 직접 조정(등급 가산은 선택), 최저임금 미달은 자동으로 기준선까지
+→ ④ 고른 고정안 대비 조정 결과 비교 후 확정 → 인건비·연봉에 반영.
 """
 import csv
 import io
 import json
+import math
 from collections import Counter, defaultdict
 from datetime import date
 
@@ -18,6 +20,13 @@ from app.modules.mgmt.constants import DEFAULT_GRADES, DEFAULT_SCENARIOS
 from app.security.crypto import enc
 
 LOCKED = ("확정", "반영완료")
+STATUS_LABEL = {"준비": "준비", "평가중": "조정 중", "확정": "확정", "반영완료": "반영완료"}
+# 기준값 입력칸 (review_cycles.inputs, 암호화 저장)
+INPUT_LABELS = {"cpi": "물가상승률(%)", "min_wage_cur": "올해 최저시급(원)", "min_wage_next": "다음 해 최저시급(원)",
+                "share_ratio": "성과공유 나눔비율(%)", "share_cap": "성과공유 가산 상한(%p)", "pay_ratio": "지불능력 한도(%)",
+                "memo": "메모"}
+INPUT_KEYS = tuple(INPUT_LABELS)
+INPUT_DEFAULTS = {"share_ratio": 10.0, "share_cap": 3.0, "pay_ratio": 30.0}
 
 
 class ReviewError(ValueError):
@@ -76,8 +85,8 @@ def parse_rates(text: str) -> list[float]:
         rs = sorted({round(float(x.strip().replace("%", "")), 2) for x in (text or "").split(",") if x.strip()})
     except ValueError as ex:
         raise ReviewError("비교할 인상률은 '5, 6, 7' 처럼 숫자로 적어 주세요") from ex
-    if not rs or len(rs) > 6 or any(r < -10 or r > 30 for r in rs):
-        raise ReviewError("비교할 인상률은 1~6개, -10~30% 사이로 적어 주세요")
+    if len(rs) > 6 or any(r < -10 or r > 30 for r in rs):
+        raise ReviewError("직접 비교할 인상률은 6개까지, -10~30% 사이로 적어 주세요")
     return rs
 
 
@@ -90,9 +99,16 @@ def save_setup(c: dict, form: dict, by: str = ""):
     if s and e and e < s:
         raise ReviewError("평가 종료일이 시작일보다 빠릅니다")
     inputs = dict(c["inputs"])
-    for k in ("cpi", "min_wage_next", "industry", "memo"):
-        if k in form:
-            inputs[k] = str(form.get(k) or "").strip()
+    for k in INPUT_KEYS:
+        if k not in form:
+            continue
+        if k == "memo":
+            inputs[k] = str(form.get(k) or "").strip()[:500]
+            continue
+        v = str(form.get(k) or "").strip().replace(",", "").replace("%", "")
+        if v and _num(v) is None:
+            raise ReviewError(f"{INPUT_LABELS[k]}은(는) 숫자로 넣어 주세요")
+        inputs[k] = v
     base = str(keep("base_rate") if keep("base_rate") is not None else "").strip()
     try:
         base_rate = float(base) if base else None
@@ -104,7 +120,7 @@ def save_setup(c: dict, form: dict, by: str = ""):
     execute("UPDATE review_cycles SET eval_start=?, eval_end=?, scenarios=?, grades=?, inputs=?, base_rate=?, round_unit=?, "
             "effective_date=? WHERE id=?",
             (s.isoformat() if s else None, e.isoformat() if e else None,
-             json.dumps(parse_rates(form.get("scenarios") or ",".join(str(x) for x in c["scenarios"]))),
+             json.dumps(parse_rates(form["scenarios"] if "scenarios" in form else ",".join(str(x) for x in c["scenarios"]))),
              json.dumps(parse_grades(form.get("grades") or ", ".join(f"{g}:{v:+g}" for g, v in c["grades"]))),
              enc(inputs), base_rate, unit, eff.isoformat() if eff else c["effective_date"], c["id"]))
     audit("mgmt", "인사평가 기준 저장", str(c["year"]), f"고정 {base_rate}%")
@@ -157,6 +173,8 @@ def compute(c: dict, base_rate: float | None = None, use_overrides: bool = True,
         std = float(s.get("monthly_std_hours") or 209)
     except ValueError:
         min_wage, std = 0.0, 209.0
+    unit = c["round_unit"] or 10000
+    min_annual = math.ceil(min_wage * std * 12) if min_wage else 0
     rows = []
     for e in members(c):
         it = its.get(e["id"], {})
@@ -168,14 +186,20 @@ def compute(c: dict, base_rate: float | None = None, use_overrides: bool = True,
             add = 0.0
         override = it.get("final_rate") if use_overrides else None
         final = override if override is not None else (base or 0.0) + add
-        new = round_to(base_sal * (1 + final / 100), c["round_unit"] or 10000) if base_sal else None
+        new = round_to(base_sal * (1 + final / 100), unit) if base_sal else None
+        min_fix = False
+        if new and min_annual and new < min_annual and e.get("employment_type") != "단시간(파트타임)":
+            new = -(-min_annual // unit) * unit                  # 최저임금 기준선까지 자동으로 올림 (단위 올림)
+            final = (new / base_sal - 1) * 100
+            min_fix = True
         rows.append({
             "employee": e, "grade": grade, "add_rate": add, "add_custom": it.get("add_rate") is not None,
             "final_rate": final, "override": override, "comment": it.get("comment") or "", "evaluator": it.get("evaluator") or "",
             "base_salary": base_sal, "base_year": base_year, "new_salary": new,
             "raise": (new - base_sal) if (new and base_sal) else None,
             "already": hist.get(c["apply_year"]),
-            "below_min": bool(new and min_wage and new / 12 / std < min_wage),
+            "below_min": bool(new and min_wage and new / 12 / std < min_wage and e.get("employment_type") != "단시간(파트타임)"),
+            "min_fix": min_fix,
         })
     have = [r for r in rows if r["base_salary"]]
     tb, tn = sum(r["base_salary"] for r in have), sum(r["new_salary"] for r in have)
@@ -194,6 +218,7 @@ def compute(c: dict, base_rate: float | None = None, use_overrides: bool = True,
         "graded": sum(1 for r in rows if r["grade"]), "count": len(rows),
         "missing_salary": [r for r in rows if not r["base_salary"]],
         "below_min": [r for r in rows if r["below_min"]],
+        "min_fix": [r for r in rows if r["min_fix"]], "min_wage": min_wage, "min_annual": min_annual,
         "already": sum(1 for r in rows if r["already"]),
         "grade_dist": Counter(r["grade"] or "미평가" for r in rows),
         "dept": sorted(({"department": k, **v, "rate": (v["new"] - v["base"]) / v["base"] * 100 if v["base"] else None}
@@ -201,29 +226,118 @@ def compute(c: dict, base_rate: float | None = None, use_overrides: bool = True,
     }
 
 
-def scenarios(c: dict) -> dict:
-    """고정인상률 안별 비교 (평가 가산 포함·제외), 회사 실부담과 손익 대비."""
+def _num(v) -> float | None:
+    try:
+        return float(str(v).replace(",", "").replace("%", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def basis(c: dict) -> dict:
+    """안 산출에 쓰는 기준값: 직접 넣은 값 + 손익(fund·직접 입력) + 기준 연봉 합계."""
+    inp = c["inputs"]
     rt = labor.rates()
-    mult = 1 + (rt["employer"] + rt["retire"]) / 100
     f = fin.summary(c["year"])
-    rev, op = f["by"]["매출액"]["cur"], f["by"]["영업손익"]["cur"]
-    op_prev = f["by"]["영업손익"]["prev"]
+    op, op_prev = f["by"]["영업손익"]["cur"], f["by"]["영업손익"]["prev"]
+    mw_cur = _num(inp.get("min_wage_cur")) or _num(get_settings().get("min_wage_hourly"))
+    mw_next = _num(inp.get("min_wage_next"))
+
+    def opt(k):
+        v = _num(inp.get(k))
+        return INPUT_DEFAULTS[k] if v is None else v
+    return {
+        "cpi": _num(inp.get("cpi")), "mw_cur": mw_cur, "mw_next": mw_next,
+        "mw_rate": (mw_next / mw_cur - 1) * 100 if (mw_cur and mw_next) else None,
+        "op": op, "op_prev": op_prev, "rev": f["by"]["매출액"]["cur"],
+        "op_growth": (op - op_prev) if (op is not None and op_prev is not None) else None,
+        "op_growth_rate": ((op - op_prev) / abs(op_prev) * 100) if (op is not None and op_prev) else None,
+        "share_ratio": opt("share_ratio"), "share_cap": opt("share_cap"), "pay_ratio": opt("pay_ratio"),
+        "mult": 1 + (rt["employer"] + rt["retire"]) / 100, "rates": rt, "fin": f,
+        "total_base": compute(c, base_rate=0, use_overrides=False, with_grades=False)["total_base"],
+    }
+
+
+def plans(c: dict, b: dict | None = None) -> list[dict]:
+    """고정인상률 안 자동 산출. 자료가 없으면 rate=None 과 채울 값 안내(why)."""
+    b = b or basis(c)
+    cpi = b["cpi"]
+    out = [
+        {"key": "cpi", "name": "물가보전안", "rate": round(cpi, 1) if cpi is not None else None,
+         "formula": "물가상승률 그대로 (실질임금 유지)", "why": None if cpi is not None else "물가상승률을 넣으면 계산됩니다"},
+        {"key": "minwage", "name": "최저임금연동안", "rate": round(b["mw_rate"], 1) if b["mw_rate"] is not None else None,
+         "formula": "다음 해 최저시급 ÷ 올해 최저시급 − 1",
+         "why": None if b["mw_rate"] is not None else "다음 해 최저시급을 넣으면 계산됩니다"},
+    ]
+    if cpi is None:
+        share, why = None, "물가상승률을 넣으면 계산됩니다"
+    elif b["op_growth_rate"] is None:
+        share, why = None, "올해·전년 영업이익(fund 읽기 또는 직접 입력)이 있어야 계산됩니다"
+    else:
+        share, why = round(cpi + min(max(b["op_growth_rate"], 0) * b["share_ratio"] / 100, b["share_cap"]), 1), None
+    out.append({"key": "share", "name": "성과공유안", "rate": share, "why": why,
+                "formula": f"물가상승률 + 영업이익 증가율 × {b['share_ratio']:g}% (가산 최대 {b['share_cap']:g}%p, 이익이 줄면 가산 0)"})
+    if b["op_growth"] is None or not b["total_base"]:
+        pay, why = None, "올해·전년 영업이익과 기준 연봉이 있어야 계산됩니다"
+    else:
+        pay, why = round(max(b["op_growth"], 0) * b["pay_ratio"] / 100 / (b["total_base"] * b["mult"]) * 100, 1), None
+    out.append({"key": "pay", "name": "지불능력안", "rate": pay, "why": why,
+                "formula": f"늘어난 영업이익의 {b['pay_ratio']:g}% 안에서 줄 수 있는 최대 인상률 (4대보험·퇴직 회사 부담 포함)"})
+    for r in c["scenarios"]:
+        out.append({"key": "manual", "name": "직접입력안", "rate": float(r), "formula": "직접 넣은 비교안", "why": None})
+    return out
+
+
+def compare(c: dict) -> dict | None:
+    """④ 확정 전 비교: 고른 고정인상률을 전원 똑같이 적용했을 때 vs 직원별 조정 후 실제 결과."""
+    if c["base_rate"] is None:
+        return None
+    mult = 1 + sum(labor.rates().values()) / 100
+    fx = compute(c, use_overrides=False, with_grades=False)
+    fn = compute(c)
+    fixed_by = {d["department"]: d for d in fx["dept"]}
+    dept = [{"department": d["department"], "fixed": (fixed_by.get(d["department"]) or {}).get("rate"), "final": d["rate"]}
+            for d in fn["dept"]]
+    bins = [("0% 이하", None, 0.0001), ("0~2%", 0.0001, 2), ("2~4%", 2, 4), ("4~6%", 4, 6), ("6~8%", 6, 8), ("8% 이상", 8, None)]
+    have = [r for r in fn["rows"] if r["base_salary"]]
+    dist = [{"label": lb, "count": sum(1 for r in have if (lo is None or r["final_rate"] >= lo) and (hi is None or r["final_rate"] < hi))}
+            for lb, lo, hi in bins]
+    diff = [r for r in have if abs(r["final_rate"] - c["base_rate"]) > 0.005]
+
+    def pack(x):
+        return {"avg_rate": x["avg_rate"], "increase_rate": x["increase_rate"], "increase": x["increase"],
+                "real_cost": x["increase"] * mult, "total_new": x["total_new"]}
+    return {"fixed": pack(fx), "final": pack(fn), "dept": dept, "dist": dist, "changed": len(diff),
+            "up": sum(1 for r in diff if r["final_rate"] > c["base_rate"]),
+            "down": sum(1 for r in diff if r["final_rate"] < c["base_rate"])}
+
+
+def scenarios(c: dict) -> dict:
+    """고정인상률 안별 비교 (자동 산출 안 + 직접 넣은 안 + 고른 값), 회사 실부담과 손익 대비."""
+    b = basis(c)
+    pl = plans(c, b)
+    rt, mult, f = b["rates"], b["mult"], b["fin"]
+    rev, op, op_prev = b["rev"], b["op"], b["op_prev"]
     labor_now = labor.overview(c["year"])["total"]["total"]
-    rates = sorted(set(c["scenarios"] + ([c["base_rate"]] if c["base_rate"] is not None else [])))
+    names = defaultdict(list)
+    for p in pl:
+        if p["rate"] is not None:
+            names[p["rate"]].append(p["name"])
+    if c["base_rate"] is not None and c["base_rate"] not in names:
+        names[c["base_rate"]].append("고른 값")
     out = []
-    for r in rates:
+    for r in sorted(names):
         g = compute(c, base_rate=r, use_overrides=False)
         n = compute(c, base_rate=r, use_overrides=False, with_grades=False)
         real = g["increase"] * mult
         out.append({
-            "rate": r, "chosen": r == c["base_rate"], "increase_fixed": n["increase"], "increase": g["increase"],
+            "rate": r, "names": names[r], "chosen": r == c["base_rate"], "increase_fixed": n["increase"], "increase": g["increase"],
             "avg_rate": g["avg_rate"], "total_new": g["total_new"], "real_cost": real,
             "op_share": real / op * 100 if op and op > 0 else None,
             "op_growth_share": real / (op - op_prev) * 100 if (op is not None and op_prev is not None and op > op_prev) else None,
             "labor_ratio_after": (labor_now + real) / rev * 100 if rev else None,
             "below_min": len(g["below_min"]),
         })
-    return {"rows": out, "fin": f, "mult": mult, "rates": rt, "labor_now": labor_now,
+    return {"rows": out, "plans": pl, "basis": b, "fin": f, "mult": mult, "rates": rt, "labor_now": labor_now,
             "labor_ratio_now": labor_now / rev * 100 if rev else None}
 
 

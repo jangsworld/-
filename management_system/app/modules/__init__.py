@@ -6,15 +6,23 @@
 
 MODULES = [
     {
+        "key": "home", "name": "총괄", "icon": "bi-house-door-fill", "ready": True,
+        "menus": [
+            {"key": "home", "name": "총괄 대시보드", "icon": "bi-speedometer", "url": "/"},
+        ],
+    },
+    {
         "key": "hr", "name": "인사관리", "icon": "bi-people-fill", "ready": True,
         "menus": [
             {"key": "hr.dashboard", "name": "인사 대시보드", "icon": "bi-speedometer2", "url": "/hr/dashboard"},
             {"key": "hr.employees", "name": "임직원 현황", "icon": "bi-person-vcard", "url": "/hr/employees"},
             {"key": "hr.contracts", "restricted": True, "name": "근로계약서", "icon": "bi-file-earmark-text", "url": "/hr/contracts"},
-            {"key": "hr.salaries", "restricted": True, "name": "연봉현황", "icon": "bi-graph-up-arrow", "url": "/hr/salaries"},
+            {"key": "hr.salaries", "restricted": True, "name": "인건비·연봉", "icon": "bi-graph-up-arrow", "url": "/hr/salaries"},
             {"key": "hr.rewards", "restricted": True, "name": "상벌현황", "icon": "bi-award", "url": "/hr/rewards"},
             {"key": "hr.technicians", "restricted": True, "name": "기술자 현황", "icon": "bi-tools", "url": "/hr/technicians"},
             {"key": "hr.specials", "restricted": True, "name": "근로특이사항", "icon": "bi-calendar-heart", "url": "/hr/specials"},
+            {"key": "mgmt.training", "name": "교육 이수", "icon": "bi-mortarboard", "url": "/mgmt/training", "perm": "ga_write"},
+            {"key": "mgmt.compliance", "name": "법정의무 일정", "icon": "bi-calendar2-check", "url": "/mgmt/compliance", "perm": "ga_write"},
             {"key": "hr.leave", "restricted": True, "name": "연차 관리", "icon": "bi-calendar-check", "url": "/hr/leave"},
             {"key": "hr.ecount", "restricted": True, "name": "이카운트 연동", "icon": "bi-arrow-left-right", "url": "/hr/ecount"},
             {"key": "hr.certificates", "restricted": True, "name": "증명서 발급", "icon": "bi-patch-check", "url": "/hr/certificates"},
@@ -36,11 +44,8 @@ MODULES = [
     {
         "key": "mgmt", "name": "경영관리", "icon": "bi-bar-chart-line-fill", "ready": True,
         "menus": [
-            {"key": "mgmt.labor", "restricted": True, "name": "인건비 총괄", "icon": "bi-pie-chart", "url": "/mgmt/labor"},
             {"key": "mgmt.review", "restricted": True, "name": "인사평가·연봉조정", "icon": "bi-clipboard-data", "url": "/mgmt/review"},
             {"key": "mgmt.incentive", "restricted": True, "name": "인센티브 예산", "icon": "bi-piggy-bank", "url": "/mgmt/incentive"},
-            {"key": "mgmt.training", "name": "교육 이수", "icon": "bi-mortarboard", "url": "/mgmt/training", "perm": "ga_write"},
-            {"key": "mgmt.compliance", "name": "법정의무 일정", "icon": "bi-calendar2-check", "url": "/mgmt/compliance", "perm": "ga_write"},
         ],
     },
     {

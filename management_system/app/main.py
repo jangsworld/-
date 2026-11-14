@@ -155,7 +155,11 @@ async def server_error(request: Request, exc: Exception):
 
 @app.get("/", include_in_schema=False)
 def root(request: Request):
-    return RedirectResponse("/hr/dashboard")
+    """총괄 대시보드: 인사·교육·법정의무·총무에서 지금 챙길 것만."""
+    from app.modules import home
+    return templates.TemplateResponse(request, "home.html", {
+        "d": home.build(request.state.user["role"]), "active_menu": "home",
+        "msg": request.query_params.get("msg", "")})
 
 
 SETTING_LABELS = {
@@ -178,7 +182,7 @@ CODE_SECTIONS = {
               "EVENT_CATEGORY": "경조 구분", "EVENT_RELATION": "경조 관계"},
 }
 CODE_HINTS = {
-    "RANK": "연봉현황의 직급별 차트가 이 순서로 정렬됩니다.",
+    "RANK": "인건비·연봉의 직급별 차트가 이 순서로 정렬됩니다.",
     "INTAKE_DOC": "파일명에 이 단어가 있으면 제출로 표시됩니다. 학위|졸업 처럼 | 로 여러 단어를 지정할 수 있습니다.",
     "ONBOARD": "인사기록카드의 체크리스트 탭에 표시됩니다.",
     "OFFBOARD": "퇴사일이 있는 직원의 체크리스트 탭에 표시됩니다.",

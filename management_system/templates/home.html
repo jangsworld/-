@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}총괄 대시보드{% endblock %}
+{% block page_title %}<i class="bi bi-speedometer me-2"></i>총괄 대시보드{% endblock %}
+{% block content %}
+{% set k = d.kpi %}
+<div class="row g-3 mb-3">
+  {% macro kpi(label, value, sub, icon, href='', cls='') %}
+  <div class="col-6 col-md-4 col-xl">
+    <a class="card kpi h-100 text-decoration-none" {% if href %}href="{{ href }}"{% endif %}>
+      <div class="d-flex justify-content-between"><div class="kpi-label">{{ label }}</div><i class="bi {{ icon }} kpi-icon"></i></div>
+      <div class="kpi-value {{ cls }}">{{ value }}</div><div class="kpi-sub">{{ sub }}</div>
+    </a>
+  </div>
+  {% endmacro %}
+  {{ kpi('바로 처리', k.urgent ~ '건', '기한 지남 · 법적 위험', 'bi-exclamation-octagon', '', 'text-danger' if k.urgent else 'text-success') }}
+  {{ kpi('곧 기한', k.soon ~ '건', '가까운 기한 · 미리 준비', 'bi-hourglass-split', '', 'text-warning' if k.soon else '') }}
+  {{ kpi('재직 인원', k.active ~ '명', '휴직 ' ~ k.on_leave ~ ' · 단축 ' ~ k.reduced, 'bi-people', '/hr/employees') }}
+  {{ kpi('이번 달 입사 / 퇴사', k.hires_month ~ ' / ' ~ k.resign_month, d.today.month ~ '월', 'bi-arrow-left-right', '/hr/employees') }}
+  {% if perms.salary and k.labor_total is defined %}
+  {{ kpi(d.today.year ~ '년 인건비 (추정)', '%.2f'|format(k.labor_total / 100000000) ~ '억',
+        ('인건비율 ' ~ '%.1f'|format(k.labor_ratio) ~ '%') if k.labor_ratio is not none else '회사 부담 포함', 'bi-cash-stack', '/hr/salaries') }}
+  {% endif %}
+</div>
+
+<div class="row g-3">
+  {% for s in d.sections %}
+  <div class="col-xl-{{ 12 // d.sections|length if d.sections|length > 1 else 12 }} col-lg-6">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="bi {{ s.icon }}"></i><span class="fw-semibold">{{ s.title }}</span>
+        {% if s.counts.danger %}<span class="badge text-bg-danger">바로 {{ s.counts.danger }}</span>{% endif %}
+        {% if s.counts.warning %}<span class="badge text-bg-warning">곧 {{ s.counts.warning }}</span>{% endif %}
+        {% if s.counts.info %}<span class="badge text-bg-light border">참고 {{ s.counts.info }}</span>{% endif %}
+        <a class="ms-auto small" href="{{ s.link }}">자세히 <i class="bi bi-chevron-right"></i></a>
+      </div>
+      <div style="max-height:560px;overflow-y:auto">
+        {% for a in s.alerts %}
+        <div class="alert-item lv-{{ a.level }}">
+          <span class="alert-dot"></span>
+          <div class="flex-grow-1">
+            <div><span class="alert-cat">{{ a.category }}</span>
+              {% if a.emp_id and perms.write %}<a href="/hr/employees/{{ a.emp_id }}" class="fw-semibold ms-1">{{ a.name }}</a>{% else %}<b class="ms-1">{{ a.name }}</b>{% endif %}
+              {% if a.dday is not none %}<span class="badge {{ 'text-bg-danger' if a.dday < 0 else 'text-bg-light border' }} ms-1">{{ ('D+' ~ (-a.dday)) if a.dday < 0 else ('D-Day' if a.dday == 0 else 'D-' ~ a.dday) }}</span>{% endif %}
+            </div>
+            <div class="small text-secondary">{{ a.message }}</div>
+          </div>
+          {% if a.link %}<a href="{{ a.link }}" class="btn btn-sm btn-outline-secondary text-nowrap">처리</a>{% endif %}
+        </div>
+        {% else %}
+        <div class="p-4 text-center text-muted small"><i class="bi bi-check2-circle text-success fs-4 d-block mb-1"></i>지금 챙길 일이 없습니다</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+<div class="help mt-2">빨강: 기한이 지났거나 법적 위험 · 노랑: 기한이 가까움 · 파랑: 참고. 기준 일수는 회사정보·환경설정의 「만료·복직 사전알림(일)」을 따릅니다.</div>
+{% endblock %}

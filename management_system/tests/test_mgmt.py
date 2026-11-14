@@ -205,7 +205,12 @@ def test_labor_overview(env):
     assert q["평가김"]["incentive"] == 30_000_000
     dept = {r["department"]: r for r in ov26["rows"]}
     assert dept["평가1팀"]["incentive"] == 35_000_000                    # 부서 지급분 포함
-    assert env["admin"].get("/mgmt/labor?year=2025").status_code == 200
+    r = env["admin"].get("/mgmt/labor?year=2025", follow_redirects=False)       # 인건비·연봉으로 합침 (예전 주소 유지)
+    assert r.status_code == 303 and r.headers["location"] == "/hr/salaries?year=2025"
+    page = env["admin"].get("/hr/salaries?year=2025").text
+    assert "부서별 인건비 구성" in page and "인상률 분포" in page and "손익 요약" in page
+    page = env["admin"].get("/hr/salaries?year=2026&tab=people").text
+    assert 'id="salTable"' in page and "총 인건비" in page and "평가김" in page
 
 
 # ── 인사평가·연봉조정 ───────────────────────────────────────────────────
@@ -220,8 +225,8 @@ def test_review_flow(env):
                  follow_redirects=False)
     assert r.status_code == 303
     sc = review.scenarios(review.get(2025))
-    assert [x["rate"] for x in sc["rows"]] == [5.0, 6.0, 7.0]
-    six = sc["rows"][1]
+    assert {5.0, 6.0, 7.0} <= {x["rate"] for x in sc["rows"]}                      # 직접 비교안 + 자동 산출 안
+    six = next(x for x in sc["rows"] if x["rate"] == 6.0)
     fixed = {x["employee"]["name"]: x for x in review.compute(review.get(2025), base_rate=6, use_overrides=False, with_grades=False)["rows"]}
     assert (fixed["평가김"]["raise"], fixed["평가이"]["raise"], fixed["평가박"]["raise"]) == (3_000_000, 2_160_000, 4_800_000)
     assert six["increase_fixed"] == sum(x["raise"] or 0 for x in fixed.values())
@@ -361,6 +366,56 @@ def test_mgmt_permissions(env):
     assert ga.post("/mgmt/fin/pull", data={"year": "2025"}, follow_redirects=False).status_code == 403
     assert ga.post("/settings/fund", data={"fund_token": "x"}, follow_redirects=False).status_code == 403
     menu = adm.get("/hr/dashboard").text
-    assert "인건비 총괄" in menu and "회사 관리 만기" in menu
+    assert "인건비·연봉" in menu and "인건비 총괄" not in menu and "회사 관리 만기" in menu
     gmenu = ga.get("/ga/dashboard").text
-    assert "교육 이수" in gmenu and "인건비 총괄" not in gmenu
+    assert "교육 이수" in gmenu and "인건비·연봉" not in gmenu
+
+
+# ── 총괄 대시보드 ───────────────────────────────────────────────────────
+def test_home_dashboard_by_role(env):
+    """맨 위 총괄 대시보드: 관리자는 인사·교육/법정의무·총무, 총무 담당은 인사 제외, 조회자는 총무만 (연봉 숨김)."""
+    adm = env["admin"].get("/").text
+    assert "총괄 대시보드" in adm and ">인사<" in adm and "교육 · 법정의무" in adm and ">총무<" in adm and "인건비 (추정)" in adm
+    assert adm.index("총괄 대시보드") < adm.index("인사 대시보드")          # 메뉴 맨 위
+    ga = env["ga"].get("/").text
+    assert "교육 · 법정의무" in ga and ">인사<" not in ga and "인건비 (추정)" not in ga
+    vw = env["viewer"].get("/").text
+    assert ">총무<" in vw and "교육 · 법정의무" not in vw and ">인사<" not in vw and "인건비 (추정)" not in vw
+    assert "경조금</span>" not in vw
+
+
+def test_review_auto_plans_formulas():
+    """평가표 없이 기준값으로 안 자동 산출: 물가보전·최저임금연동·성과공유(상한)·지불능력."""
+    c = {"scenarios": [4.0]}
+    b = {"cpi": 2.3, "mw_rate": 2.9, "op_growth_rate": 50.0, "op_growth": 1_000_000_000, "share_ratio": 10.0,
+         "share_cap": 3.0, "pay_ratio": 30.0, "total_base": 5_000_000_000, "mult": 1.2}
+    p = {x["key"]: x for x in review.plans(c, b)}
+    assert p["cpi"]["rate"] == 2.3 and p["minwage"]["rate"] == 2.9
+    assert p["share"]["rate"] == 5.3                       # 2.3 + min(50×10%=5, 상한 3)
+    assert p["pay"]["rate"] == 5.0                         # 10억×30% ÷ (50억×1.2)
+    assert p["manual"]["rate"] == 4.0
+    b2 = dict(b, cpi=None, op_growth_rate=-10.0, op_growth=-5)
+    p2 = {x["key"]: x for x in review.plans(c, b2)}
+    assert p2["cpi"]["rate"] is None and p2["cpi"]["why"] and p2["share"]["rate"] is None
+    assert p2["pay"]["rate"] == 0.0                        # 이익 감소 → 줄 여력 0
+
+
+def test_review_min_wage_lift_and_compare(env):
+    adm = env["admin"]
+    adm.post("/mgmt/review/create", data={"year": "2026"})
+    r = adm.post("/mgmt/review/2026/setup", data={"cpi": "2.5", "min_wage_next": "20,000", "base_rate": "3"}, follow_redirects=False)
+    assert r.status_code == 303 and "msg=" in r.headers["location"]
+    c = review.get(2026)
+    assert c["inputs"]["cpi"] == "2.5" and c["inputs"]["min_wage_next"] == "20000"
+    res = review.compute(c)
+    rows = {x["employee"]["name"]: x for x in res["rows"]}
+    lifted = [x for x in res["rows"] if x["min_fix"]]
+    assert lifted and all(x["new_salary"] >= 20000 * 209 * 12 and x["new_salary"] % 10000 == 0 for x in lifted)
+    assert not [(x["employee"]["name"], x["employee"].get("employment_type"), x["new_salary"], x["min_fix"]) for x in res["rows"] if x["below_min"]]
+    assert rows["평가박"]["min_fix"] is False and abs(rows["평가박"]["final_rate"] - 3.0) < 1e-9
+    cmp = review.compare(c)
+    assert cmp["fixed"]["increase"] <= cmp["final"]["increase"] and cmp["up"] >= len(lifted)
+    page = adm.get("/mgmt/review?year=2026").text
+    assert "물가보전안" in page and "2.5%" in page and "④ 확정 전 비교" in page and "최저임금 맞춤" in page
+    assert adm.post("/mgmt/review/2026/setup", data={"cpi": "abc"}, follow_redirects=False).headers["location"].find("msg=") > 0
+    assert review.get(2026)["inputs"]["cpi"] == "2.5"       # 잘못된 값은 저장 안 됨

@@ -31,7 +31,8 @@ def _who(request: Request) -> str:
 
 def _go(url: str, msg: str = "") -> RedirectResponse:
     if msg:
-        url += ("&" if "?" in url else "?") + "msg=" + quote(msg)
+        path, hash_, frag = url.partition("#")              # 알림 문구는 '#위치' 앞에 붙여야 화면에 보임
+        url = path + ("&" if "?" in path else "?") + "msg=" + quote(msg) + hash_ + frag
     return RedirectResponse(url, status_code=303)
 
 
@@ -61,7 +62,7 @@ def _year(v, default: int) -> int:
 @router.get("", include_in_schema=False)
 @router.get("/", include_in_schema=False)
 def mgmt_root():
-    return RedirectResponse("/mgmt/labor")
+    return RedirectResponse("/mgmt/review")
 
 
 # ── 손익 요약 (fund 읽기 / 직접 입력) ─────────────────────────────────────
@@ -69,7 +70,7 @@ def mgmt_root():
 async def fin_pull(request: Request):
     f = await request.form()
     y = _year(f.get("year"), today().year)
-    nxt = _safe_next(f.get("next"), "/mgmt/labor")
+    nxt = _safe_next(f.get("next"), "/hr/salaries")
     try:
         d = await run_in_threadpool(fin.pull, y, _who(request))
     except fin.FundError as ex:
@@ -88,21 +89,16 @@ async def fin_manual(request: Request):
             try:
                 vals[item] = int(float(v))
             except ValueError:
-                return _go(_safe_next(f.get("next"), "/mgmt/labor"), f"{item}은(는) 숫자로 넣어 주세요")
+                return _go(_safe_next(f.get("next"), "/hr/salaries"), f"{item}은(는) 숫자로 넣어 주세요")
     fin.save_manual(y, vals, _who(request))
-    return _go(_safe_next(f.get("next"), "/mgmt/labor"), f"{y}년 손익 요약을 저장했습니다")
+    return _go(_safe_next(f.get("next"), "/hr/salaries"), f"{y}년 손익 요약을 저장했습니다")
 
 
 # ── 인건비 총괄 ─────────────────────────────────────────────────────────
-@router.get("/labor", response_class=HTMLResponse)
-def labor_page(request: Request, year: int | None = None):
-    years = sorted(set(hr_repo.salary_years()) | set(incentive.years()) | {today().year})
-    y = year if year in years else today().year
-    ov = labor.overview(y)
-    return _render(request, "mgmt/labor.html", {
-        "ov": ov, "year": y, "years": years, "trend": labor.trend([x for x in years if x <= today().year][-6:]),
-        "fin_items": FIN_ITEMS, "fund_ready": fin.fund_configured(),
-    }, "mgmt.labor")
+@router.get("/labor", include_in_schema=False)
+def labor_page(year: int | None = None):
+    """인건비 총괄은 인사관리 '인건비·연봉'으로 합쳤습니다 (예전 주소 유지)."""
+    return RedirectResponse(f"/hr/salaries?year={year}" if year else "/hr/salaries", status_code=303)
 
 
 @router.post("/labor/rates")
@@ -111,13 +107,13 @@ async def labor_rates(request: Request):
     try:
         er, rr = float(f.get("employer") or 0), float(f.get("retire") or 0)
     except ValueError:
-        return _go("/mgmt/labor", "비율은 숫자로 넣어 주세요")
+        return _go("/hr/salaries", "비율은 숫자로 넣어 주세요")
     if not (0 <= er <= 30 and 0 <= rr <= 20):
-        return _go("/mgmt/labor", "비율 범위를 확인하세요 (4대보험 0~30%, 퇴직 0~20%)")
+        return _go("/hr/salaries", "비율 범위를 확인하세요 (4대보험 0~30%, 퇴직 0~20%)")
     set_setting("labor_employer_rate", str(er))
     set_setting("labor_retire_rate", str(rr))
     audit("mgmt", "인건비 회사부담률 변경", "", f"{er}% / {rr}%")
-    return _go(f"/mgmt/labor?year={_int(f.get('year'), today().year)}", "회사 부담률을 저장했습니다")
+    return _go(f"/hr/salaries?year={_int(f.get('year'), today().year)}", "회사 부담률을 저장했습니다")
 
 
 @router.get("/labor/export.csv")
@@ -218,7 +214,7 @@ def review_page(request: Request, year: int | None = None, department: str = "")
            "fund_ready": fin.fund_configured()}
     if c:
         res = review.compute(c)
-        ctx.update(res=res, sc=review.scenarios(c),
+        ctx.update(res=res, sc=review.scenarios(c), cmp=review.compare(c), status_label=review.STATUS_LABEL,
                    rows=[r for r in res["rows"] if not department or (r["employee"].get("department") or "") == department])
     else:
         ctx["fin"] = fin.summary(y)
