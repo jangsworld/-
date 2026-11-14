@@ -37,6 +37,8 @@ RULES = [
     (r"^/ga/seals/\d+/decide", ADMIN, ADMIN),
     (r"^/ga/events", GA_STAFF, GA_STAFF),
     (r"^/ga/(assets|contracts)/export\.csv", GA_STAFF, GA_STAFF),
+    (r"^/ga/vehicles/\d+/logbook\.csv", GA_STAFF, GA_STAFF),              # 운행기록부(운전자 이름)
+    (r"^/ga/(vehicles|assets)/labels", GA_STAFF, GA_STAFF),               # QR 열쇠가 담긴 라벨
     (r"^/ga/(contract-drafts|contracts/\d+/file)", GA_STAFF, GA_STAFF),     # 계약서 원본·초안: 총무 담당자 이상
     (r"^/ga", ALL, GA_STAFF),
     # 경영관리: 교육 이수·법정의무 일정은 총무 담당 이상, 인건비·인사평가·인센티브는 관리자·인사담당만
@@ -123,6 +125,79 @@ async def _csrf_token_from(request: Request) -> str:
     return ""
 
 
+def body_limit(path: str) -> int:
+    """경로별 요청 본문 한도(바이트)."""
+    if path.startswith("/login"):
+        return 64 * 1024                                   # 로그인·인증번호 요청은 몇 KB 면 충분
+    photo_up = path.startswith(("/ga/assets/", "/vq/")) or (path.startswith("/ga/vehicles/") and path.endswith("/photo"))
+    return (25 if photo_up else settings.max_upload_mb) * 1024 * 1024      # 자산·차량 사진은 서버에서 줄여 저장
+
+
+class _TooLarge(Exception):
+    pass
+
+
+class BodyLimitMiddleware:
+    """요청 본문을 '실제로 받은 바이트'로 제한 (길이 표시 없이 조각으로 보내는 요청도 막음). 가장 바깥에서 동작."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("method") in SAFE_METHODS:
+            return await self.app(scope, receive, send)
+        limit, got, started = body_limit(scope.get("path", "")), 0, False
+
+        async def counted():
+            nonlocal got
+            msg = await receive()
+            if msg["type"] == "http.request":
+                got += len(msg.get("body", b""))
+                if got > limit:
+                    raise _TooLarge()
+            return msg
+
+        async def tracked(msg):
+            nonlocal started
+            if msg["type"] == "http.response.start":
+                started = True
+            await send(msg)
+
+        try:
+            await self.app(scope, counted, tracked)
+        except BaseException as ex:                          # noqa: BLE001  (작업 묶음 예외에 싸여 올 수 있음)
+            if not _has_too_large(ex):
+                raise
+            if not started:
+                body = "요청 크기가 너무 큽니다".encode()
+                await send({"type": "http.response.start", "status": 413,
+                            "headers": [(b"content-type", b"text/plain; charset=utf-8"), (b"content-length", str(len(body)).encode()),
+                                        (b"connection", b"close")]})
+                await send({"type": "http.response.body", "body": body})
+
+
+def _has_too_large(ex: BaseException) -> bool:
+    if isinstance(ex, _TooLarge):
+        return True
+    return any(_has_too_large(e) for e in getattr(ex, "exceptions", ()))
+
+
+# 로그인·인증 요청 수 제한 (주소당, 메모리): 분당 30번
+_login_hits: dict[str, list[float]] = {}
+
+
+def login_rate_exceeded(ip: str) -> bool:
+    import time
+    now = time.monotonic()
+    hits = [t for t in _login_hits.get(ip, []) if now - t < 60]
+    hits.append(now)
+    _login_hits[ip] = hits[-200:]
+    if len(_login_hits) > 5000:                              # 주소가 아주 많이 쌓이면 오래된 것부터 비움
+        for k in list(_login_hits)[:2500]:
+            _login_hits.pop(k, None)
+    return len(hits) > 30
+
+
 class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request.state.csp_nonce = secrets.token_urlsafe(16)
@@ -134,12 +209,12 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         request.state.ip = ip
         path = request.url.path
 
-        # 업로드 크기 제한
+        # 업로드 크기 제한: 길이 표시가 있으면 여기서 바로, 없으면 BodyLimitMiddleware 가 받은 만큼 세어 끊음
         cl = request.headers.get("content-length")
-        photo_up = path.startswith(("/ga/assets/", "/vq/")) or (path.startswith("/ga/vehicles/") and path.endswith("/photo"))
-        limit_mb = 25 if photo_up else settings.max_upload_mb   # 자산·차량 사진은 서버에서 줄여 저장
-        if cl and cl.isdigit() and int(cl) > limit_mb * 1024 * 1024:
+        if cl and cl.isdigit() and int(cl) > body_limit(path):
             return PlainTextResponse("요청 크기가 너무 큽니다", status_code=413)
+        if request.method == "POST" and path.startswith("/login") and login_rate_exceeded(ip):
+            return PlainTextResponse("요청이 너무 많습니다. 잠시 후 다시 시도하세요", status_code=429)
 
         is_public = path.startswith(PUBLIC_PREFIXES)
         token = request.cookies.get(auth.COOKIE_NAME)

@@ -117,8 +117,12 @@ def main():
         print("2단계 인증 초기화 완료 (다음 로그인 시 재등록)")
     elif cmd == "unlock":
         u = _user(args[0])
-        execute("UPDATE users SET failed_count=0, locked_until=NULL, is_active=1 WHERE id=?", (u["id"],))
-        print("잠금 해제 완료")
+        # 잠금만 풉니다. 일부러 '중지'한 계정(퇴사자 등)을 다시 켜지는 않습니다.
+        execute("UPDATE users SET failed_count=0, locked_until=NULL WHERE id=?", (u["id"],))
+        from app.security import mfa
+        mfa.reset(u["id"])
+        execute("DELETE FROM login_attempts WHERE username=? AND success=0", (u["username"],))
+        print("잠금 해제 완료" + ("" if u["is_active"] else " (이 계정은 '중지' 상태입니다. 다시 쓰려면 사용자 관리 화면에서 켜세요)"))
     elif cmd == "list-users":
         for u in auth.list_users():
             print(f"{u['username']:15} {u['display_name']:10} {auth.ROLES[u['role']]:8} 사용={u['is_active']} 2FA={u['totp_enabled']}")

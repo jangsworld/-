@@ -19,3 +19,20 @@ if os.path.exists("/opt/pw-browsers/chromium"):
     exe = sorted(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome"))
     if exe:
         os.environ["BMS_PDF_BROWSER_PATH"] = exe[-1]
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_limits():
+    """시험은 모두 같은 주소에서 오므로, 시험마다 로그인 제한(주소당 요청 수·실패 기록)을 비움.
+    한 시험 안에서는 제한이 실제와 똑같이 동작합니다."""
+    from app.security import middleware
+    middleware._login_hits.clear()
+    try:
+        from app.db import execute
+        execute("DELETE FROM login_attempts WHERE success=0")
+    except Exception:            # noqa: BLE001  (DB 가 아직 없는 첫 시험)
+        pass
+    yield

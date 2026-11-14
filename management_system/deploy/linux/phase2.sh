@@ -88,8 +88,11 @@ chown root:root /etc/bms/backup.key
 chmod 600 /etc/bms/backup.key
 cat > /usr/local/sbin/bms-backup <<'EOF'
 #!/bin/bash
-# BMS DB·자산 사진 암호화 백업: 서버 7일, NAS 30일 보관
+# BMS DB·자산 사진·차량 점검 사진·설정 암호화 백업: 서버 7일, NAS 30일 보관
 set -euo pipefail
+cd /
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+unset PYTHONPATH PYTHONSTARTUP PYTHONHOME
 umask 077
 BASE=/srv/apps/bms
 DEST=/srv/backup/bms
@@ -98,17 +101,19 @@ KEY=/etc/bms/backup.key
 OUT="$DEST/bms-$(date +%Y%m%d-%H%M).tgz.enc"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-"$BASE/venv/bin/python" -c "
-import sqlite3, sys
+"$BASE/venv/bin/python" -I -c "
+import sqlite3
 src, dst = sqlite3.connect('$BASE/data/bms.db'), sqlite3.connect('$TMP/bms.db')
 src.backup(dst)
 assert dst.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
 "
-install -d -o bms -g bms -m 700 "$BASE/data/asset_photos"
-tar -czf - -C "$TMP" bms.db -C "$BASE/data" asset_photos \
+install -d -o bms -g bms -m 700 "$BASE/data/asset_photos" "$BASE/data/vehicle_photos"
+cp -p /etc/bms/bms.toml "$TMP/bms.toml"
+tar -czf - -C "$TMP" bms.db bms.toml -C "$BASE/data" asset_photos vehicle_photos \
     | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$KEY" -out "$OUT"
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "file:$KEY" -in "$OUT" | tar -tzf - > "$TMP/list"
 grep -qx 'bms.db' "$TMP/list"
+grep -q '^vehicle_photos/' "$TMP/list"
 find "$DEST" -maxdepth 1 -name 'bms-*.tgz.enc' -mtime +7 -delete
 cp --no-preserve=all "$OUT" "$NAS/"
 find "$NAS" -maxdepth 1 -name 'bms-*.tgz.enc' -mtime +30 -delete

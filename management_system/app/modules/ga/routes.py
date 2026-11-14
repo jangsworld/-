@@ -249,6 +249,8 @@ def _fleet_opts() -> dict:
 
 @router.get("/vehicles", response_class=HTMLResponse)
 def vehicles(request: Request, tab: str = "list", year: int | None = None, status: str = ""):
+    if tab in ("fines", "damages") and request.state.user["role"] not in ("admin", "hr", "ga"):
+        tab = "list"                                   # 직원별 과태료·사고 책임은 총무 담당자 이상만
     rows = repo.list_vehicles()
     users = fleet.current_users()
     for v in rows:
@@ -476,7 +478,10 @@ def _folder_file(folder_name: str, name: str):
     if not path or name not in contract_intake.list_files(folder_name):
         raise HTTPException(404, "파일을 찾을 수 없습니다")
     audit("ga", "계약 서류 열람", folder_name, name)
-    return FileResponse(os.path.join(path, name), filename=name, content_disposition_type="inline")
+    ext = name.rsplit(".", 1)[-1].lower()
+    media = {"pdf": "application/pdf", "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png"}.get(ext)
+    return FileResponse(os.path.join(path, name), filename=name, media_type=media or "application/octet-stream",
+                        content_disposition_type="inline" if media else "attachment")
 
 
 @router.get("/contract-drafts/{did}/file")
@@ -553,8 +558,18 @@ async def generic_save(request: Request, kind: str):
     for cb in ("auto_renew", "flower"):
         if table in ("ga_contracts", "ga_event_rules") and cb in ("auto_renew", "flower"):
             f.setdefault(cb, 0)
-    if table == "ga_seal_logs" and not f.get("id"):
-        f["status"] = "신청"
+    if table == "ga_seal_logs":
+        # 승인·반려는 관리자 전용 경로(/ga/seals/{id}/decide)에서만. 여기서는 상태·승인자·승인일을 받지 않음
+        for k in ("status", "approver", "approved_at"):
+            f.pop(k, None)
+        if f.get("id"):
+            cur = repo.get("ga_seal_logs", int(f["id"]))
+            if not cur:
+                raise HTTPException(404)
+            if cur["status"] != "신청":
+                return _redirect("/ga/docs?tab=seal", "이미 처리된 관인 신청은 고칠 수 없습니다")
+        else:
+            f["status"] = "신청"
     rid = repo.save(table, int(f.get("id") or 0) or None, f)
     nxt = f.get("next") or {"vehicles": f"/ga/vehicles/{rid}", "maint": f"/ga/vehicles/{f.get('vehicle_id')}",
                             "seals": "/ga/docs?tab=seal", "contracts": "/ga/contracts", "rules": "/ga/events"}.get(kind, "/ga/dashboard")

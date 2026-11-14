@@ -30,7 +30,7 @@ from app.modules.ga import repo as ga_repo
 from app.modules.mgmt import fin as mgmt_fin
 from app.modules.mgmt.routes import router as mgmt_router, company_router
 from app.security import auth
-from app.security.middleware import SecurityMiddleware
+from app.security.middleware import SecurityMiddleware, BodyLimitMiddleware
 from app.security.crypto import enc
 from app.security.routes import router as auth_router
 
@@ -97,6 +97,7 @@ async def lifespan(_app):
 app = FastAPI(title=SYSTEM_NAME, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(SecurityMiddleware)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
+app.add_middleware(BodyLimitMiddleware)          # 가장 바깥: 실제 받은 바이트로 크기 제한
 app.mount("/static", StaticFiles(directory=os.path.join(APP_DIR, "static")), name="static")
 app.include_router(auth_router)
 app.include_router(leave_router)

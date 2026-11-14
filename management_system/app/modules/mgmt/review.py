@@ -90,7 +90,16 @@ def parse_rates(text: str) -> list[float]:
     return rs
 
 
+def _fresh(c: dict) -> dict:
+    """저장 직전에 DB 에서 다시 읽은 조정. 화면을 연 뒤(요청을 받는 사이) 확정·반영됐을 수 있음."""
+    now = get(c["year"])
+    if not now:
+        raise ReviewError("그 해 연봉조정을 찾을 수 없습니다")
+    return now
+
+
 def save_setup(c: dict, form: dict, by: str = ""):
+    c = _fresh(c)
     if c["locked"]:
         raise ReviewError("확정된 평가는 바꿀 수 없습니다. 먼저 '다시 열기'를 하세요.")
     def keep(k):    # 폼에 없는 칸은 지금 값 유지 (예: 비교표에서 '이 안으로 정하기'만 누른 경우)
@@ -127,6 +136,7 @@ def save_setup(c: dict, form: dict, by: str = ""):
 
 
 def set_status(c: dict, status: str, by: str = ""):
+    c = _fresh(c)
     cur = c["status"]
     allowed = {("준비", "평가중"), ("평가중", "확정"), ("준비", "확정"), ("확정", "평가중")}
     if (cur, status) not in allowed:
@@ -135,10 +145,10 @@ def set_status(c: dict, status: str, by: str = ""):
         if c["base_rate"] is None:
             raise ReviewError("고정인상률을 먼저 정해 주세요")
         # 기준 연봉이 없는 직원은 확정해도 연봉현황 반영에서 빠집니다 (화면 '확인 필요'에 표시)
-        execute("UPDATE review_cycles SET status=?, decided_at=datetime('now','localtime'), decided_by=? WHERE id=?",
-                (status, by, c["id"]))
+        execute("UPDATE review_cycles SET status=?, decided_at=datetime('now','localtime'), decided_by=? WHERE id=? AND status=?",
+                (status, by, c["id"], cur))
     else:
-        execute("UPDATE review_cycles SET status=? WHERE id=?", (status, c["id"]))
+        execute("UPDATE review_cycles SET status=? WHERE id=? AND status=?", (status, c["id"], cur))
     audit("mgmt", f"인사평가 {status}", str(c["year"]), by)
 
 
@@ -342,6 +352,7 @@ def scenarios(c: dict) -> dict:
 
 
 def save_items(c: dict, rows: list[dict], by: str = "") -> int:
+    c = _fresh(c)
     if c["locked"]:
         raise ReviewError("확정된 평가는 바꿀 수 없습니다. 먼저 '다시 열기'를 하세요.")
     grades = {g for g, _ in c["grades"]}
@@ -352,6 +363,11 @@ def save_items(c: dict, rows: list[dict], by: str = "") -> int:
         return float(v) if v not in ("", "None") else None
     n = 0
     with batch():
+        # 묶음 안에서 먼저 쓰기 잠금을 잡고 상태를 다시 확인 → 확정·반영과 동시에 들어와도 순서가 보장됨
+        execute("UPDATE review_cycles SET status=status WHERE id=?", (c["id"],))
+        c = _fresh(c)
+        if c["locked"]:
+            raise ReviewError("확정된 평가는 바꿀 수 없습니다. 먼저 '다시 열기'를 하세요.")
         for r in rows:
             eid = int(r["employee_id"])
             if eid not in allowed:
@@ -371,21 +387,26 @@ def save_items(c: dict, rows: list[dict], by: str = "") -> int:
                      (r.get("evaluator") or "").strip() or None))
             n += 1
         if c["status"] == "준비" and n:
-            execute("UPDATE review_cycles SET status='평가중' WHERE id=?", (c["id"],))
+            execute("UPDATE review_cycles SET status='평가중' WHERE id=? AND status='준비'", (c["id"],))
     audit("mgmt", "인사평가 입력", str(c["year"]), f"{n}명")
     return n
 
 
 def apply(c: dict, by: str = "") -> int:
+    c = _fresh(c)
     if c["status"] != "확정":
         raise ReviewError("확정한 뒤에 연봉현황에 반영할 수 있습니다")
-    rows = [r for r in compute(c)["rows"] if r["new_salary"]]
     with batch():
+        execute("UPDATE review_cycles SET status=status WHERE id=?", (c["id"],))     # 쓰기 잠금 뒤 다시 확인
+        c = _fresh(c)
+        if c["status"] != "확정":
+            raise ReviewError("확정한 뒤에 연봉현황에 반영할 수 있습니다")
+        rows = [r for r in compute(c)["rows"] if r["new_salary"]]
         for r in rows:
             note = f"{c['year']}년 인사평가 {r['grade'] or '미평가'} · 최종 {r['final_rate']:.2f}%"
             hr_repo.upsert_salary(r["employee"]["id"], c["apply_year"], r["new_salary"], c["effective_date"], "정기인상", note)
-        execute("UPDATE review_cycles SET status='반영완료', applied_at=datetime('now','localtime'), applied_by=? WHERE id=?",
-                (by, c["id"]))
+        execute("UPDATE review_cycles SET status='반영완료', applied_at=datetime('now','localtime'), applied_by=? "
+                "WHERE id=? AND status='확정'", (by, c["id"]))
     audit("mgmt", "인사평가 연봉 반영", str(c["year"]), f"{len(rows)}명 → {c['apply_year']}년 연봉")
     return len(rows)
 

@@ -47,12 +47,18 @@ def test_initial_admin_forced_password_change(anon):
     assert r.headers["location"] == "/account/password"
 
 
-def test_wrong_password_and_lockout(anon):
+def test_wrong_password_throttle_without_account_lock(anon):
+    """틀린 비밀번호 반복: 그 주소에서 그 아이디는 막히지만, 계정 자체는 잠기지 않음(남이 계정을 잠가 둘 수 없게)."""
     c = TestClient(app)
     for _ in range(settings.max_failed_logins):
         r = _login(c, "sec_lock", "wrong-password")
-    assert r.status_code == 401 and "잠겼" in r.text
-    assert _login(c, "sec_lock", "Strong-Pass-123!").status_code == 401   # 올바른 비번도 잠금 중 거부
+        assert r.status_code == 401 and "아이디 또는 비밀번호가 올바르지 않습니다" in r.text
+        assert "남은 시도" not in r.text and "잠겼" not in r.text and "잠겨" not in r.text
+    r = _login(c, "sec_lock", "Strong-Pass-123!")                         # 같은 주소: 맞는 비밀번호도 잠시 거부
+    assert r.status_code == 401 and "너무 많습니다" in r.text
+    assert auth.query_one("SELECT locked_until FROM users WHERE username='sec_lock'")["locked_until"] is None
+    other = TestClient(app, client=("10.9.9.9", 50000))                   # 다른 주소의 본인은 로그인됨
+    assert _login(other, "sec_lock", "Strong-Pass-123!").status_code == 303
     assert _login(c, "nobody", "x").status_code == 401
 
 

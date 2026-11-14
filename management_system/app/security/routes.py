@@ -71,8 +71,10 @@ async def login(request: Request):
     user, err = auth.authenticate(str(f.get("username", "")), str(f.get("password", "")), request.state.ip)
     nxt = _safe_next(str(f.get("next", "/")))
     if not user:
-        audit("auth", "로그인 실패", str(f.get("username", ""))[:30], err[:40])
-        return _r(request, "auth/login.html", {"error": err, "next": nxt, "username": f.get("username", "")}, 401)
+        typed = str(f.get("username", "")).strip()
+        shown = typed if auth.USERNAME_RE.fullmatch(typed) else ""      # 형식이 아닌 글자는 기록·화면에 되돌리지 않음
+        audit("auth", "로그인 실패", shown or "(형식 오류)", "")
+        return _r(request, "auth/login.html", {"error": err, "next": nxt, "username": shown}, 401)
     auth.destroy_session(request.cookies.get(auth.COOKIE_NAME))  # 세션 고정 공격 방지
     method = mfa.method_for(user)
     mfa_needed = bool(method) or settings.require_2fa
@@ -89,9 +91,9 @@ async def login(request: Request):
         return _forget_device(request, _set_cookie(_go("/account/2fa"), token))
     msg = ""
     if method == "email":
-        sess = {"token_hash": auth._hash_token(token), "mail_sends": ""}
         try:
-            msg = f"{mfa.send_code(user, sess, token, request.state.ip)} 로 인증번호를 보냈습니다"
+            to, sent = mfa.send_code(user, request.state.ip)      # 유효한 번호가 있으면 다시 보내지 않음
+            msg = f"{to} 로 인증번호를 보냈습니다" if sent else "이미 보낸 인증번호가 아직 유효합니다. 메일함을 확인해 주세요"
         except mfa.MfaError as ex:
             msg = str(ex)
     return _forget_device(request, _set_cookie(_go("/login/2fa?next=" + quote(nxt), msg), token))
@@ -132,7 +134,7 @@ def _mfa_ctx(user, nxt, use="", sess=None):
         method = "app"
     return {"next": nxt, "method": method, "to": mfa.mask(user.get("email")), "has_app": bool(user["totp_enabled"]),
             "email_ok": mfa.email_ready(user), "minutes": mfa.CODE_MINUTES,
-            "left": mfa.seconds_left(sess) if method == "email" else 0}
+            "left": mfa.seconds_left(user) if method == "email" else 0}
 
 
 @router.get("/login/2fa", response_class=HTMLResponse)
@@ -151,8 +153,10 @@ async def login_2fa_send(request: Request):
         return _go("/login")
     f = await request.form()
     nxt = _safe_next(str(f.get("next", "/")))
+    if sess["mfa_passed"]:
+        return _go(nxt)
     try:
-        to = mfa.send_code(user, sess, request.cookies.get(auth.COOKIE_NAME), request.state.ip)
+        to, _ = mfa.send_code(user, request.state.ip, force=True)
         msg = f"{to} 로 인증번호를 다시 보냈습니다"
     except mfa.MfaError as ex:
         msg = str(ex)
@@ -168,8 +172,10 @@ async def login_2fa(request: Request):
     nxt = _safe_next(str(f.get("next", "/")))
     token = request.cookies.get(auth.COOKIE_NAME)
     use = "app" if (str(f.get("method")) == "app" and user["totp_enabled"]) else (mfa.method_for(user) or "")
+    if sess["mfa_passed"]:
+        return _go(nxt)
     if use == "email":
-        ok, err = mfa.verify_code(user, sess, token, str(f.get("code", "")))
+        ok, err = mfa.verify_code(user, str(f.get("code", "")))
     elif use == "app":
         ok, err = auth.verify_totp(user, str(f.get("code", ""))), "인증 앱 코드가 올바르지 않습니다"
     else:
@@ -177,17 +183,20 @@ async def login_2fa(request: Request):
     if ok:
         auth.mark_mfa_passed(token)
         auth.revoke_sessions(user["id"], except_token=token)    # 계정당 한 곳만 접속
-        execute("UPDATE users SET failed_count=0 WHERE id=?", (user["id"],))
+        mfa.clear_fails(user["id"])                             # 2단계까지 성공해야 실패 횟수를 지움
         audit("auth", f"로그인 성공(2단계·{mfa.METHODS[use]})", user["username"], "")
         return _welcome(nxt)
-    fails = user["failed_count"] + 1
-    execute("UPDATE users SET failed_count=? WHERE id=?", (fails, user["id"]))
-    audit("auth", "2단계 인증 실패", user["username"], f"{mfa.METHODS[use]} {fails}회")
-    if fails >= settings.max_failed_logins:
-        execute("UPDATE users SET failed_count=0, locked_until=datetime('now','localtime', ?) WHERE id=?",
+    fails, lock = mfa.note_fail(user)                           # 계정 기준 — 다시 로그인해도 이어짐 (메일·앱 합산)
+    audit("auth", "2단계 인증 실패", user["username"], f"{mfa.METHODS[use]} 최근 {fails}회")
+    if lock:
+        execute("UPDATE users SET locked_until=datetime('now','localtime', ?) WHERE id=?",
                 (f"+{settings.lockout_minutes} minutes", user["id"]))
+        mfa.reset(user["id"])
         auth.revoke_sessions(user["id"])
-        return _go("/login", "2단계 인증 실패가 반복되어 계정이 잠겼습니다")
+        audit("auth", "계정 잠금(2단계 인증 반복 실패)", user["username"], request.state.ip)
+        resp = _go("/login", f"2단계 인증 실패가 반복되어 계정이 {settings.lockout_minutes}분간 잠겼습니다")
+        resp.delete_cookie(auth.COOKIE_NAME, path="/")
+        return resp
     ctx = _mfa_ctx(user, nxt, use, sess)
     ctx["error"] = err
     return _r(request, "auth/login_2fa.html", ctx, 401)
@@ -368,6 +377,7 @@ def users_reset_2fa(request: Request, uid: int):
 def users_unlock(uid: int):
     u = auth.get_user(uid)
     execute("UPDATE users SET failed_count=0, locked_until=NULL WHERE id=?", (uid,))
+    mfa.reset(uid)
     audit("auth", "계정 잠금 해제", u["username"], "")
     return _go("/admin/users", "잠금이 해제되었습니다")
 
@@ -409,8 +419,11 @@ def audit_export(q: str = "", date_from: str = "", date_to: str = ""):
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["일시", "사용자", "IP", "모듈", "작업", "대상", "내용"])
+    def cell(v):                                   # 엑셀이 수식으로 읽지 않게
+        v = "" if v is None else str(v)
+        return "'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r") else v
     for l in logs:
-        w.writerow([l["created_at"], l["username"], l["ip"], l["module"], l["action"], l["target"], l["detail"]])
+        w.writerow([cell(l[k]) for k in ("created_at", "username", "ip", "module", "action", "target", "detail")])
     audit("auth", "접속기록 내보내기", "", f"{len(logs)}건")
     return StreamingResponse(iter(["﻿" + buf.getvalue()]), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote("BMS_접속기록.csv")})

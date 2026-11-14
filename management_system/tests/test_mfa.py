@@ -53,6 +53,7 @@ def _user(name, email=None, must_change=False):
     uid = auth.query_one("SELECT id FROM users WHERE username=?", (name,))["id"]
     execute("UPDATE users SET email=?, totp_enabled=0, totp_secret=NULL, failed_count=0, locked_until=NULL WHERE id=?", (email, uid))
     execute("DELETE FROM mfa_devices WHERE user_id=?", (uid,))
+    execute("DELETE FROM mfa_state WHERE user_id=?", (uid,))
     return uid
 
 
@@ -118,8 +119,8 @@ def test_email_code_login(mail):
         assert c.get("/hr/dashboard", follow_redirects=False).headers["location"] == "/login/2fa"   # 아직 못 들어감
         page = c.get("/login/2fa?next=/hr/dashboard").text
         assert "mf***@example.test" in page and "메일로 받은 인증번호" in page
-        rows = _raw("SELECT mail_code FROM sessions WHERE mail_code IS NOT NULL")
-        assert rows and all(code not in r[0] for r in rows)                     # 번호는 해시만 저장
+        rows = _raw("SELECT code_mac FROM mfa_state WHERE code_mac IS NOT NULL")
+        assert rows and all(code not in r[0] for r in rows)                     # 번호는 지문만 저장
         tok = _csrf(c, "/login/2fa")
         bad = "000000" if code != "000000" else "111111"
         r = c.post("/login/2fa", data={"code": bad, "csrf_token": tok, "next": "/hr/dashboard"}, headers=O)
@@ -129,7 +130,7 @@ def test_email_code_login(mail):
         assert c.get("/hr/dashboard").status_code == 200
         assert "bms_dev" not in r.cookies                                      # 기억 안 함
         # 같은 번호 다시 못 씀
-        assert _raw("SELECT COUNT(*) FROM sessions WHERE mail_code IS NOT NULL")[0][0] == 0
+        assert _raw("SELECT COUNT(*) FROM mfa_state s JOIN users u ON u.id=s.user_id WHERE u.username='mf_mail' AND s.code_mac IS NOT NULL")[0][0] == 0
 
 
 def test_resend_limits_and_five_wrong(mail):
@@ -223,7 +224,6 @@ def test_welcome_page_shows_login_record(mail):
         assert "sidebar" not in page                                           # 메뉴 없는 확인 화면
         c.post("/logout", data={"csrf_token": _csrf(c, "/account")}, headers=O)
         c.post("/login", data={"username": "mf_wel", "password": "wrong-pw"}, headers=O)       # 실패 1번
-        execute("UPDATE sessions SET mail_sends='' WHERE 1=1")
         r = full_login()
         page = c.get(r.headers["location"]).text
         assert "첫 로그인입니다" not in page and "지난 로그인" in page

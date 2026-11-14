@@ -226,6 +226,8 @@ drawCmp();
     const body = { employee_id: tr.dataset.emp };
     tr.querySelectorAll('[name]').forEach((el) => { if (el.name !== 'employee_id') body[el.name] = el.value; });
     const mine = ++seq;
+    const box = document.getElementById('cmpBox');
+    if (box) box.classList.add('pe-none', 'opacity-50');          // 저장이 끝날 때까지 확정·반영 잠금
     say('<i class="bi bi-arrow-repeat"></i> 저장 중…', 'text-muted');
     try {
       await postJSON(form.dataset.liveUrl, body);
@@ -238,6 +240,8 @@ drawCmp();
       e.target.classList.add('is-invalid');
       say('<i class="bi bi-exclamation-triangle"></i> ' + m, 'text-danger');
       toast(m);
+    } finally {
+      if (mine === seq && box) box.classList.remove('pe-none', 'opacity-50');
     }
   });
 })();

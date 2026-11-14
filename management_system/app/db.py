@@ -6,7 +6,7 @@ import threading
 from contextlib import contextmanager
 
 from app.config import APP_DIR as BASE_DIR, settings
-from app.security.crypto import dec_row
+from app.security.crypto import dec_row, check_params
 
 DB_PATH = settings.db_path
 SCHEMA_VERSION = "6"
@@ -27,6 +27,7 @@ def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=BUSY_TIMEOUT_SEC)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA synchronous = NORMAL")     # WAL 에서 안전한 권장값 (정전 시 마지막 저장만 잃을 수 있고 DB 는 깨지지 않음)
     return conn
 
 
@@ -77,6 +78,7 @@ def query_one(sql: str, params=()) -> dict | None:
 
 def execute(sql: str, params=()) -> int:
     """INSERT/UPDATE/DELETE 실행 후 lastrowid 반환."""
+    check_params(params)
     with tx() as conn:
         cur = conn.execute(sql, params)
         return cur.lastrowid
@@ -140,6 +142,16 @@ CREATE TABLE IF NOT EXISTS sessions (
     user_agent   TEXT,
     created_at   TEXT NOT NULL,
     last_seen    TEXT NOT NULL
+);
+
+-- 2단계 인증 상태: 계정 기준 (세션·브라우저가 바뀌어도 이어짐)
+CREATE TABLE IF NOT EXISTS mfa_state (
+    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    code_mac   TEXT,                          -- 인증번호의 서버 비밀 지문 (번호 자체는 저장하지 않음)
+    code_exp   TEXT,
+    code_tries INTEGER NOT NULL DEFAULT 0,    -- 이 번호를 틀린 횟수
+    sends      TEXT NOT NULL DEFAULT '',      -- 최근 발송 시각들 (쉼표)
+    fails      TEXT NOT NULL DEFAULT ''       -- 최근 2단계 인증 실패 시각들 (쉼표). 2단계까지 성공해야 지움
 );
 
 CREATE TABLE IF NOT EXISTS login_attempts (
@@ -901,11 +913,25 @@ DEFAULT_CODES = {
 }
 
 
+def _enable_wal():
+    """WAL 방식: 누가 저장하는 동안에도 다른 화면이 읽을 수 있음. 파일에 한 번 기록되면 계속 유지됩니다.
+    (백업은 sqlite 온라인 백업을 쓰므로 WAL 파일까지 일관되게 담깁니다.)"""
+    conn = sqlite3.connect(DB_PATH, timeout=BUSY_TIMEOUT_SEC)
+    try:
+        if conn.execute("PRAGMA journal_mode").fetchone()[0].lower() != "wal":
+            conn.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.OperationalError:
+        pass                                   # 다른 프로세스가 쓰는 중이면 다음 시작 때 다시 시도
+    finally:
+        conn.close()
+
+
 def init_db() -> bool:
     """마스터키 로드 + 스키마 생성 + 기본값 삽입. 최초 생성 여부를 반환."""
     from app.security.crypto import load_or_create_key
     is_new = not os.path.exists(DB_PATH)
     load_or_create_key(allow_create=is_new)
+    _enable_wal()
     with tx() as conn:
         if not is_new:
             has_users = conn.execute(

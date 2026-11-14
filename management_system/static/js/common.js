@@ -42,6 +42,19 @@ document.addEventListener('change', (e) => {
   (e.target.form || document).querySelectorAll(`input[type=checkbox][name="${name}"]`).forEach(c => { c.checked = e.target.checked; });
 });
 
+// 모든 저장(POST) 폼: 한 번 보낸 뒤 응답이 올 때까지 다시 보내지 않음 (두 번 눌러 두 건 생기는 것 방지)
+document.addEventListener('submit', (e) => {
+  const f = e.target;
+  if ((f.getAttribute('method') || '').toLowerCase() !== 'post' || e.defaultPrevented) return;
+  if (f.dataset.sent) { e.preventDefault(); return; }
+  setTimeout(() => {                                          // 다른 검사(필수 칸·확인 창)가 막지 않았을 때만 '보냄' 표시
+    if (e.defaultPrevented) return;
+    f.dataset.sent = '1';
+    setTimeout(() => { delete f.dataset.sent; }, 8000);      // 내려받기처럼 화면이 안 바뀌는 폼은 잠시 뒤 다시 허용
+  }, 0);
+});
+window.addEventListener('pageshow', () => document.querySelectorAll('form[data-sent]').forEach(f => { delete f.dataset.sent; }));
+
 // 오래 걸리는 폼: <form data-busy="진행 문구"> → 응답이 올 때까지 버튼을 잠가 중복 제출을 막음
 document.addEventListener('submit', (e) => {
   const text = e.target.dataset.busy;

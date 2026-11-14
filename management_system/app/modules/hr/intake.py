@@ -184,14 +184,32 @@ def read_folder(folder: str) -> tuple[list[Page], list[dict]]:
 
 
 def employee_folder(emp: dict) -> str | None:
-    if not settings.employee_root:
+    """임직원 서류 폴더. 반드시 임직원 폴더 뿌리 '바로 아래' 한 단계여야 함.
+    폴더 이름에 경로(/, \\, .., 드라이브·절대 경로)가 섞여 있으면 폴더가 없는 것으로 봄 — 서버의 다른 폴더를 열 수 없게."""
+    root = settings.employee_root
+    name = str(emp.get("folder_name") or emp.get("name") or "").strip()
+    if not root or not valid_folder_name(name):
         return None
-    return os.path.join(settings.employee_root, emp.get("folder_name") or emp["name"])
+    root_real = os.path.realpath(root)
+    path = os.path.realpath(os.path.join(root_real, name))
+    return path if os.path.dirname(path) == root_real else None
+
+
+def valid_folder_name(name: str | None) -> bool:
+    """폴더 '이름'만 허용 (경로 아님)."""
+    name = str(name or "")
+    if not name or name in (".", "..") or name != name.strip() or len(name) > 100:
+        return False
+    if any(ch in name for ch in '/\\:\0') or name.startswith(("~", ".")):
+        return False
+    return os.path.basename(name) == name and not os.path.isabs(name)
 
 
 def list_files(emp: dict) -> list[dict]:
     """임직원 폴더의 파일 목록 (폴더가 없거나 접근 불가면 빈 목록)."""
     folder = employee_folder(emp)
+    if not folder:
+        return []
     try:
         with os.scandir(folder) as it:
             found = [f for f in it if f.is_file(follow_symlinks=False) and not f.name.startswith((".", "~"))]

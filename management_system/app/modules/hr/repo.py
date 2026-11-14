@@ -76,7 +76,7 @@ def employee_status(emp: dict, status_map=None) -> str:
     return sm.get(emp["id"], "재직")
 
 
-def list_employees(q="", department="", employment_type="", status="") -> list[dict]:
+def list_employees(q="", department="", employment_type="", status="", search_pii=True) -> list[dict]:
     sql = "SELECT * FROM employees WHERE 1=1"
     params = []
     if department:
@@ -89,8 +89,8 @@ def list_employees(q="", department="", employment_type="", status="") -> list[d
     rows = query(sql, params)
     if q:  # 연락처·이메일은 암호화되어 있으므로 복호화 후 검색
         q = q.strip().lower()
-        rows = [r for r in rows if any(q in str(r.get(f) or "").lower()
-                                       for f in ("name", "emp_no", "phone", "email"))]
+        fields = ("name", "emp_no", "phone", "email") if search_pii else ("name", "emp_no")
+        rows = [r for r in rows if any(q in str(r.get(f) or "").lower() for f in fields)]
 
     sm = _status_map()
     cur_sal = current_salary_map()
@@ -142,6 +142,10 @@ def _clean(data: dict) -> dict:
         data["education"] = education_summary(data)
     if "bank_account" in data:  # 계좌번호는 숫자만 저장 (은행별 자리 구분이 다르고 대량이체 파일은 숫자만 사용)
         data["bank_account"] = re.sub(r"\D", "", str(data["bank_account"] or ""))
+    if data.get("folder_name") not in (None, ""):          # 폴더는 '이름'만 (서버 경로 금지)
+        from app.modules.hr.intake import valid_folder_name
+        if not valid_folder_name(str(data["folder_name"]).strip()):
+            raise ValueError("폴더 이름에는 경로를 넣을 수 없습니다")
     out = {}
     for f in EMPLOYEE_FIELDS:
         if f in data:
@@ -500,12 +504,22 @@ def valid_contract_ids(ref=None) -> set[int]:
 
 
 def next_cert_no() -> str:
+    """증명서 발급번호. 한 번 쓴 번호는 그 증명서를 지워도 다시 쓰지 않음(연도별 마지막 번호를 따로 기억)."""
+    from app.db import batch, get_settings, set_setting
     y = today().year
-    row = query_one(
-        "SELECT COUNT(*) c FROM hr_documents WHERE doc_group='certificate' AND doc_no LIKE ?",
-        (f"제{y}-%",),
-    )
-    return f"제{y}-{row['c'] + 1:04d}호"
+    key = f"cert_seq_{y}"
+    with batch():
+        used = 0
+        for r in query("SELECT doc_no FROM hr_documents WHERE doc_group='certificate' AND doc_no LIKE ?", (f"제{y}-%",)):
+            m = re.match(rf"제{y}-(\d+)호", str(r["doc_no"] or ""))
+            used = max(used, int(m.group(1)) if m else 0)
+        try:
+            last = int(get_settings().get(key) or 0)
+        except ValueError:
+            last = 0
+        n = max(used, last) + 1
+        set_setting(key, str(n))
+    return f"제{y}-{n:04d}호"
 
 
 # ════════════════════════════════════════════════════════════════════════

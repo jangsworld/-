@@ -111,7 +111,8 @@ def dashboard(request: Request):
 @router.get("/employees", response_class=HTMLResponse)
 def employees(request: Request, q: str = "", department: str = "", employment_type: str = "",
               status: str = "재직(전체)"):
-    rows = repo.list_employees(q, department, employment_type, status)
+    pii = request.state.user["role"] in ("admin", "hr")       # 연락처·메일 검색은 그 칸을 볼 수 있는 권한만
+    rows = repo.list_employees(q, department, employment_type, status, search_pii=pii)
     codes = _codes()
     known = [t for t in codes["employment_types"] if t != "기타"]
     codes["employment_types"] = known + [t for t in repo.employment_types_in_use() if t not in known]
@@ -294,11 +295,13 @@ def _save_extras(emp_id: int, rrn: str | None, quals: list[dict]):
 
 
 def _create_employee(form: dict, rrn: str | None, quals: list[dict]) -> int:
-    emp_id = repo.create_employee(form)
-    _save_extras(emp_id, rrn, quals)
-    if form.get("initial_salary"):
-        repo.upsert_salary(emp_id, to_date(form["hire_date"]).year, int(form["initial_salary"]),
-                           form["hire_date"], "신규", "입사 시 책정")
+    """임직원 등록은 한 묶음으로 저장: 중간에 실패하면 전부 취소 (반쯤 만들어진 직원이 남아 중복 등록되는 것 방지)."""
+    with batch():
+        emp_id = repo.create_employee(form)
+        _save_extras(emp_id, rrn, quals)
+        if form.get("initial_salary"):
+            repo.upsert_salary(emp_id, to_date(form["hire_date"]).year, int(form["initial_salary"]),
+                               form["hire_date"], "신규", "입사 시 책정")
     return emp_id
 
 
@@ -574,12 +577,13 @@ async def employee_update(request: Request, emp_id: int):
 def employee_file(emp_id: int, name: str):
     """임직원 폴더의 서류 열람. 폴더 목록에 있는 파일명만 허용합니다."""
     e = _emp_or_404(emp_id)
-    if name not in {f["name"] for f in intake.list_files(e)}:
+    folder = intake.employee_folder(e)
+    if not folder or name not in {f["name"] for f in intake.list_files(e)}:
         raise HTTPException(404, "파일을 찾을 수 없습니다")
     audit("hr", "입사서류 열람", f"{e['emp_no']} {e['name']}", name)
     ext = name.rsplit(".", 1)[-1].lower()
     media = {"pdf": "application/pdf", "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png"}.get(ext)
-    return FileResponse(os.path.join(intake.employee_folder(e), name), media_type=media or "application/octet-stream",
+    return FileResponse(os.path.join(folder, name), media_type=media or "application/octet-stream",
                         headers={"Content-Disposition": f"{'inline' if media else 'attachment'}; filename*=UTF-8''{quote(name)}"})
 
 

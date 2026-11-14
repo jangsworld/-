@@ -113,12 +113,34 @@ def password_expired(user: dict) -> bool:
 # ════════════════════════════════════════════════════════════════════════
 # 로그인 / 잠금
 # ════════════════════════════════════════════════════════════════════════
+USERNAME_RE = re.compile(r"[A-Za-z0-9._-]{1,30}")
+GENERIC_FAIL = "아이디 또는 비밀번호가 올바르지 않습니다"
+THROTTLED = "로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요"
+IP_FAIL_LIMIT = 10          # 같은 주소에서 (어느 계정이든) 15분에 이만큼 틀리면 그 주소 차단
+USER_FAIL_TOTAL = 20        # 한 계정에 (어느 주소에서든) 15분에 이만큼 틀리면 모두 거부
+WINDOW_MIN = 15
+
+
+def _since() -> str:
+    return _ts(_now() - timedelta(minutes=WINDOW_MIN))
+
+
 def _ip_blocked(ip: str) -> bool:
-    """IP 기준 무차별 대입 차단: 15분 내 실패 20회 이상."""
-    since = _ts(_now() - timedelta(minutes=15))
-    n = query_one("SELECT COUNT(*) c FROM login_attempts WHERE ip=? AND success=0 AND created_at>=?",
-                  (ip, since))["c"]
-    return n >= 20
+    """주소 기준 차단: 15분 안에 그 주소에서 실패가 IP_FAIL_LIMIT 번 이상."""
+    n = query_one("SELECT COUNT(*) c FROM login_attempts WHERE ip=? AND success=0 AND created_at>=?", (ip, _since()))["c"]
+    return n >= IP_FAIL_LIMIT
+
+
+def _user_ip_fails(username: str, ip: str) -> int:
+    """이 주소에서 이 아이디로 틀린 횟수 (마지막 성공 뒤부터, 15분 안). 없는 아이디도 똑같이 셈."""
+    last_ok = query_one("SELECT MAX(id) m FROM login_attempts WHERE username=? AND ip=? AND success=1", (username, ip))["m"] or 0
+    return query_one("SELECT COUNT(*) c FROM login_attempts WHERE username=? AND ip=? AND success=0 AND id>? AND created_at>=?",
+                     (username, ip, last_ok, _since()))["c"]
+
+
+def _user_fails_total(username: str) -> int:
+    return query_one("SELECT COUNT(*) c FROM login_attempts WHERE username=? AND success=0 AND created_at>=?",
+                     (username, _since()))["c"]
 
 
 def _log_attempt(ip, username, success, reason=""):
@@ -127,35 +149,43 @@ def _log_attempt(ip, username, success, reason=""):
 
 
 def authenticate(username: str, password: str, ip: str) -> tuple[dict | None, str]:
-    """(user, 오류메시지). 오류 메시지는 계정 존재 여부를 노출하지 않도록 통일."""
-    generic = "아이디 또는 비밀번호가 올바르지 않습니다"
+    """(user, 오류메시지).
+
+    - 실패 문구는 한 가지뿐: 계정이 있는지·잠겼는지·중지됐는지 알려 주지 않음.
+    - 비밀번호 실패는 '주소+아이디' 기준으로 막음(5번). 로그인하지 않은 사람이 남의 계정을 잠가 둘 수 없게,
+      계정 전체 잠금은 여러 주소에서 합쳐 USER_FAIL_TOTAL 번을 넘을 때만.
+    - 2단계 인증 실패로 걸린 잠금(users.locked_until)은 비밀번호가 맞아도 풀리지 않음.
+    """
+    username = (username or "").strip()
+    if not USERNAME_RE.fullmatch(username):
+        verify_password(_DUMMY_HASH, password or "")
+        _log_attempt(ip, "(형식 오류)", False, "bad_format")     # 넣은 글자는 기록하지 않음 (비밀번호를 잘못 넣은 경우 포함)
+        return None, THROTTLED if _ip_blocked(ip) else GENERIC_FAIL
     if _ip_blocked(ip):
         _log_attempt(ip, username, False, "ip_blocked")
-        return None, "로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요"
-    user = query_one("SELECT * FROM users WHERE username=?", (username.strip(),))
+        return None, THROTTLED
+    if _user_ip_fails(username, ip) >= settings.max_failed_logins or _user_fails_total(username) >= USER_FAIL_TOTAL:
+        verify_password(_DUMMY_HASH, password)
+        _log_attempt(ip, username, False, "throttled")
+        return None, THROTTLED
+    user = query_one("SELECT * FROM users WHERE username=?", (username,))
     if not user:
         verify_password(_DUMMY_HASH, password)
         _log_attempt(ip, username, False, "no_user")
-        return None, generic
+        return None, GENERIC_FAIL
+    if not verify_password(user["password_hash"], password):
+        _log_attempt(ip, username, False, "bad_password")
+        if _user_ip_fails(username, ip) >= settings.max_failed_logins:
+            audit("auth", "로그인 반복 실패(주소 차단)", username, ip)
+        return None, GENERIC_FAIL
     if user["locked_until"] and user["locked_until"] > _ts(_now()):
         _log_attempt(ip, username, False, "locked")
-        return None, f"계정이 잠겨 있습니다 ({user['locked_until'][11:16]} 이후 재시도 또는 관리자 문의)"
-    if not verify_password(user["password_hash"], password):
-        fails = user["failed_count"] + 1
-        locked = _ts(_now() + timedelta(minutes=settings.lockout_minutes)) if fails >= settings.max_failed_logins else None
-        execute("UPDATE users SET failed_count=?, locked_until=? WHERE id=?",
-                (0 if locked else fails, locked, user["id"]))
-        _log_attempt(ip, username, False, "bad_password")
-        if locked:
-            audit("auth", "계정 잠금", username, f"{settings.max_failed_logins}회 실패")
-            return None, f"비밀번호 {settings.max_failed_logins}회 오류로 계정이 {settings.lockout_minutes}분간 잠겼습니다"
-        return None, f"{generic} (남은 시도 {settings.max_failed_logins - fails}회)"
+        return None, GENERIC_FAIL
     if not user["is_active"]:
         _log_attempt(ip, username, False, "inactive")
-        return None, generic
+        return None, GENERIC_FAIL
     if _ph.check_needs_rehash(user["password_hash"]):
         execute("UPDATE users SET password_hash=? WHERE id=?", (hash_password(password), user["id"]))
-    execute("UPDATE users SET failed_count=0, locked_until=NULL WHERE id=?", (user["id"],))
     _log_attempt(ip, username, True)
     return user, ""
 
