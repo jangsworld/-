@@ -23,30 +23,40 @@
     <div class="card">
       <div class="card-header">{{ group_name }}{% if hint %}<div class="help fw-normal mt-1">{{ hint }}</div>{% endif %}</div>
       <table class="table align-middle mb-0 code-table">
-        <thead><tr><th style="width:88px">순서</th><th>이름</th>{% if group == 'ASSET_EVENT' %}<th style="width:220px">자산 상태 변경</th>{% endif %}<th style="width:64px"></th></tr></thead>
+        <thead><tr><th style="width:88px">순서</th><th>이름</th>{% if group == 'DEPT' %}<th style="width:240px">상위 부서</th>{% endif %}{% if group == 'ASSET_EVENT' %}<th style="width:220px">자산 상태 변경</th>{% endif %}<th style="width:64px"></th></tr></thead>
         <tbody>{% for c in rows %}
           <tr>
             <td class="text-nowrap">
               <form method="post" action="/settings/codes/{{ c.id }}/move" class="d-inline"><input type="hidden" name="dir" value="-1"><button class="btn btn-sm btn-light" title="위로" aria-label="위로" {{ 'disabled' if loop.first }}><i class="bi bi-arrow-up"></i></button></form>
               <form method="post" action="/settings/codes/{{ c.id }}/move" class="d-inline"><input type="hidden" name="dir" value="1"><button class="btn btn-sm btn-light" title="아래로" aria-label="아래로" {{ 'disabled' if loop.last }}><i class="bi bi-arrow-down"></i></button></form>
             </td>
-            <td><form method="post" action="/settings/codes/{{ c.id }}/rename" class="d-flex gap-2 align-items-center">
+            <td><form method="post" action="/settings/codes/{{ c.id }}/rename" class="d-flex gap-2 align-items-center"{% if group == 'DEPT' %} style="padding-left:{{ (c.level - 1) * 1.5 }}rem"{% endif %}>
+              {% if group == 'DEPT' %}<span class="badge {{ 'text-bg-primary' if c.level == 1 else ('text-bg-info' if c.level == 2 else 'text-bg-light border') }} text-nowrap">{{ levels[c.level] }}</span>{% endif %}
               <input class="form-control form-control-sm code-name" name="name" value="{{ c.name }}" aria-label="이름" required>
               <button class="btn btn-sm btn-primary text-nowrap" hidden>저장</button></form></td>
+            {% if group == 'DEPT' %}
+            <td><form method="post" action="/settings/codes/{{ c.id }}/parent"><select class="form-select form-select-sm" name="parent_id" data-autosubmit aria-label="상위 부서">
+              <option value="">(없음 · 대분류)</option>
+              {% for p in parent_opts[c.id] %}<option value="{{ p.id }}" {% if c.parent_id == p.id %}selected{% endif %}>{{ dept_text(p.name) }}</option>{% endfor %}</select></form></td>
+            {% endif %}
             {% if group == 'ASSET_EVENT' %}
             <td><form method="post" action="/settings/codes/{{ c.id }}/behavior"><select class="form-select form-select-sm" name="behavior" data-autosubmit aria-label="자산 상태 변경">
               {% for v, t in behaviors.items() %}<option value="{{ v }}" {% if (c.behavior or '') == v %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></form></td>
             {% endif %}
-            <td class="text-end"><form method="post" action="/settings/codes/{{ c.id }}/delete" data-confirm="'{{ c.name }}' 항목을 목록에서 삭제할까요? 이미 등록된 자료는 유지됩니다."><button class="btn btn-sm btn-link text-danger p-0" title="삭제" aria-label="삭제"><i class="bi bi-trash"></i></button></form></td>
+            <td class="text-end">{% if group == 'DEPT' and c.id in has_child %}<span class="text-muted" title="하위 부서가 있어 삭제할 수 없습니다"><i class="bi bi-trash"></i></span>{% else %}<form method="post" action="/settings/codes/{{ c.id }}/delete" data-confirm="'{{ c.name }}' 항목을 목록에서 삭제할까요? 이미 등록된 자료는 유지됩니다."><button class="btn btn-sm btn-link text-danger p-0" title="삭제" aria-label="삭제"><i class="bi bi-trash"></i></button></form>{% endif %}</td>
           </tr>
-        {% else %}<tr><td colspan="4" class="text-center text-muted p-4">등록된 항목이 없습니다</td></tr>{% endfor %}</tbody>
+        {% else %}<tr><td colspan="5" class="text-center text-muted p-4">등록된 항목이 없습니다</td></tr>{% endfor %}</tbody>
       </table>
       <div class="card-footer">
         <form method="post" action="/settings/codes" class="d-flex gap-2"><input type="hidden" name="group_code" value="{{ group }}">
+          {% if group == 'DEPT' %}<select class="form-select form-select-sm w-auto" name="parent_id" aria-label="상위 부서">
+            <option value="">대분류로 추가</option>
+            {% for p in add_parents %}<option value="{{ p.id }}">{{ dept_text(p.name) }} 아래에</option>{% endfor %}</select>{% endif %}
           <input class="form-control form-control-sm" name="name" placeholder="새 항목 이름" aria-label="새 항목 이름" required>
           <button class="btn btn-sm btn-primary text-nowrap"><i class="bi bi-plus"></i> 추가</button></form>
       </div>
     </div>
+    {% if group == 'DEPT' %}<div class="help mt-2">부서는 대분류(예: 본부) → 중분류(예: 그룹) → 소분류(예: 팀) 3단계까지 둘 수 있습니다. 상위 부서를 바꾸면 바로 저장됩니다. 조회 화면에서 상위 부서를 고르면 그 아래 부서 직원까지 함께 보입니다.</div>{% endif %}
     <div class="help mt-2">이름을 고치면 저장 버튼이 나타나며, 이미 등록된 자료의 값도 함께 바뀝니다. 삭제하면 목록에서만 빠지고 등록된 자료는 유지됩니다.</div>
   </div>
 </div>

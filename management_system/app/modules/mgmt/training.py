@@ -94,9 +94,11 @@ def matrix(year: int, department: str = "") -> dict:
                         "rate": done_n / due_n * 100 if due_n else None, "next_end": nxt,
                         "pending": [e for e in tg if cells[(e["id"], c["id"])]["status"] == "upcoming"
                                     and not any(p["ok"] for p in cells[(e["id"], c["id"])]["periods"])]})
+    from app.db import dept_scope  # 상위 부서를 고르면 하위 부서 직원까지
+    scope = dept_scope(department)
     rows = []
     for e in emps:
-        if department and (e.get("department") or "") != department:
+        if department and (e.get("department") or "") not in scope:
             continue
         row = {"employee": e, "cells": [cells.get((e["id"], c["id"])) for c in cs]}
         row["todo"] = sum(1 for x in row["cells"] if x and x["status"] in ("missing", "partial"))

@@ -80,8 +80,10 @@ def list_employees(q="", department="", employment_type="", status="", search_pi
     sql = "SELECT * FROM employees WHERE 1=1"
     params = []
     if department:
-        sql += " AND department = ?"
-        params.append(department)
+        from app.db import dept_scope  # 상위 부서를 고르면 하위 부서 직원까지
+        scope = sorted(dept_scope(department))
+        sql += " AND department IN (" + ",".join("?" * len(scope)) + ")"
+        params += scope
     if employment_type:
         sql += " AND employment_type = ?"
         params.append(employment_type)
@@ -652,12 +654,53 @@ def code_group(cid: int) -> str | None:
     return code["group_code"] if code else None
 
 
-def add_code(group, name):
+def add_code(group, name, parent_id=None):
+    """항목 추가. 부서는 parent_id(상위 부서)를 줄 수 있으며, 소분류 아래에는 둘 수 없습니다."""
+    if group != "DEPT" or not dept_parent_ok(None, parent_id):
+        parent_id = None
     with tx() as conn:
         mx = conn.execute("SELECT COALESCE(MAX(sort_order),0)+1 FROM codes WHERE group_code=?",
                           (group,)).fetchone()[0]
-        conn.execute("INSERT OR IGNORE INTO codes(group_code, name, sort_order) VALUES (?,?,?)",
-                     (group, name, mx))
+        conn.execute("INSERT OR IGNORE INTO codes(group_code, name, sort_order, parent_id) VALUES (?,?,?,?)",
+                     (group, name, mx, parent_id))
+
+
+def dept_parent_ok(cid, parent_id) -> bool:
+    """부서 cid 를 parent_id 아래에 두어도 되는지: 자기 자신·자기 하위 아래는 안 되고, 전체 3단계까지."""
+    from app.db import dept_tree
+    if parent_id is None:
+        return True
+    tree = {r["id"]: r for r in dept_tree()}
+    parent = tree.get(parent_id)
+    if not parent:
+        return False
+    if cid is None:
+        return parent["level"] < 3
+    me = tree.get(cid)
+    if not me or me["name"] in parent["path"]:  # 자기 자신이거나 자기 하위 부서
+        return False
+    i = me["level"] - 1
+    height = max(len(t["path"]) - i for t in tree.values() if len(t["path"]) > i and t["path"][i] == me["name"])
+    return parent["level"] + height <= 3
+
+
+def dept_parent_choices(cid) -> list[dict]:
+    """부서 cid 의 상위 부서로 고를 수 있는 부서들."""
+    from app.db import dept_tree
+    return [r for r in dept_tree() if r["id"] != cid and dept_parent_ok(cid, r["id"])]
+
+
+def set_dept_parent(cid: int, parent_id) -> bool:
+    code = query_one("SELECT * FROM codes WHERE id=? AND group_code='DEPT'", (cid,))
+    if not code or not dept_parent_ok(cid, parent_id):
+        return False
+    with tx() as conn:
+        mx = conn.execute("SELECT COALESCE(MAX(sort_order),0)+1 FROM codes WHERE group_code='DEPT' AND parent_id IS ?",
+                          (parent_id,)).fetchone()[0]
+        conn.execute("UPDATE codes SET parent_id=?, sort_order=? WHERE id=?", (parent_id, mx, cid))
+    parent = query_one("SELECT name FROM codes WHERE id=?", (parent_id,)) if parent_id else None
+    audit("system", "부서 소속 변경", "DEPT", f"{code['name']} → {parent['name'] if parent else '대분류'}")
+    return True
 
 
 # 임직원 칸 → 구분값 그룹. CSV 일괄등록 때 목록에 없는 값은 구분값에 자동으로 추가합니다.
@@ -702,8 +745,12 @@ def backfill_employee_codes_once() -> dict:
     return {g: v for g, v in added.items() if v}
 
 
-def delete_code(cid: int):
+def delete_code(cid: int) -> bool:
+    """삭제. 하위 부서가 있는 부서는 지우지 않습니다(False)."""
+    if query_one("SELECT 1 x FROM codes WHERE parent_id=? AND group_code='DEPT'", (cid,)):
+        return False
     execute("DELETE FROM codes WHERE id=?", (cid,))
+    return True
 
 
 # 구분값 이름을 바꿀 때 함께 고칠 자료 (테이블, 컬럼)
@@ -742,7 +789,11 @@ def move_code(cid: int, direction: int):
     code = query_one("SELECT * FROM codes WHERE id=?", (cid,))
     if not code:
         return
-    rows = query("SELECT id FROM codes WHERE group_code=? ORDER BY sort_order, id", (code["group_code"],))
+    if code["group_code"] == "DEPT":  # 부서는 같은 상위 부서 안에서만 순서를 바꿉니다
+        rows = query("SELECT id FROM codes WHERE group_code='DEPT' AND parent_id IS ? ORDER BY sort_order, id",
+                     (code["parent_id"],))
+    else:
+        rows = query("SELECT id FROM codes WHERE group_code=? ORDER BY sort_order, id", (code["group_code"],))
     ids = [r["id"] for r in rows]
     i = ids.index(cid)
     j = i + (1 if direction > 0 else -1)

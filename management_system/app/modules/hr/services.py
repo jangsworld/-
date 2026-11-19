@@ -264,13 +264,15 @@ def salary_trend() -> list[dict]:
 def bulk_raise_preview(year: int, rate: float, round_unit: int = 10000, only_missing=True,
                        department: str = "") -> list[dict]:
     """일괄 인상 시뮬레이션: 직전 연봉 × (1+rate%) → 반올림 단위 적용."""
+    from app.db import dept_scope  # 상위 부서를 고르면 하위 부서 직원까지
+    scope = dept_scope(department)
     ov = salary_overview(year)
     out = []
     for r in ov["rows"]:
         e = r["employee"]
         if e.get("resign_date"):
             continue
-        if department and e.get("department") != department:
+        if department and e.get("department") not in scope:
             continue
         if only_missing and r["cur"]:
             continue

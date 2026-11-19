@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS codes (
     name       TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
     behavior   TEXT,                   -- ASSET_EVENT: 처리 시 자산 상태 변경 방식
+    parent_id  INTEGER,                -- DEPT: 상위 부서(codes.id). 비어 있으면 대분류
     UNIQUE(group_code, name)
 );
 
@@ -1039,6 +1040,9 @@ def _add_columns(conn):
         for col in cols:
             if have and col not in have:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+    code_cols = {r[1] for r in conn.execute("PRAGMA table_info(codes)")}
+    if code_cols and "parent_id" not in code_cols:
+        conn.execute("ALTER TABLE codes ADD COLUMN parent_id INTEGER")  # 부서 대·중·소분류
     if "qr_token" in {r[1] for r in conn.execute("PRAGMA table_info(ga_assets)")}:
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_qr ON ga_assets(qr_token)")
     if "qr_token" in {r[1] for r in conn.execute("PRAGMA table_info(ga_vehicles)")}:
@@ -1075,9 +1079,64 @@ def set_setting(key: str, value: str):
 
 
 def get_codes(group: str) -> list[str]:
+    if group == "DEPT":  # 상위 부서 바로 아래에 하위 부서가 오도록 나무 순서
+        return [r["name"] for r in dept_tree()]
     return [r["name"] for r in query(
         "SELECT name FROM codes WHERE group_code=? ORDER BY sort_order, id", (group,)
     )]
+
+
+DEPT_LEVELS = {1: "대분류", 2: "중분류", 3: "소분류"}
+
+
+def dept_tree() -> list[dict]:
+    """부서를 나무 순서로: 대분류 → 그 아래 중분류 → 그 아래 소분류. 각 행에 level(1~3)과 path(이름 목록)."""
+    rows = query("SELECT id, name, parent_id, sort_order FROM codes WHERE group_code='DEPT' ORDER BY sort_order, id")
+    ids = {r["id"] for r in rows}
+    children: dict = {}
+    for r in rows:
+        children.setdefault(r["parent_id"] if r["parent_id"] in ids else None, []).append(r)
+    out, seen = [], set()
+
+    def walk(pid, level, path):
+        for r in children.get(pid, []):
+            if r["id"] in seen:
+                continue
+            seen.add(r["id"])
+            out.append({**r, "level": level, "path": path + [r["name"]]})
+            walk(r["id"], level + 1, path + [r["name"]])
+
+    walk(None, 1, [])
+    for r in rows:  # 잘못 이어진 자료가 있어도 목록에서 사라지지 않게
+        if r["id"] not in seen:
+            seen.add(r["id"])
+            out.append({**r, "level": 1, "path": [r["name"]]})
+            walk(r["id"], 2, [r["name"]])
+    return out
+
+
+def dept_scope(name: str) -> set[str]:
+    """그 부서와 그 아래 모든 부서 이름. 조회에서 본부를 고르면 소속 팀까지 함께 보입니다."""
+    if not name:
+        return set()
+    tree = dept_tree()
+    me = next((r for r in tree if r["name"] == name), None)
+    if not me:
+        return {name}
+    i = me["level"] - 1
+    return {r["name"] for r in tree if len(r["path"]) > i and r["path"][i] == name}
+
+
+def dept_text(name: str) -> str:
+    """선택 목록에 보일 부서 이름(하위 부서는 들여쓰기)."""
+    r = next((r for r in dept_tree() if r["name"] == name), None)
+    return ("　" * (r["level"] - 1) + "└ " + name) if r and r["level"] > 1 else name
+
+
+def dept_path(name: str) -> str:
+    """'OO본부 > OO그룹 > OO팀' 처럼 전체 소속."""
+    r = next((r for r in dept_tree() if r["name"] == name), None)
+    return " > ".join(r["path"]) if r else (name or "")
 
 
 def get_behaviors(group: str) -> dict[str, str]:

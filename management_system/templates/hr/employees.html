@@ -9,7 +9,7 @@
         <input class="form-control form-control-sm" name="q" value="{{ f.q }}" placeholder="성명·사번·연락처·이메일"></div>
       <div class="col-md-2"><label class="form-label small">부서</label>
         <select class="form-select form-select-sm" name="department"><option value="">전체</option>
-          {% for x in depts %}<option {% if f.department == x %}selected{% endif %}>{{ x }}</option>{% endfor %}</select></div>
+          {% for x in depts %}<option value="{{ x }}" {% if f.department == x %}selected{% endif %}>{{ dept_text(x) }}</option>{% endfor %}</select></div>
       <div class="col-md-2"><label class="form-label small">고용형태</label>
         <select class="form-select form-select-sm" name="employment_type"><option value="">전체</option>
           {% for x in employment_types %}<option {% if f.employment_type == x %}selected{% endif %}>{{ x }}</option>{% endfor %}</select></div>

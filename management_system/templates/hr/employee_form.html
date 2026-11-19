@@ -11,7 +11,7 @@
 {% macro sel(name, label, opts, col='col-md-3', blank=True) %}
 <div class="{{ col }}"><label class="form-label small">{{ label }}</label>
   <select class="form-select form-select-sm {{ 'draft-check' if src.get(name) and src[name].ocr }}" name="{{ name }}">{% if blank %}<option value=""></option>{% endif %}
-    {% for o in opts %}<option {% if e[name] == o %}selected{% endif %}>{{ o }}</option>{% endfor %}
+    {% for o in opts %}<option value="{{ o }}" {% if e[name] == o %}selected{% endif %}>{{ dept_text(o) if name == 'department' else o }}</option>{% endfor %}
     {% if e[name] and e[name] not in opts %}<option selected>{{ e[name] }}</option>{% endif %}</select>{{ origin(name) }}</div>
 {% endmacro %}
 

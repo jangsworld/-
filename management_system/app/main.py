@@ -14,7 +14,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.common import templates
 from app.config import APP_DIR, SYSTEM_CODE, SYSTEM_NAME, settings
-from app.db import audit, init_db, get_settings, set_setting, DEFAULT_SETTINGS
+from app.db import audit, init_db, get_settings, set_setting, DEFAULT_SETTINGS, DEPT_LEVELS, dept_tree, dept_text, dept_path, dept_scope
 from app.modules import MODULES
 from app import mailer
 from app.modules.ga import cartax, contract_intake
@@ -116,6 +116,9 @@ templates.env.globals["MODULES"] = MODULES
 templates.env.globals["SYSTEM_CODE"] = SYSTEM_CODE
 templates.env.globals["company"] = lambda: get_settings().get("company_name", "")
 templates.env.globals["ROLE_NAMES"] = auth.ROLES
+templates.env.globals["dept_text"] = dept_text     # 부서 선택 목록: 하위 부서 들여쓰기
+templates.env.globals["dept_path"] = dept_path
+templates.env.globals["dept_scope"] = dept_scope
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -302,9 +305,17 @@ def codes_page(request: Request, group: str = "DEPT"):
     if not section:
         group, section = "DEPT", "공통"
     codes = hr_repo.list_codes_all()
+    rows = [c for c in codes if c["group_code"] == group]
+    extra = {}
+    if group == "DEPT":  # 대·중·소분류 나무 순서와 각 부서의 상위 부서 선택지
+        rows = dept_tree()
+        extra = {"levels": DEPT_LEVELS, "add_parents": [r for r in rows if r["level"] < 3],
+                 "parent_opts": {r["id"]: hr_repo.dept_parent_choices(r["id"]) for r in rows},
+                 "has_child": {r["parent_id"] for r in rows if r["parent_id"]}}
     return templates.TemplateResponse(request, "codes.html", {
+        **extra,
         "sections": CODE_SECTIONS, "section": section, "group": group, "group_name": CODE_SECTIONS[section][group],
-        "rows": [c for c in codes if c["group_code"] == group], "counts": Counter(c["group_code"] for c in codes),
+        "rows": rows, "counts": Counter(c["group_code"] for c in codes),
         "behaviors": ASSET_BEHAVIORS, "hint": CODE_HINTS.get(group, ""),
         "active_menu": "codes", "msg": request.query_params.get("msg", ""),
     })
@@ -319,8 +330,19 @@ def _codes_redirect(group: str | None, msg: str = "") -> RedirectResponse:
 async def code_add(request: Request):
     f = await request.form()
     if f.get("name"):
-        hr_repo.add_code(f["group_code"], f["name"].strip())
+        hr_repo.add_code(f["group_code"], f["name"].strip(), _int_or_none(f.get("parent_id")))
     return _codes_redirect(f.get("group_code"), "추가되었습니다")
+
+
+def _int_or_none(v):
+    v = str(v or "").strip()
+    return int(v) if v.isdigit() else None
+
+
+@app.post("/settings/codes/{cid}/parent")
+async def code_parent(request: Request, cid: int):
+    ok = hr_repo.set_dept_parent(cid, _int_or_none((await request.form()).get("parent_id")))
+    return _codes_redirect("DEPT", "소속이 바뀌었습니다" if ok else "그 부서 아래로는 옮길 수 없습니다(3단계까지)")
 
 
 @app.post("/settings/codes/{cid}/rename")
@@ -347,5 +369,5 @@ async def code_behavior(request: Request, cid: int):
 @app.post("/settings/codes/{cid}/delete")
 def code_delete(cid: int):
     group = hr_repo.code_group(cid)
-    hr_repo.delete_code(cid)
-    return _codes_redirect(group, "삭제되었습니다")
+    ok = hr_repo.delete_code(cid)
+    return _codes_redirect(group, "삭제되었습니다" if ok else "하위 부서가 있어 삭제할 수 없습니다. 하위 부서를 먼저 옮기거나 삭제하세요")

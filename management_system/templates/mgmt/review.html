@@ -110,7 +110,7 @@
   {{ m.kpi('기준 연봉 없음', res.missing_salary|length ~ '명', '반영에서 빠짐', 'text-danger' if res.missing_salary else '') }}
 </div>
 <div class="card mb-4"><div class="card-header d-flex flex-wrap align-items-center gap-2">
-  <form method="get" class="d-flex gap-1"><input type="hidden" name="year" value="{{ year }}"><select class="form-select form-select-sm" name="department" data-autosubmit><option value="">전체 부서</option>{% for d in depts %}<option {{ 'selected' if department == d }}>{{ d }}</option>{% endfor %}</select></form>
+  <form method="get" class="d-flex gap-1"><input type="hidden" name="year" value="{{ year }}"><select class="form-select form-select-sm" name="department" data-autosubmit><option value="">전체 부서</option>{% for d in depts %}<option value="{{ d }}" {{ 'selected' if department == d }}>{{ dept_text(d) }}</option>{% endfor %}</select></form>
   <span class="help ms-auto">최종 % 칸을 비우면 고정인상률(+등급 가산)을 따릅니다</span>
   {% if not c.locked %}<span class="small text-success" id="liveState"><i class="bi bi-cloud-check"></i> 바꾸면 바로 저장</span>{% endif %}</div>
   <form method="post" action="/mgmt/review/{{ year }}/items" id="evalForm" data-live-url="/mgmt/api/review/{{ year }}/item"><input type="hidden" name="department" value="{{ department }}">

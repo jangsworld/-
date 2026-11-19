@@ -416,10 +416,12 @@ CSV_HEAD = ["부서", "사번", "성명", "직급", "입사일", "등급", "의�
 
 
 def sheet_rows(c: dict, department: str = "") -> list[list]:
+    from app.db import dept_scope  # 상위 부서를 고르면 하위 부서 직원까지
+    scope = dept_scope(department)
     its = items(c)
     out = [CSV_HEAD]
     for e in members(c):
-        if department and (e.get("department") or "") != department:
+        if department and (e.get("department") or "") not in scope:
             continue
         it = its.get(e["id"], {})
         out.append([e.get("department") or "", e.get("emp_no") or "", e["name"], e.get("rank") or "",

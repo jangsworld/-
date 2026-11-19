@@ -9,7 +9,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 
 from app.common import templates, today
-from app.db import audit, get_settings, set_setting
+from app.db import audit, dept_scope, get_settings, set_setting
 from app.modules.ga import company
 from app.modules.hr import repo as hr_repo
 from app.modules.hr.routes import _csv_response
@@ -138,7 +138,7 @@ def incentive_page(request: Request, year: int | None = None, department: str = 
     emps = employees_in_year(y)
     return _render(request, "mgmt/incentive.html", {
         "ov": ov, "year": y, "years": years, "department": department, "depts": depts(),
-        "pays": [p for p in ov["payments"] if not department or p["department"] == department],
+        "pays": [p for p in ov["payments"] if not department or p["department"] in dept_scope(department)],
         "emps": [{"id": e["id"], "name": e["name"], "department": e.get("department") or "", "rank": e.get("rank") or ""} for e in emps],
         "today_iso": today().isoformat(),
     }, "mgmt.incentive")
@@ -215,7 +215,7 @@ def review_page(request: Request, year: int | None = None, department: str = "")
     if c:
         res = review.compute(c)
         ctx.update(res=res, sc=review.scenarios(c), cmp=review.compare(c), status_label=review.STATUS_LABEL,
-                   rows=[r for r in res["rows"] if not department or (r["employee"].get("department") or "") == department])
+                   rows=[r for r in res["rows"] if not department or (r["employee"].get("department") or "") in dept_scope(department)])
     else:
         ctx["fin"] = fin.summary(y)
     return _render(request, "mgmt/review.html", ctx, "mgmt.review")

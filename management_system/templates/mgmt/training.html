@@ -28,7 +28,7 @@
 {% endfor %}
 </div>
 <div class="card"><div class="card-header d-flex flex-wrap gap-2 align-items-center">
-  <form method="get" class="d-flex gap-1"><input type="hidden" name="year" value="{{ year }}"><select class="form-select form-select-sm" name="department" data-autosubmit><option value="">전체 부서</option>{% for d in depts %}<option {{ 'selected' if department == d }}>{{ d }}</option>{% endfor %}</select></form>
+  <form method="get" class="d-flex gap-1"><input type="hidden" name="year" value="{{ year }}"><select class="form-select form-select-sm" name="department" data-autosubmit><option value="">전체 부서</option>{% for d in depts %}<option value="{{ d }}" {{ 'selected' if department == d }}>{{ dept_text(d) }}</option>{% endfor %}</select></form>
   <label class="small"><input type="checkbox" class="form-check-input me-1" id="onlyTodo">할 일 있는 직원만</label>
   <span class="help ms-auto">✓ 이수 · △ 시간 부족 · ✗ 미이수(기한 지남) · · 올해 남음 · 빈칸 = 대상 아님</span></div>
   <div class="table-responsive" style="max-height:640px"><table class="table table-sm table-hover mb-0 align-middle text-center" id="mx"><thead class="sticky-top"><tr><th class="text-start">부서</th><th class="text-start">성명</th>
@@ -71,7 +71,7 @@
     <div class="col-md-6"><label class="form-label small">기관·강사</label><input class="form-control form-control-sm" name="provider"></div>
     <div class="col-md-6"><label class="form-label small">메모</label><input class="form-control form-control-sm" name="note"></div>
     <div class="col-12 d-flex gap-2 align-items-center mt-2"><b class="small">이수한 직원</b>
-      <select class="form-select form-select-sm w-auto" id="rDept"><option value="">전체 부서</option>{% for d in depts %}<option>{{ d }}</option>{% endfor %}</select>
+      <select class="form-select form-select-sm w-auto" id="rDept"><option value="">전체 부서</option>{% for d in depts %}<option value="{{ d }}" data-scope="{{ dept_scope(d)|join('|') }}">{{ dept_text(d) }}</option>{% endfor %}</select>
       <button type="button" class="btn btn-sm btn-outline-secondary" id="rAll">보이는 직원 모두</button>
       <button type="button" class="btn btn-sm btn-outline-secondary" id="rTodo">이 과정 아직 안 한 직원</button>
       <button type="button" class="btn btn-sm btn-link" id="rNone">모두 해제</button><span class="small ms-auto"><b id="rCnt">0</b>명</span></div>
@@ -113,7 +113,7 @@ const box = document.getElementById('rEmps'), cnt = () => document.getElementByI
 const rc = document.getElementById('rCourse'), rh = document.getElementById('rHours');
 const setH = () => { const o = rc.selectedOptions[0]; if (o && !rh.value) rh.value = o.dataset.hours || ''; };
 rc && rc.addEventListener('change', () => { rh.value = ''; setH(); }); setH();
-document.getElementById('rDept').addEventListener('change', (e) => box.querySelectorAll('[data-dept]').forEach(d => d.hidden = !!e.target.value && d.dataset.dept !== e.target.value));
+document.getElementById('rDept').addEventListener('change', (e) => box.querySelectorAll('[data-dept]').forEach(d => d.hidden = !!e.target.value && !(e.target.selectedOptions[0].dataset.scope || '').split('|').includes(d.dataset.dept)));
 document.getElementById('rAll').addEventListener('click', () => { box.querySelectorAll('[data-dept]:not([hidden]) input').forEach(i => i.checked = true); cnt(); });
 document.getElementById('rNone').addEventListener('click', () => { box.querySelectorAll('input').forEach(i => i.checked = false); cnt(); });
 document.getElementById('rTodo').addEventListener('click', () => {

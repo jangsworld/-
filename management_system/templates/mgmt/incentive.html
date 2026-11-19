@@ -72,7 +72,7 @@
     <div class="row g-2 mb-2">
       <div class="col-md-3"><label class="form-label small">지급일</label><input class="form-control form-control-sm" type="date" name="common_date" value="{{ today_iso if today_iso[:4] == year|string else year ~ '-12-31' }}" required></div>
       <div class="col-md-4"><label class="form-label small">사유</label><input class="form-control form-control-sm" name="common_reason" placeholder="예: 상반기 성과, 프로젝트 수주"></div>
-      <div class="col-md-5"><label class="form-label small">부서</label><select class="form-select form-select-sm" id="payDept"><option value="">부서를 고르세요</option>{% for d in depts %}<option>{{ d }}</option>{% endfor %}</select></div>
+      <div class="col-md-5"><label class="form-label small">부서</label><select class="form-select form-select-sm" id="payDept"><option value="">부서를 고르세요</option>{% for d in depts %}<option value="{{ d }}">{{ dept_text(d) }}</option>{% endfor %}</select></div>
     </div>
     <div class="help mb-1">금액을 넣은 줄만 저장됩니다. 직원을 정하지 않고 부서에 한꺼번에 준 금액은 맨 위 '부서 지급' 줄에 넣으세요.</div>
     <div class="table-responsive" style="max-height:380px"><table class="table table-sm mb-0"><thead class="sticky-top"><tr><th>성명</th><th>직급</th><th class="num" style="width:160px">금액(원)</th><th>메모</th></tr></thead><tbody id="payRows"><tr><td colspan="4" class="text-muted text-center py-3">부서를 고르면 직원 목록이 나옵니다</td></tr></tbody></table></div>

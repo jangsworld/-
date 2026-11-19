@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from app.common import templates, today, to_date, vat_split
 from app.config import settings as cfg
-from app.db import audit, get_codes, get_settings, execute
+from app.db import audit, get_codes, get_settings, execute, dept_text
 from app.modules.ga import cartax, contract_intake, fleet, photos, repo, services
 from app.modules.ga.constants import (
     ASSET_CATEGORIES, ASSET_STATUSES, VEHICLE_STATUSES, DRIVE_PURPOSES, PURPOSE_PENDING, DOC_STATUSES, SEAL_STATUSES,
@@ -364,7 +364,7 @@ def docs(request: Request, tab: str = "docs", direction: str = "", year: str = "
         "tab": tab, "rows": rows, "seals": seals, "f": {"direction": direction, "year": y, "q": q, "status": status},
         "methods": get_codes("DOC_METHOD"), "statuses": DOC_STATUSES, "retention": get_codes("RETENTION"),
         "seal_types": get_codes("SEAL_TYPE"),
-        "seal_statuses": SEAL_STATUSES, "depts": get_codes("DEPT"),
+        "seal_statuses": SEAL_STATUSES, "depts": [{"v": d, "t": dept_text(d)} for d in get_codes("DEPT")],
         "next_out": repo.next_doc_no("발신", None, prefix), "next_in": repo.next_doc_no("수신", None, prefix),
         "years": sorted({str(today().year)} | {d["doc_date"][:4] for d in repo.list_docs()}, reverse=True),
         "seal_stat": {s: sum(1 for x in seals if x["status"] == s) for s in SEAL_STATUSES},
