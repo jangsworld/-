@@ -21,6 +21,7 @@ MODULES = [
             {"key": "hr.rewards", "restricted": True, "name": "상벌현황", "icon": "bi-award", "url": "/hr/rewards"},
             {"key": "hr.technicians", "restricted": True, "name": "기술자 현황", "icon": "bi-tools", "url": "/hr/technicians"},
             {"key": "hr.specials", "restricted": True, "name": "근로특이사항", "icon": "bi-calendar-heart", "url": "/hr/specials"},
+            {"key": "hr.dual", "restricted": True, "name": "프로젝트 이중가입", "icon": "bi-building-add", "url": "/hr/dual"},
             {"key": "mgmt.training", "name": "교육 이수", "icon": "bi-mortarboard", "url": "/mgmt/training", "perm": "ga_write"},
             {"key": "mgmt.compliance", "name": "법정의무 일정", "icon": "bi-calendar2-check", "url": "/mgmt/compliance", "perm": "ga_write"},
             {"key": "hr.leave", "restricted": True, "name": "연차 관리", "icon": "bi-calendar-check", "url": "/hr/leave"},

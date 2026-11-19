@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}프로젝트 이중가입{% endblock %}
+{% block page_title %}<i class="bi bi-building-add me-2"></i>프로젝트 이중가입{% endblock %}
+{% block content %}
+<div class="row g-3 mb-3">
+  {% macro kpi(label, value, sub, st) %}
+  <div class="col-6 col-md-3"><a class="card kpi h-100 text-decoration-none" href="/hr/dual{{ '?state=' ~ st if st }}">
+    <div class="kpi-label">{{ label }}</div><div class="kpi-value">{{ value }}</div><div class="kpi-sub">{{ sub }}</div></a></div>
+  {% endmacro %}
+  {{ kpi('이중가입 중', sum.active ~ '명', '다른 사업장에도 4대보험 가입', '진행중') }}
+  {{ kpi('30일 안에 종료', sum.ending ~ '건', '원복 준비', '진행중') }}
+  {{ kpi('정리 필요', sum.cleanup ~ '건', '종료일 지남 · 처리 남음', '정리필요') }}
+  {{ kpi('시작 예정', sum.planned ~ '건', '아직 시작 전', '예정') }}
+</div>
+{% if sum.by_workplace %}
+<div class="card mb-3"><div class="card-body py-2 small d-flex flex-wrap gap-3">
+  <div><b>사업장별</b> {% for n, c in sum.by_workplace %}<span class="badge text-bg-light border ms-1">{{ n }} {{ c }}명</span>{% endfor %}</div>
+  <div><b>프로젝트별</b> {% for n, c in sum.by_project %}<span class="badge text-bg-light border ms-1">{{ n }} {{ c }}명</span>{% endfor %}</div>
+</div></div>
+{% endif %}
+
+<div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+  <ul class="nav nav-pills">
+    {% for s, n in [('', '전체'), ('진행중', '진행 중'), ('예정', '예정'), ('종료', '종료'), ('정리필요', '정리 필요')] %}
+    <li class="nav-item"><a class="nav-link py-1 {{ 'active' if state == s }}" href="/hr/dual{{ '?state=' ~ s if s }}">{{ n }}</a></li>{% endfor %}
+  </ul>
+  <span class="help">연봉은 바꾸지 않고 여기에만 기록합니다. 종료 30일 전부터 인사 대시보드에 알림이 뜹니다.</span>
+  <div class="ms-auto btn-group btn-group-sm">
+    <a class="btn btn-outline-secondary" href="/hr/dual/export.csv{{ '?state=' ~ state if state }}"><i class="bi bi-download"></i> 엑셀(CSV)</a>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#dualModal" data-fill='{{ {"start_date": today_iso, "employee_id": open_emp or ""}|tojson }}' id="dualNew"><i class="bi bi-plus-lg"></i> 등록</button>
+  </div>
+</div>
+
+<div class="card"><div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel>
+  <thead><tr><th>상태</th><th>부서</th><th>성명</th><th>상대 사업장</th><th>프로젝트</th><th>기간</th><th>사유</th><th>이중가입 보험</th><th>급여</th><th>처리 체크</th><th></th></tr></thead><tbody>
+  {% for r in rows %}
+  <tr class="{{ 'table-danger' if r.overdue else ('table-warning' if r.ending else '') }}">
+    <td><span class="badge {{ 'text-bg-success' if r.state == '진행중' else ('text-bg-info' if r.state == '예정' else 'text-bg-secondary') }}">{{ r.state }}</span>
+      {% if r.overdue %}<span class="badge text-bg-danger">종료일 지남</span>{% elif r.ending %}<span class="badge text-bg-warning">D-{{ r.dday }}</span>{% endif %}</td>
+    <td class="small">{{ r.department or '' }}</td>
+    <td><a href="/hr/employees/{{ r.employee_id }}" class="fw-semibold">{{ r.name }}</a></td>
+    <td>{{ r.workplace }}</td>
+    <td class="small">{{ r.project or '' }}{% if r.client %}<div class="text-muted">{{ r.client }}</div>{% endif %}</td>
+    <td class="small text-nowrap">{{ r.start_date }} ~ {{ r.actual_end or r.end_date or '' }}{% if r.actual_end %} <span class="text-muted">(종료)</span>{% elif r.end_date %} <span class="text-muted">(예정)</span>{% endif %}</td>
+    <td class="small">{{ r.reason or '' }}{% if r.reason_note %}<div class="text-muted">{{ r.reason_note }}</div>{% endif %}</td>
+    <td class="small">{{ r.insurances|join('·') or '-' }}</td>
+    <td class="small text-nowrap">{% if r.pay_type == '조정' %}<span class="badge text-bg-light border">조정</span>
+      <div>우리 {{ r.our_before|won }} → <b>{{ r.our_after|won }}</b></div>{% if r.other_pay %}<div class="text-muted">상대 {{ r.other_pay|won }}</div>{% endif %}
+      {% else %}<span class="text-muted">그대로</span>{% endif %}</td>
+    <td class="small"><details {{ 'open' if open_id == r.id }}><summary class="text-nowrap">{% if r.todo_left %}<span class="badge text-bg-warning">남은 처리 {{ r.todo_left|length }}</span>{% else %}<span class="badge text-bg-light border text-success">처리 완료</span>{% endif %}</summary>
+      {% for group, items in [('시작', r.todo_start), ('종료', r.todo_end)] %}{% if group == '시작' or r.state == '종료' or r.overdue or r.ending %}
+      <div class="text-muted">{{ group }}할 때</div>
+      {% for k, n in items %}<form method="post" action="/hr/dual/{{ r.id }}/check" class="d-block" data-enter-submit><input type="hidden" name="key" value="{{ k }}"><input type="hidden" name="state" value="{{ state }}">
+        <label class="text-nowrap {{ 'text-muted text-decoration-line-through' if r.checks.get(k) }}"><input type="checkbox" class="form-check-input me-1" data-autosubmit {{ 'checked' if r.checks.get(k) }}>{{ n }}{% if r.checks.get(k) %} <span class="text-muted">{{ r.checks.get(k) }}</span>{% endif %}</label></form>{% endfor %}
+      {% endif %}{% endfor %}
+      {% if r.pay_type == '조정' %}<div class="mt-1 d-flex gap-1">
+        <form method="post" action="/hr/dual/{{ r.id }}/apply-bases" data-confirm="{{ r.name }}님의 건강보험·국민연금·고용보험 기준 금액을 조정 후 금액({{ r.our_after|won }}원)으로 바꿀까요?"><input type="hidden" name="which" value="after"><input type="hidden" name="state" value="{{ state }}"><button class="btn btn-sm btn-outline-primary py-0 text-nowrap">보험 금액에 조정액 넣기</button></form>
+        <form method="post" action="/hr/dual/{{ r.id }}/apply-bases" data-confirm="{{ r.name }}님의 건강보험·국민연금·고용보험 기준 금액을 조정 전 금액({{ r.our_before|won }}원)으로 되돌릴까요?"><input type="hidden" name="which" value="before"><input type="hidden" name="state" value="{{ state }}"><button class="btn btn-sm btn-outline-secondary py-0">원복</button></form></div>{% endif %}
+    </details></td>
+    <td class="text-nowrap"><button class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#dualModal" data-fill='{{ r|tojson }}'>수정</button>
+      <form method="post" action="/hr/dual/{{ r.id }}/delete" class="d-inline" data-confirm="{{ r.name }}님의 '{{ r.workplace }}' 이중가입 기록을 삭제할까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td>
+  </tr>
+  {% else %}<tr><td colspan="11" class="text-muted text-center py-4">등록된 이중가입이 없습니다. 프로젝트 때문에 다른 사업장에도 4대보험이 가입되는 직원을 [등록]으로 넣어 주세요.</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+<div class="modal fade" id="dualModal" tabindex="-1"><div class="modal-dialog modal-lg"><form class="modal-content" method="post" action="/hr/dual/save">
+  <input type="hidden" name="id" value=""><input type="hidden" name="state" value="{{ state }}">
+  <div class="modal-header"><h6 class="modal-title">프로젝트 이중가입 <span data-mode-title>등록</span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body row g-2">
+    <div class="col-md-4"><label class="form-label small">직원 <span class="text-danger">*</span></label>
+      <select class="form-select form-select-sm" name="employee_id" required><option value="">직원을 고르세요</option>
+        {% for e in emps %}<option value="{{ e.id }}">{{ e.name }} · {{ e.department or '' }} · {{ e.emp_no or '' }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label small">상대 사업장 <span class="text-danger">*</span></label><input class="form-control form-control-sm" name="workplace" required maxlength="100" placeholder="이중가입되는 회사 이름"></div>
+    <div class="col-md-4"><label class="form-label small">발주처</label><input class="form-control form-control-sm" name="client" maxlength="200"></div>
+    <div class="col-md-12"><label class="form-label small">프로젝트(사업) 이름</label><input class="form-control form-control-sm" name="project" maxlength="200"></div>
+    <div class="col-md-4"><label class="form-label small">시작일 <span class="text-danger">*</span></label><input class="form-control form-control-sm" type="date" name="start_date" required></div>
+    <div class="col-md-4"><label class="form-label small">종료 예정일</label><input class="form-control form-control-sm" type="date" name="end_date"></div>
+    <div class="col-md-4"><label class="form-label small">실제 종료일 <span class="text-muted fw-normal">(끝났을 때)</span></label><input class="form-control form-control-sm" type="date" name="actual_end"></div>
+    <div class="col-md-4"><label class="form-label small">사유</label><select class="form-select form-select-sm" name="reason">{% for x in reasons %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-md-8"><label class="form-label small">사유 설명</label><input class="form-control form-control-sm" name="reason_note" maxlength="500"></div>
+    <div class="col-md-12"><label class="form-label small d-block">이중가입되는 보험</label>
+      {% for k, n in insurances %}<label class="small me-3"><input type="checkbox" class="form-check-input me-1" name="{{ k }}" value="1">{{ n }}</label>{% endfor %}</div>
+    <div class="col-md-4"><label class="form-label small">급여 형태</label>
+      <select class="form-select form-select-sm" name="pay_type" id="dualPay"><option value="그대로">그대로 (사업장만 이중)</option><option value="조정">조정 (금액이 나뉨)</option></select></div>
+    <div class="col-md-8 help align-self-end">연봉은 바꾸지 않습니다. 금액이 나뉘는 경우에만 아래 월 금액을 적습니다.</div>
+    <div class="col-md-4 dual-adj"><label class="form-label small">우리 회사 조정 전 (월, 원)</label><input class="form-control form-control-sm text-end" name="our_before" inputmode="numeric" data-money></div>
+    <div class="col-md-4 dual-adj"><label class="form-label small">우리 회사 조정 후 (월, 원)</label><input class="form-control form-control-sm text-end" name="our_after" inputmode="numeric" data-money></div>
+    <div class="col-md-4 dual-adj"><label class="form-label small">상대 사업장 (월, 원)</label><input class="form-control form-control-sm text-end" name="other_pay" inputmode="numeric" data-money></div>
+    <div class="col-12"><label class="form-label small">메모</label><input class="form-control form-control-sm" name="note" maxlength="500"></div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div>
+</form></div></div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const pay = document.getElementById('dualPay'), form = pay.form;
+  const sync = () => form.querySelectorAll('.dual-adj').forEach(d => { d.hidden = pay.value !== '조정'; });
+  pay.addEventListener('change', sync);
+  form.addEventListener('bms:filled', sync); sync();
+  {% if open_emp %}document.getElementById('dualNew').click();{% endif %}
+})();
+</script>
+{% endblock %}

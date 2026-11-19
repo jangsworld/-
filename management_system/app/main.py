@@ -24,6 +24,7 @@ from app.modules.hr.routes import router as hr_router
 from app.modules.hr.signing import router as sign_router
 from app.modules.hr.leave_routes import router as leave_router, public_router as leave_public_router
 from app.modules.hr.ecount_routes import router as ecount_router
+from app.modules.hr.dual_routes import router as dual_router
 from app.modules.ga.routes import router as ga_router, public_router as ga_public_router
 from app.modules.ga.fleet_routes import router as fleet_router, public_router as fleet_public_router
 from app.modules.ga import repo as ga_repo
@@ -76,6 +77,9 @@ async def lifespan(_app):
     auth.purge_expired()
     try:
         from app.modules.hr import repo as hr_repo
+        moved = hr_repo.split_hire_route_once()
+        if moved:
+            log.info("채용경로 분리: %s명", moved)
         filled = hr_repo.backfill_employee_codes_once()
         if filled:
             log.info("구분값 자동 추가(기존 자료): %s", {g: len(v) for g, v in filled.items()})
@@ -104,6 +108,7 @@ app.mount("/static", StaticFiles(directory=os.path.join(APP_DIR, "static")), nam
 app.include_router(auth_router)
 app.include_router(leave_router)
 app.include_router(ecount_router)
+app.include_router(dual_router)
 app.include_router(leave_public_router)
 app.include_router(hr_router)
 app.include_router(sign_router)

@@ -131,7 +131,7 @@ CSV_COLUMNS = [
     ("phone", "연락처"), ("email", "이메일"), ("address", "주소"), ("emergency_contact", "비상연락처"),
     ("emergency_relation", "비상연락처 관계"), ("emergency_name", "비상연락처 성명"),
     ("department", "부서"), ("rank", "직급"), ("title", "직책"), ("job_duty", "담당업무"),
-    ("employment_type", "고용형태"), ("work_location", "근무지"), ("hire_date", "입사일"),
+    ("employment_type", "고용형태"), ("hire_route", "채용경로"), ("work_location", "근무지"), ("hire_date", "입사일"),
     ("probation_end", "수습종료일"), ("resign_date", "퇴사일"), ("resign_reason", "퇴사사유"),
     ("bank_name", "급여은행"), ("bank_account", "계좌번호"), ("edu_level", "최종학력"),
     ("edu_school", "학교명"), ("edu_major", "학과"), ("edu_grad_year", "졸업연도"),
@@ -442,6 +442,7 @@ def employee_detail(request: Request, emp_id: int, tab: str = "info"):
         "specials": repo.list_specials(employee_id=emp_id),
         "insurances": repo.list_insurances(emp_id),
         **(_payroll_ctx(emp_id) if request.state.user["role"] in ("admin", "hr") else {}),
+        **(_dual_ctx(emp_id) if request.state.user["role"] in ("admin", "hr") else {}),
         "appointment_types": get_codes("APPOINTMENT_TYPE"),
         "salary_reasons": get_codes("SALARY_REASON"),
         "reward_categories": _reward_categories(),
@@ -452,6 +453,14 @@ def employee_detail(request: Request, emp_id: int, tab: str = "info"):
         "rrn_masked": repo.rrn_masked(emp_id) if request.state.user["role"] in ("admin", "hr") else "",
         "assets": __import__("app.modules.ga.repo", fromlist=["x"]).list_assets(holder_id=emp_id),
     }, "hr.employees")
+
+
+def _dual_ctx(emp_id: int) -> dict:
+    """인사기록카드의 프로젝트 이중가입 표시 (관리자·인사담당만)."""
+    from app.modules.hr import dual
+    rows = dual.rows(employee_id=emp_id)
+    return {"duals": rows, "dual_now": next((r for r in rows if r["state"] == "진행중"), None),
+            "dual_year": dual.in_year(emp_id, today().year)}
 
 
 def _payroll_ctx(emp_id: int) -> dict:
@@ -604,8 +613,11 @@ async def employee_check(request: Request, emp_id: int):
 @router.get("/technicians", response_class=HTMLResponse)
 def technicians(request: Request, kind: str = ""):
     rows = repo.list_technicians(kind)
+    from app.modules.hr import dual
+    duals = dual.active_map()
     for r in rows:
         r["dday"] = days_until(r.get("expires_on"))
+        r["dual"] = (duals.get(r["employee_id"]) or {}).get("workplace")      # 다른 사업장에도 가입 중 (입찰·실태조사 참고)
     return _render(request, "hr/technicians.html", {"rows": rows, "kind": kind, "kinds": QUALIFICATION_KINDS}, "hr.technicians")
 
 

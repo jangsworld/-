@@ -73,6 +73,9 @@
         <select class="form-select form-select-sm" name="employment_type" id="empType">
           {% for o in employment_types %}<option {% if e.employment_type == o or (custom and o == '기타') %}selected{% endif %}>{{ o }}</option>{% endfor %}</select>
         <input class="form-control form-control-sm mt-1 {{ '' if custom or e.employment_type == '기타' else 'd-none' }}" name="employment_type_etc" id="empTypeEtc" value="{{ e.employment_type if custom else '' }}" placeholder="고용형태 직접 입력"></div>
+      <div class="col-md-3"><label class="form-label small">채용경로</label>
+        <input class="form-control form-control-sm" name="hire_route" value="{{ e.hire_route or '' }}" list="routeList" maxlength="100" placeholder="예: 소개(추천인 이름), 공개채용">
+        <datalist id="routeList">{% for r in ['소개', '공개채용', '채용사이트', '헤드헌팅', '경력 특채', '학교 추천', '기타'] %}<option value="{{ r }}"></option>{% endfor %}</datalist></div>
       {{ sel('work_location', '근무지', locations) }}
       {{ inp('hire_date', '입사일', 'date', req=True) }}
       {{ inp('probation_end', '수습 종료일', 'date') }}

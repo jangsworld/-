@@ -11,7 +11,7 @@ from app.modules.hr.constants import LEAVE_CATEGORIES, REDUCE_CATEGORIES
 EMPLOYEE_FIELDS = [
     "emp_no", "name", "birth_date", "gender", "phone", "email", "address",
     "emergency_contact", "emergency_relation", "emergency_name", "department", "rank", "title", "job_duty",
-    "employment_type", "work_location", "hire_date", "probation_end",
+    "employment_type", "hire_route", "work_location", "hire_date", "probation_end",
     "resign_date", "resign_reason", "bank_name", "bank_account",
     "education", "edu_level", "edu_school", "edu_major", "edu_grad_year",
     "certificates", "memo", "folder_name",
@@ -19,7 +19,7 @@ EMPLOYEE_FIELDS = [
 
 # AES-256-GCM 으로 암호화 저장되는 개인정보 항목
 ENCRYPTED_EMPLOYEE_FIELDS = {
-    "birth_date", "phone", "email", "address", "emergency_contact", "emergency_relation", "emergency_name",
+    "birth_date", "phone", "email", "address", "emergency_contact", "emergency_relation", "emergency_name", "hire_route",
     "bank_account", "memo", "resign_reason",
 }
 ENCRYPTED_DOC_FIELDS = {"content", "params", "annual_salary"}
@@ -759,6 +759,26 @@ def codes_with_used(group: str) -> list[str]:
             if r["v"] not in names:
                 names.append(r["v"])
     return names
+
+
+def split_hire_route_once() -> int:
+    """한 번만: 고용형태에 붙여 적던 '(소개)'를 채용경로 칸으로 옮깁니다. 예: 정규직(소개) → 고용형태 정규직 · 채용경로 소개."""
+    from app.db import get_settings, set_setting
+    from app.security.crypto import enc
+    if get_settings().get("hire_route_split_v1"):
+        return 0
+    n = 0
+    with tx() as conn:
+        for r in conn.execute("SELECT id, employment_type, hire_route FROM employees WHERE employment_type LIKE '%(소개)'").fetchall():
+            base = r["employment_type"][:-len("(소개)")].strip() or "정규직"
+            conn.execute("UPDATE employees SET employment_type=?, hire_route=COALESCE(NULLIF(hire_route,''), ?) WHERE id=?",
+                         (base, enc("소개"), r["id"]))
+            n += 1
+        conn.execute("DELETE FROM codes WHERE group_code='EMPLOYMENT_TYPE' AND name LIKE '%(소개)'")
+    set_setting("hire_route_split_v1", str(n))
+    if n:
+        audit("system", "채용경로 분리", "employees", f"{n}명: 고용형태의 '(소개)'를 채용경로로 옮김")
+    return n
 
 
 def backfill_employee_codes_once() -> dict:

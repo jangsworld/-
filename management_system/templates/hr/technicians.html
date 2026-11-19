@@ -11,7 +11,7 @@
   <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel>
     <thead><tr><th>구분</th><th>성명</th><th>부서</th><th>직급</th><th>자격번호</th><th>등급</th><th>대표 국가기술자격증</th><th>교육·갱신 만료일</th></tr></thead>
     <tbody>{% for r in rows %}
-      <tr data-href="/hr/employees/{{ r.employee_id }}"><td>{{ r.kind }}</td><td class="fw-semibold">{{ r.name }}</td><td>{{ r.department or '' }}</td><td>{{ r.rank or '' }}</td>
+      <tr data-href="/hr/employees/{{ r.employee_id }}"><td>{{ r.kind }}</td><td class="fw-semibold">{{ r.name }}{% if r.dual %} <span class="badge text-bg-warning" title="프로젝트 이중가입 중 — 다른 사업장에도 4대보험이 가입되어 있습니다">이중가입 · {{ r.dual }}</span>{% endif %}</td><td>{{ r.department or '' }}</td><td>{{ r.rank or '' }}</td>
         <td>{{ r.license_no or '' }}</td><td>{{ r.grade or '' }}</td><td>{{ r.main_cert or '' }}</td>
         <td>{{ r.expires_on or '' }}{% if r.dday is not none %}{% if r.dday < 0 %} <span class="badge text-bg-danger">만료</span>{% elif r.dday <= 90 %} <span class="badge text-bg-warning">D-{{ r.dday }}</span>{% endif %}{% endif %}</td></tr>
     {% else %}<tr><td colspan="8" class="text-center text-muted p-4">등록된 기술자가 없습니다. 임직원 수정 화면의 보유자격에서 입력합니다.</td></tr>{% endfor %}

@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS employees (
     emergency_contact TEXT,
     emergency_relation TEXT,              -- 비상연락처 관계 (배우자, 아들 등)
     emergency_name TEXT,                  -- 비상연락처 관계 성명 (그 사람 이름)
+    hire_route TEXT,                      -- 채용경로 (소개·공개채용 등, 직접 입력)
     department        TEXT,
     rank              TEXT,               -- 직급
     title             TEXT,               -- 직책
@@ -482,6 +483,29 @@ CREATE TABLE IF NOT EXISTS work_specials (
     subsidy        TEXT,                   -- 정부지원금 신청 현황
     note           TEXT
 );
+
+-- 프로젝트 이중가입: 프로젝트 때문에 다른 사업장에도 4대보험이 가입된 직원 (연봉은 바꾸지 않고 여기에만 기록)
+CREATE TABLE IF NOT EXISTS dual_enrollments (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id  INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    workplace    TEXT NOT NULL,            -- 상대 사업장
+    project      TEXT,                     -- 프로젝트(사업) 이름
+    client       TEXT,                     -- 발주처
+    start_date   TEXT NOT NULL,
+    end_date     TEXT,                     -- 종료 예정일
+    actual_end   TEXT,                     -- 실제 종료일
+    reason       TEXT,
+    reason_note  TEXT,
+    ins_pension  TEXT, ins_health TEXT, ins_employ TEXT, ins_accident TEXT,   -- '1' = 이중가입된 보험
+    pay_type     TEXT NOT NULL DEFAULT '그대로',   -- 그대로 / 조정
+    our_before   TEXT,                     -- 우리 회사 월 금액: 조정 전 (암호화)
+    our_after    TEXT,                     -- 우리 회사 월 금액: 조정 후 (암호화)
+    other_pay    TEXT,                     -- 상대 사업장 월 금액 (암호화)
+    checks       TEXT,                     -- 처리 체크 JSON {"s_report": "2026-01-02", ...}
+    note         TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_dual_emp ON dual_enrollments(employee_id);
 
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_login_attempts ON login_attempts(ip, created_at);
@@ -1025,7 +1049,7 @@ def _all_default_codes() -> dict:
 
 # v3→v4: 기존 DB 에 없는 컬럼 추가 (CREATE TABLE IF NOT EXISTS 는 기존 테이블을 바꾸지 않음)
 ADDED_COLUMNS = {
-    "employees": ["emergency_relation", "emergency_name", "edu_level", "edu_school", "edu_major", "edu_grad_year", "folder_name"],
+    "employees": ["emergency_relation", "emergency_name", "hire_route", "edu_level", "edu_school", "edu_major", "edu_grad_year", "folder_name"],
     "hr_documents": ["emailed_at"],
     "codes": ["behavior"],
     "employee_qualifications": ["expires_on"],

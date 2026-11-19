@@ -339,11 +339,21 @@ def dashboard() -> dict:
                          "left": (to_date(e["probation_end"]) - t).days}
                         for e in active if to_date(e.get("probation_end")) and to_date(e["probation_end"]) >= t),
                        key=lambda x: x["end"])
+    from app.modules.hr import dual as dual_mod
+    active_ids = {e["id"] for e in active}
+    dual_now = [{"id": r["employee_id"], "name": r["name"], "department": r.get("department") or "", "workplace": r["workplace"],
+                 "project": r.get("project") or "", "start": r["start_date"], "end": r.get("end_date") or "",
+                 "left": r["dday"], "overdue": r["overdue"], "adjusted": r["pay_type"] == "조정"}
+                for r in dual_mod.rows("진행중") if r["employee_id"] in active_ids]
+    kpi["dual"] = len({d["id"] for d in dual_now})
+    kpi["dual_ending"] = sum(1 for d in dual_now if d["left"] is not None and d["left"] <= 30)
     kpi["probation"] = len(probation)
     kpi["probation_next"] = probation[0]["end"] if probation else ""
 
     # ── 차트 데이터 ──
-    dept_cnt = Counter(e["department"] or "미지정" for e in active)
+    from app.db import dept_tree
+    top = {r["name"]: r["path"][0] for r in dept_tree()}          # 팀·그룹 → 속한 대분류(본부)
+    dept_cnt = Counter(top.get(e["department"], e["department"]) or "미지정" for e in active)
     type_cnt = Counter(e["employment_type"] or "미지정" for e in active)
     months = [add_months(t.replace(day=1), -i) for i in range(11, -1, -1)]
     flow = []
@@ -367,6 +377,7 @@ def dashboard() -> dict:
     return {
         "kpi": kpi,
         "probation": probation,
+        "dual_now": dual_now,
         "alerts": build_alerts(emps, alert_days),
         "charts": {
             "dept": [{"label": k, "count": v} for k, v in dept_cnt.most_common()],
@@ -435,6 +446,11 @@ def build_alerts(emps: list[dict], alert_days: int = 60) -> list[dict]:
         if pe and 0 <= (pe - t).days <= 30:
             add("warning", "수습종료", e, f"수습기간 종료 예정 ({pe}) — 정규 전환 평가 필요", pe.isoformat(),
                 f"/hr/employees/{e['id']}")
+
+    # 3-1) 프로젝트 이중가입: 종료 임박·종료일 지남·남은 처리
+    from app.modules.hr import dual
+    for level, cat, emp, msg, d, link in dual.alerts():
+        add(level, cat, emp, msg, d, link)
 
     # 4) 휴직·단축근무 종료 → 복직 준비
     for s in repo.list_specials():
