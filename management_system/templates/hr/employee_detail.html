@@ -171,6 +171,8 @@
         <tr><td class="small" style="width:40%">{{ name }}</td><td><input class="form-control form-control-sm text-end" name="pay_{{ name }}" inputmode="numeric" value="{{ cur or '' }}" data-money></td></tr>
       {% endfor %}
         <tr class="table-light"><td class="small fw-semibold">합계</td><td class="text-end fw-semibold" id="paySum"></td></tr>
+        <tr><td class="small fw-semibold">{{ pay_sal_year }}년 연봉 (원)<div class="help fw-normal">합계 × 12 자동 입력 · 고칠 수 있음</div></td>
+          <td><input class="form-control form-control-sm text-end" name="sal_amount" inputmode="numeric" value="{{ pay_sal_cur or '' }}" data-money data-pay-annual></td></tr>
       </table>
       <div class="help">{% if not payroll.saved and contract_pay %}최신 근로계약서의 금액을 미리 채웠습니다. 확인 후 저장하세요.{% endif %}
         항목 이름은 「이카운트 연동 → 양식·설정」에서 바꿉니다.</div>
@@ -178,9 +180,14 @@
     <div class="col-lg-6">
       <div class="fw-semibold small mb-2">4대보험 · 연말정산</div>
       <div class="row g-2">
-        <div class="col-7"><label class="form-label small">보수월액 (원)</label>
-          <input class="form-control form-control-sm text-end" name="insured_monthly" inputmode="numeric" value="{{ payroll.insured_monthly or '' }}" data-money>
-          {% if insured_suggest %}<div class="help">참고: 기준연봉 ÷ 12 = {{ insured_suggest|won }}원 (비과세 항목은 빼고 적으세요)</div>{% endif %}</div>
+        <div class="col-12"><div class="field-box-title small fw-semibold">4대보험 기준 금액 (원) <span class="help fw-normal">이카운트 「기타설정」의 세 칸과 같습니다</span></div></div>
+        <div class="col-4"><label class="form-label small">건강보험 보수월액</label>
+          <input class="form-control form-control-sm text-end" name="insured_monthly" inputmode="numeric" value="{{ payroll.insured_monthly or '' }}" data-money></div>
+        <div class="col-4"><label class="form-label small">국민연금 기준소득월액</label>
+          <input class="form-control form-control-sm text-end" name="pension_monthly" inputmode="numeric" value="{{ payroll.pension_monthly or '' }}" data-money></div>
+        <div class="col-4"><label class="form-label small">고용보험 보수월액</label>
+          <input class="form-control form-control-sm text-end" name="employ_monthly" inputmode="numeric" value="{{ payroll.employ_monthly or '' }}" data-money></div>
+        <div class="col-12 help mt-0">건강보험 금액을 넣으면 비어 있는 국민연금·고용보험 칸도 같은 값으로 채워집니다. 국민연금은 상한액이 있어 다를 수 있으니 확인해 고치세요.{% if insured_suggest %} 참고: 기준연봉 ÷ 12 = {{ insured_suggest|won }}원 (비과세 항목은 빼고 적으세요){% endif %}</div>
         <div class="col-5"><label class="form-label small">세대주</label>
           <select class="form-select form-select-sm" name="householder"><option value="">-</option>
             <option value="Y" {{ 'selected' if payroll.householder == 'Y' }}>세대주</option><option value="N" {{ 'selected' if payroll.householder == 'N' }}>세대원</option></select></div>

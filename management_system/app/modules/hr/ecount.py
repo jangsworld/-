@@ -51,8 +51,10 @@ FIELDS = [
     ("bank_name", "은행", "기본", ["은행", "은행명", "급여이체은행", "이체은행"]),
     ("bank_account", "계좌번호", "기본", ["계좌번호", "급여계좌", "급여계좌번호"]),
     ("account_holder", "예금주", "기본", ["예금주", "예금주명"]),
-    ("insured_monthly", "보수월액", "기타", ["보수월액", "건강보험보수월액", "고용보험보수월액", "국민연금기준소득월액",
-                                         "기준소득월액"]),
+    # 이카운트 「기타설정」은 건강보험·국민연금·고용보험 금액 칸이 따로 있습니다
+    ("insured_monthly", "건강보험 보수월액", "기타", ["건강보험보수월액", "건강보험 보수월액", "보수월액"]),
+    ("pension_monthly", "국민연금 기준소득월액", "기타", ["국민연금기준소득월액", "국민연금 기준소득월액", "기준소득월액"]),
+    ("employ_monthly", "고용보험 보수월액", "기타", ["고용보험보수월액", "고용보험 보수월액", "보수월액"]),
     ("householder", "세대주여부", "기타", ["세대주여부", "세대주", "세대주구분"]),
     ("dependents", "부양가족수", "기타", ["부양가족수", "부양가족", "기본공제인원", "공제대상가족수"]),
     ("children_8_20", "8~20세 자녀수", "기타", ["8~20세자녀수", "8세이상20세이하자녀", "8세이상20세이하자녀수", "자녀수",
@@ -98,6 +100,7 @@ def get_payroll(emp_id: int) -> dict:
         items = {}
     return {"householder": row.get("householder") or "", "dependents": row.get("dependents"),
             "children_8_20": row.get("children_8_20"), "insured_monthly": row.get("insured_monthly"),
+            "pension_monthly": row.get("pension_monthly"), "employ_monthly": row.get("employ_monthly"),
             "pay_items": items, "note": row.get("note") or "", "saved": bool(row),
             "updated_at": row.get("updated_at")}
 
@@ -124,12 +127,15 @@ def suggest_insured(emp_id: int) -> int | None:
 def save_payroll(emp_id: int, data: dict):
     items = {k: int(v) for k, v in (data.get("pay_items") or {}).items() if str(v).isdigit() and int(v) > 0}
     execute("INSERT INTO employee_payroll(employee_id, householder, dependents, children_8_20, insured_monthly, "
-            "pay_items, note) VALUES (?,?,?,?,?,?,?) ON CONFLICT(employee_id) DO UPDATE SET "
+            "pension_monthly, employ_monthly, pay_items, note) VALUES (?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(employee_id) DO UPDATE SET "
             "householder=excluded.householder, dependents=excluded.dependents, children_8_20=excluded.children_8_20, "
-            "insured_monthly=excluded.insured_monthly, pay_items=excluded.pay_items, note=excluded.note, "
+            "insured_monthly=excluded.insured_monthly, pension_monthly=excluded.pension_monthly, "
+            "employ_monthly=excluded.employ_monthly, pay_items=excluded.pay_items, note=excluded.note, "
             "updated_at=datetime('now','localtime')",
             (emp_id, data.get("householder") or None, data.get("dependents"), data.get("children_8_20"),
-             data.get("insured_monthly"), json.dumps(items, ensure_ascii=False), data.get("note") or None))
+             data.get("insured_monthly"), data.get("pension_monthly"), data.get("employ_monthly"),
+             json.dumps(items, ensure_ascii=False), data.get("note") or None))
     audit("hr", "급여·연말정산 정보 저장", f"emp#{emp_id}", "")
 
 
@@ -229,7 +235,8 @@ def values(emp_id: int, include_rrn: bool = True) -> dict:
                                      "phone", "address", "bank_name", "bank_account")}
     v["account_holder"] = e.get("name") or "" if e.get("bank_account") else ""
     v["rrn"] = (repo.get_rrn(emp_id) or "") if include_rrn else ""
-    v["insured_monthly"] = str(p["insured_monthly"] or "")
+    for k in ("insured_monthly", "pension_monthly", "employ_monthly"):
+        v[k] = str(p[k] or "")
     v["householder"] = {"Y": "Y", "N": "N"}.get(p["householder"], "")
     v["dependents"] = "" if p["dependents"] is None else str(p["dependents"])
     v["children_8_20"] = "" if p["children_8_20"] is None else str(p["children_8_20"])
@@ -248,7 +255,8 @@ class TemplateError(ValueError):
 def default_columns() -> list[dict]:
     """양식을 올리기 전 기본 칸 구성."""
     keys = ["emp_no", "name", "rrn", "hire_date", "department", "rank", "title", "email", "phone", "address",
-            "bank_name", "bank_account", "account_holder", "resign_date", "insured_monthly", "householder",
+            "bank_name", "bank_account", "account_holder", "resign_date", "insured_monthly", "pension_monthly",
+            "employ_monthly", "householder",
             "dependents", "children_8_20"]
     cols = [{"header": FIELD_LABEL[k], "field": k} for k in keys]
     cols += [{"header": p, "field": f"pay:{p}"} for p in pay_items()]
@@ -275,10 +283,12 @@ def guess_field(header: str) -> str:
     for key, _label, aliases in targets:            # 정확히 같은 이름
         if h in (norm(a) for a in aliases):
             return key
-    for key, _label, aliases in targets:            # 머리글이 이름을 포함 (예: 사원번호(사번))
-        if any(len(norm(a)) >= 2 and norm(a) in h for a in aliases):
-            return key
-    return ""
+    best = ("", 0)                                  # 머리글이 이름을 포함 (예: 사원번호(사번)) → 가장 길게 맞는 것
+    for key, _label, aliases in targets:
+        n = max((len(norm(a)) for a in aliases if len(norm(a)) >= 2 and norm(a) in h), default=0)
+        if n > best[1]:
+            best = (key, n)
+    return best[0]
 
 
 def _xlsx_rows(data: bytes) -> list[list[str]]:

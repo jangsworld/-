@@ -48,9 +48,10 @@ FILL_JS = r"""
     let p = lab;
     for (let i = 0; i < 4 && p; i++) {
       p = p.parentElement; if (!p) break;
-      const cand = [...p.querySelectorAll(editable)].filter(x => visible(x) && !used.has(x)
+      const cand = [...p.querySelectorAll(editable)].filter(x => visible(x)
         && (lab.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING));
-      if (cand.length) return cand[0];
+      // 글자 바로 옆 칸이 이미 채워졌으면 다른 칸으로 넘어가지 않음 (같은 이름 '보수월액'이 건강보험·고용보험에 각각 있음)
+      if (cand.length) return used.has(cand[0]) ? null : cand[0];
     }
     return null;
   };

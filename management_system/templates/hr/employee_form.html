@@ -91,7 +91,7 @@
       <div class="col-md-2"><label class="form-label small">적용연도</label>
         <input class="form-control form-control-sm" type="number" name="sal_year" value="{{ sal_year }}" min="2000" max="2100"></div>
       <div class="col-md-3"><label class="form-label small">연봉(원)</label>
-        <input class="form-control form-control-sm" type="number" step="1" name="sal_amount" value="{{ sal_cur.annual_salary if sal_cur else '' }}" data-money="salHint2" placeholder="숫자만 (예: 74614164)">
+        <input class="form-control form-control-sm" type="number" step="1" name="sal_amount" value="{{ sal_cur.annual_salary if sal_cur else '' }}" data-money="salHint2" data-pay-annual placeholder="숫자만 (예: 74614164)">
         <div class="help fw-semibold text-dark" id="salHint2"></div></div>
       <div class="col-md-2"><label class="form-label small">적용일</label>
         <input class="form-control form-control-sm" type="date" name="sal_date" value="{{ sal_cur.effective_date if sal_cur else '' }}"></div>
@@ -111,12 +111,17 @@
         {% for name in pay_item_names %}{% set cur = payroll.pay_items.get(name) if payroll.saved else contract_pay.get(name) %}
           <div class="col-6"><label class="form-label small">{{ name }}</label><input class="form-control form-control-sm text-end pay-item" name="pay_{{ name }}" inputmode="numeric" value="{{ cur or '' }}"></div>
         {% endfor %}
-          <div class="col-12 small">합계 <b id="paySum2">-</b>원 {% if not payroll.saved and contract_pay %}<span class="help">· 최신 근로계약서 금액을 미리 채웠습니다</span>{% endif %}</div>
+          <div class="col-12 small">합계 <b id="paySum2">-</b>원 <span class="help">· 금액을 넣으면 위 「연봉」 칸이 합계 × 12로 자동 입력됩니다(고칠 수 있음)</span> {% if not payroll.saved and contract_pay %}<span class="help">· 최신 근로계약서 금액을 미리 채웠습니다</span>{% endif %}</div>
         </div></div></div>
       <div class="col-lg-6"><div class="row g-2">
-        <div class="col-7"><label class="form-label small">보수월액 (원)</label>
-          <input class="form-control form-control-sm text-end" name="insured_monthly" inputmode="numeric" value="{{ payroll.insured_monthly or '' }}">
-          {% if insured_suggest %}<div class="help">참고: 기준연봉 ÷ 12 = {{ insured_suggest|won }}원</div>{% endif %}</div>
+        <div class="col-12"><div class="field-box-title small fw-semibold">4대보험 기준 금액 (원) <span class="help fw-normal">이카운트 「기타설정」의 세 칸과 같습니다</span></div></div>
+        <div class="col-4"><label class="form-label small">건강보험 보수월액</label>
+          <input class="form-control form-control-sm text-end" name="insured_monthly" inputmode="numeric" value="{{ payroll.insured_monthly or '' }}"></div>
+        <div class="col-4"><label class="form-label small">국민연금 기준소득월액</label>
+          <input class="form-control form-control-sm text-end" name="pension_monthly" inputmode="numeric" value="{{ payroll.pension_monthly or '' }}"></div>
+        <div class="col-4"><label class="form-label small">고용보험 보수월액</label>
+          <input class="form-control form-control-sm text-end" name="employ_monthly" inputmode="numeric" value="{{ payroll.employ_monthly or '' }}"></div>
+        <div class="col-12 help mt-0">건강보험 금액을 넣으면 비어 있는 국민연금·고용보험 칸도 같은 값으로 채워집니다. 국민연금은 상한액이 있어 다를 수 있으니 확인해 고치세요.{% if insured_suggest %} 참고: 기준연봉 ÷ 12 = {{ insured_suggest|won }}원 (비과세 항목은 빼고 적으세요){% endif %}</div>
         <div class="col-5"><label class="form-label small">세대주</label>
           <select class="form-select form-select-sm" name="householder"><option value="">-</option>
             <option value="Y" {{ 'selected' if payroll.householder == 'Y' }}>세대주</option><option value="N" {{ 'selected' if payroll.householder == 'N' }}>세대원</option></select></div>

@@ -335,7 +335,7 @@ document.addEventListener('click', (e) => {
 // ════════════════════════════════════════════════════════════════════
 const moneyVal = (v) => { const s = String(v ?? '').replace(/[^\d-]/g, ''); return s && s !== '-' ? Number(s) : null; };
 (() => {
-  const NAME = /(salary|amount|cost|premium|price|budget|^total$|deposit|^pay_|insured_monthly|self_pay|monthly_cost|fuel_cost|toll_cost|repair_cost|sal_amount|ins_premium|^fine|^v\d+$)/i;
+  const NAME = /(salary|amount|cost|premium|price|budget|^total$|deposit|^pay_|insured_monthly|pension_monthly|employ_monthly|self_pay|monthly_cost|fuel_cost|toll_cost|repair_cost|sal_amount|ins_premium|^fine|^v\d+$)/i;
   const LABEL = /\(원\)|금액|연봉|공제료|보증금|경조금|포상금|급여|수리비|유류비|통행료/;
   const NOT = /(note|memo|pay_day|_date|rate|year|km|odometer|days|hours|count|copies|dependents|children|notice|alert|interval|useful|^month$|^day$)/i;
   const ANNUAL = /(annual_salary|initial_salary|sal_amount)/i;
@@ -388,3 +388,92 @@ const moneyVal = (v) => { const s = String(v ?? '').replace(/[^\d-]/g, ''); retu
     setTimeout(() => { if (e.defaultPrevented) els.forEach((el) => { el.value = fmtDigits(el.value); }); }, 0);
   }, true);
 })();
+
+// ════════════════════════════════════════════════════════════════════
+// 급여·연말정산: 급여항목(월)을 넣으면 연봉 칸 = 합계 × 12 (자동으로 넣되 고칠 수 있음)
+//                건강보험 보수월액을 넣으면 국민연금·고용보험 칸도 같은 값으로 (직접 고친 칸은 그대로 둠)
+// ════════════════════════════════════════════════════════════════════
+(() => {
+  const setVal = (el, v) => { el.value = v ? String(v) : ''; el.dispatchEvent(new Event('input', { bubbles: true })); };
+  document.addEventListener('input', (e) => {
+    const el = e.target;
+    if (!el.matches || !e.isTrusted) return;                   // 코드가 넣은 값에는 다시 반응하지 않음
+    const form = el.form;
+    if (!form) return;
+    if (el.matches('input[name^="pay_"]:not([name="pay_note"])')) {
+      const annual = form.querySelector('[data-pay-annual]');
+      if (!annual) return;
+      let sum = 0;
+      form.querySelectorAll('input[name^="pay_"]:not([name="pay_note"])').forEach((i) => { sum += moneyVal(i.value) || 0; });
+      if (sum > 0) { setVal(annual, sum * 12); annual.dataset.auto = '1'; }
+    } else if (el.name === 'insured_monthly') {
+      ['pension_monthly', 'employ_monthly'].forEach((n) => {
+        const o = form.querySelector(`input[name="${n}"]`);
+        if (o && (o.dataset.auto === '1' || !o.value)) { setVal(o, moneyVal(el.value)); o.dataset.auto = '1'; }
+      });
+    } else if (el.name === 'pension_monthly' || el.name === 'employ_monthly' || el.dataset.payAnnual !== undefined) {
+      el.dataset.auto = '';                                     // 직접 고친 칸은 자동으로 덮어쓰지 않음(연봉은 급여항목을 다시 고치면 새로 계산)
+    }
+  });
+})();
+
+// ════════════════════════════════════════════════════════════════════
+// 입력 화면 키보드: Enter = 다음 칸으로 (저장하지 않음), F8 = 저장
+// 대상: 칸이 2개 이상인 저장(post) 양식. 로그인·인증 화면, 검색·필터, 한 칸짜리 양식은 예전 그대로.
+// ════════════════════════════════════════════════════════════════════
+(() => {
+  if (/^\/(login|logout|account|leave-plan|sign|q\/|vq\/)/.test(location.pathname) || !document.getElementById('sidebar')) return;
+  const FIELD = 'input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=file]):not([disabled]):not([readonly]), select:not([disabled]), textarea:not([disabled]):not([readonly])';
+  const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  const fields = (form) => [...form.querySelectorAll(FIELD)].filter(visible);
+  const isEntry = (form) => !!form && (form.getAttribute('method') || '').toLowerCase() === 'post'
+    && form.dataset.enterSubmit === undefined && fields(form).length >= 2;
+  const saveBtn = (form) => [...form.querySelectorAll('button:not([type=button]), input[type=submit]')]
+    .concat(form.id ? [...document.querySelectorAll(`button[form="${form.id}"]:not([type=button])`)] : [])
+    .filter((b) => visible(b) && !b.disabled && !b.name)[0] || null;      // name 이 있는 버튼(삭제·반려 등)은 저장으로 보지 않음
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229 || e.ctrlKey || e.altKey || e.metaKey) return;
+    const el = e.target;
+    if (!el.matches || !el.matches('input, select') || ['submit', 'button', 'file'].includes(el.type)) return;   // 글 상자(textarea)는 줄바꿈 그대로
+    if (el.getAttribute('list') || el.getAttribute('role') === 'combobox') return;                               // 자동완성 목록 고르기
+    const form = el.form;
+    if (!isEntry(form)) return;
+    e.preventDefault();
+    const list = fields(form), i = list.indexOf(el);
+    const next = list[i + (e.shiftKey ? -1 : 1)];
+    if (next) { next.focus(); if (next.select && next.type !== 'date') { try { next.select(); } catch (_) {} } }
+    else { const b = saveBtn(form); if (b) b.focus(); }                   // 마지막 칸에서는 저장 버튼으로 (눌러야 저장)
+  });
+
+  const target = () => {
+    const modal = document.querySelector('.modal.show');
+    const scope = modal || document;
+    const cur = document.activeElement && document.activeElement.form;
+    if (cur && isEntry(cur) && scope.contains(cur)) return cur;
+    const cands = [...scope.querySelectorAll('form')].filter((f) => visible(f) && isEntry(f) && saveBtn(f));
+    return cands.length === 1 ? cands[0] : null;                          // 어느 양식인지 분명할 때만
+  };
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'F8' || e.ctrlKey || e.altKey || e.metaKey) return;
+    const form = target();
+    if (!form) return;
+    e.preventDefault();
+    const b = saveBtn(form);
+    if (!b) return;
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();   // 고치던 칸의 값 확정
+    form.requestSubmit ? form.requestSubmit(b.form === form && b.matches('button, input') ? b : undefined) : b.click();
+  });
+
+  // 저장 버튼에 (F8) 표시
+  const mark = (root = document) => root.querySelectorAll('form').forEach((f) => {
+    if (!isEntry(f)) return;
+    const b = saveBtn(f);
+    if (b && b.tagName === 'BUTTON' && !b.dataset.f8 && /저장|등록|추가/.test(b.textContent)) {
+      b.dataset.f8 = '1'; b.append(' (F8)'); b.title = (b.title ? b.title + ' · ' : '') + '단축키 F8';
+    }
+  });
+  mark();
+  document.addEventListener('shown.bs.modal', (e) => mark(e.target));
+})();
+

@@ -370,7 +370,9 @@ CREATE TABLE IF NOT EXISTS employee_payroll (
     householder     TEXT,                 -- 세대주 Y/N
     dependents      INTEGER,              -- 부양가족 수 (본인 제외)
     children_8_20   INTEGER,              -- 8~20세 자녀 수
-    insured_monthly INTEGER,              -- 보수월액(4대보험)
+    insured_monthly INTEGER,              -- 건강보험 보수월액
+    pension_monthly INTEGER,              -- 국민연금 기준소득월액
+    employ_monthly  INTEGER,              -- 고용보험 보수월액
     pay_items       TEXT,                 -- 급여항목별 월 금액 JSON {"기본급": 3000000, ...}
     note            TEXT,
     updated_at      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
@@ -1040,6 +1042,11 @@ def _add_columns(conn):
         for col in cols:
             if have and col not in have:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+    pay_cols = {r[1] for r in conn.execute("PRAGMA table_info(employee_payroll)")}
+    if pay_cols and "pension_monthly" not in pay_cols:   # 보수월액 한 칸 → 건강·연금·고용 세 칸. 처음에는 같은 값으로 채움
+        conn.execute("ALTER TABLE employee_payroll ADD COLUMN pension_monthly INTEGER")
+        conn.execute("ALTER TABLE employee_payroll ADD COLUMN employ_monthly INTEGER")
+        conn.execute("UPDATE employee_payroll SET pension_monthly=insured_monthly, employ_monthly=insured_monthly")
     code_cols = {r[1] for r in conn.execute("PRAGMA table_info(codes)")}
     if code_cols and "parent_id" not in code_cols:
         conn.execute("ALTER TABLE codes ADD COLUMN parent_id INTEGER")  # 부서 대·중·소분류

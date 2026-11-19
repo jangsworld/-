@@ -207,15 +207,28 @@ async def payroll_save(request: Request, emp_id: int):
                 "dependents": _int_or_none(f.get("dependents"), 0, 30),
                 "children_8_20": _int_or_none(f.get("children_8_20"), 0, 20),
                 "insured_monthly": _int_or_none(f.get("insured_monthly"), 0, 10**9),
+                "pension_monthly": _int_or_none(f.get("pension_monthly"), 0, 10**9),
+                "employ_monthly": _int_or_none(f.get("employ_monthly"), 0, 10**9),
                 "note": (f.get("note") or "").strip()[:500],
                 "pay_items": {}}
         for name in ecount.pay_items():
             v = _int_or_none(f.get(f"pay_{name}"), 0, 10**9)
             if v:
                 data["pay_items"][name] = v
+        annual = _int_or_none(f.get("sal_amount"), 1, 10**11)
     except ValueError:
         return _redirect(back, "숫자 칸에는 0 이상의 숫자만 적어 주세요")
     if data["children_8_20"] is not None and data["dependents"] is not None and data["children_8_20"] > data["dependents"]:
         return _redirect(back, "8~20세 자녀 수가 부양가족 수보다 많습니다")
     ecount.save_payroll(emp_id, data)
+    if annual:  # 올해 연봉 칸(급여항목 합계 × 12 로 자동 입력, 고칠 수 있음) → 값이 달라졌을 때만 연봉에 반영
+        from app.db import get_codes
+        from app.modules.hr import repo
+        year = today().year
+        cur = next((x for x in repo.employee_salaries(emp_id) if x["year"] == year), None)
+        if not cur or int(cur["annual_salary"]) != annual:
+            reasons = get_codes("SALARY_REASON")
+            repo.upsert_salary(emp_id, year, annual, (cur or {}).get("effective_date"),
+                               (cur or {}).get("reason") or (reasons[0] if reasons else "정기인상"), (cur or {}).get("note") or "")
+            audit("hr", "연봉 저장", f"emp#{emp_id}", f"{year}년 (급여·연말정산 탭)")
     return _redirect(back, "급여·연말정산 정보를 저장했습니다")

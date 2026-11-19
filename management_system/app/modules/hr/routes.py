@@ -460,7 +460,8 @@ def _payroll_ctx(emp_id: int) -> dict:
     sync = {r["action"]: r for r in repo.query("SELECT * FROM ecount_sync WHERE employee_id=?", (emp_id,))}
     return {"payroll": ecount.get_payroll(emp_id), "pay_item_names": ecount.pay_items(),
             "contract_pay": ecount.contract_pay(emp_id), "insured_suggest": ecount.suggest_insured(emp_id),
-            "ecount_sync": sync}
+            "ecount_sync": sync, "pay_sal_year": today().year,
+            "pay_sal_cur": next((x["annual_salary"] for x in repo.employee_salaries(emp_id) if x["year"] == today().year), None)}
 
 
 @router.get("/employees/{emp_id}/edit", response_class=HTMLResponse)
@@ -513,7 +514,8 @@ def _save_more(emp_id: int, raw: dict, by: str):
             return int(v)
         data = {"householder": raw.get("householder") if raw.get("householder") in ("Y", "N") else None,
                 "dependents": iv("dependents", 0, 30), "children_8_20": iv("children_8_20", 0, 20),
-                "insured_monthly": iv("insured_monthly", 0, 10**9), "note": (raw.get("pay_note") or "").strip()[:500],
+                "insured_monthly": iv("insured_monthly", 0, 10**9), "pension_monthly": iv("pension_monthly", 0, 10**9),
+                "employ_monthly": iv("employ_monthly", 0, 10**9), "note": (raw.get("pay_note") or "").strip()[:500],
                 "pay_items": {}}
         for name in ecount.pay_items():
             v = iv(f"pay_{name}", 0, 10**9)
@@ -522,7 +524,8 @@ def _save_more(emp_id: int, raw: dict, by: str):
         if data["children_8_20"] is not None and data["dependents"] is not None and data["children_8_20"] > data["dependents"]:
             raise ValueError("8~20세 자녀 수가 부양가족 수보다 많습니다")
         old = ecount.get_payroll(emp_id)
-        keys = ("householder", "dependents", "children_8_20", "insured_monthly", "note", "pay_items")
+        keys = ("householder", "dependents", "children_8_20", "insured_monthly", "pension_monthly", "employ_monthly",
+                "note", "pay_items")
         if old.get("saved") or any(data[k] for k in keys):
             if not old.get("saved") or any((old.get(k) or None) != (data[k] or None) for k in keys):
                 ecount.save_payroll(emp_id, data)
