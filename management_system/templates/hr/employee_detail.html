@@ -85,10 +85,10 @@
 </div>
 
 {% elif tab == 'history' %}
-<div class="card"><div class="card-header d-flex align-items-center">인사발령 이력 <span class="help ms-2">부서·직급·직책·고용형태 변경 시 자동 기록</span>
+<div class="card"><div class="card-header d-flex align-items-center">인사발령 이력 <span class="help ms-2">부서·직급·직책·근무지·고용형태 변경 시 자동 기록 · 여러 명 발령은 <a href="/hr/appointments">인사발령</a> 메뉴에서</span>
   {% if perms.write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#apptModal"><i class="bi bi-plus"></i> 발령 추가</button>{% endif %}</div>
   <table class="table table-sm mb-0"><thead><tr><th>발령일</th><th>구분</th><th>변경 전</th><th>변경 후</th><th>비고</th><th></th></tr></thead><tbody>
-  {% for a in appointments %}<tr><td>{{ a.appt_date }}</td><td><span class="badge text-bg-light border">{{ a.appt_type }}</span></td>
+  {% for a in appointments %}<tr><td>{{ a.appt_date }}</td><td><span class="badge text-bg-light border">{{ a.appt_type }}</span>{% if a.status == '예정' %} <span class="badge text-bg-info">예정</span>{% endif %}</td>
     <td>{{ a.from_value or '' }}</td><td>{{ a.to_value or '' }}</td><td class="small text-muted">{{ a.note or '' }}</td>
     <td class="text-end">{% if perms.write %}<form method="post" action="/hr/appointments/{{ a.id }}/delete" data-confirm="삭제할까요?"><input type="hidden" name="next" value="{{ back }}?tab=history"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
   {% else %}<tr><td colspan="6" class="text-muted text-center p-3">이력 없음</td></tr>{% endfor %}
@@ -115,7 +115,7 @@
 {% elif tab == 'salary' %}
 <div class="row g-3">
   <div class="col-lg-5"><div class="card h-100"><div class="card-header">연봉 추이</div><div class="card-body"><div class="chart-box"><canvas id="cSal"></canvas></div></div></div></div>
-  <div class="col-lg-7"><div class="card h-100"><div class="card-header d-flex">연봉 이력<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#salModal"><i class="bi bi-plus"></i> 연봉 등록</button></div>
+  <div class="col-lg-7"><div class="card h-100"><div class="card-header d-flex align-items-center">연봉 이력 <a class="btn btn-sm btn-outline-secondary ms-auto me-2" href="/hr/salaries/person/{{ e.id }}"><i class="bi bi-bar-chart-line"></i> 입사 때부터 한눈에 보기·입력</a><button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#salModal"><i class="bi bi-plus"></i> 연봉 등록</button></div>
     <table class="table table-sm mb-0"><thead><tr><th>연도</th><th>적용일</th><th class="num">연봉</th><th class="num">월 환산</th><th class="num">인상액</th><th class="num">인상률</th><th>사유</th><th></th></tr></thead><tbody>
     {% for s in salaries %}<tr><td class="fw-semibold">{{ s.year }}</td><td>{{ s.effective_date or '' }}</td><td class="num">{{ s.annual_salary|won }}</td><td class="num text-muted">{{ s.annual_salary|monthly|won }}</td>
       <td class="num {{ 'up' if (s.raise_amount or 0) > 0 else 'down' if (s.raise_amount or 0) < 0 }}">{{ s.raise_amount|won if s.raise_amount is not none else '-' }}</td>

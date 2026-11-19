@@ -30,6 +30,7 @@ TRACKED_FIELDS = {
     "rank": "승진",
     "title": "직책변경",
     "employment_type": "고용형태변경",
+    "work_location": "근무지변경",
 }
 
 
@@ -186,7 +187,8 @@ def update_employee(emp_id: int, data: dict, appt_date: str | None = None):
     when = appt_date or today().isoformat()
     for field, appt_type in TRACKED_FIELDS.items():
         if field in d and (before.get(field) or None) != d[field]:
-            add_appointment(emp_id, when, appt_type, before.get(field), d[field], "정보 변경 자동기록")
+            aid = add_appointment(emp_id, when, appt_type, before.get(field), d[field], "정보 변경 자동기록")
+            execute("UPDATE appointments SET field=?, status='적용' WHERE id=?", (field, aid))
     if d.get("resign_date") and not before.get("resign_date"):
         add_appointment(emp_id, d["resign_date"], "퇴사", None, None, d.get("resign_reason") or "")
     audit("hr", "임직원 수정", before["name"], json.dumps(list(d.keys()), ensure_ascii=False))

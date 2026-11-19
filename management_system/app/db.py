@@ -240,7 +240,11 @@ CREATE TABLE IF NOT EXISTS appointments (
     appt_type   TEXT NOT NULL,             -- 입사/승진/전보/직책변경/고용형태변경/퇴사 등
     from_value  TEXT,
     to_value    TEXT,
-    note        TEXT
+    note        TEXT,
+    field       TEXT,                      -- 바뀐 칸 (department/rank/title/work_location/employment_type)
+    status      TEXT,                      -- 적용 / 예정(발령일에 자동 적용) / 이력(소급, 정보는 안 바꿈). 비어 있으면 적용
+    batch_title TEXT,                      -- 발령 묶음 이름 (예: 2026-12 조직개편)
+    created_by  TEXT
 );
 
 -- ── 인사: 문서 템플릿 (근로계약서 / 증명서) ─────────────────────────
@@ -1060,6 +1064,7 @@ ADDED_COLUMNS = {
     "ga_vehicle_logs": ["external_id", "external_updated", "external_purpose"],
     "ga_vehicles": ["qr_token", "oil_interval_km"],
     "ga_company_items": ["emp_insurance", "alert_email", "alert_sent"],
+    "appointments": ["field", "status", "batch_title", "created_by"],
     "users": ["email"],                                            # 2단계 인증 메일 받을 회사 메일
     "sessions": ["mail_code", "mail_exp", "mail_tries", "mail_sends"],  # 메일 인증번호(해시)·만료·시도
 }

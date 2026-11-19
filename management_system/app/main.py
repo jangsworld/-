@@ -25,6 +25,8 @@ from app.modules.hr.signing import router as sign_router
 from app.modules.hr.leave_routes import router as leave_router, public_router as leave_public_router
 from app.modules.hr.ecount_routes import router as ecount_router
 from app.modules.hr.dual_routes import router as dual_router
+from app.modules.hr.salary_routes import router as salary_router
+from app.modules.hr.appoint_routes import router as appoint_router
 from app.modules.ga.routes import router as ga_router, public_router as ga_public_router
 from app.modules.ga.fleet_routes import router as fleet_router, public_router as fleet_public_router
 from app.modules.ga import repo as ga_repo
@@ -93,11 +95,14 @@ async def lifespan(_app):
     cartax.start_worker()
     contract_intake.start_worker()
     company_alerts.start_worker()          # 회사 관리 만기 알림 메일
+    from app.modules.hr import appoint
+    appoint.start_worker()                 # 예정 인사발령: 발령일에 자동 적용
     yield
     intake.stop_worker()
     cartax.stop_worker()
     contract_intake.stop_worker()
     company_alerts.stop_worker()
+    appoint.stop_worker()
 
 
 app = FastAPI(title=SYSTEM_NAME, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -109,6 +114,8 @@ app.include_router(auth_router)
 app.include_router(leave_router)
 app.include_router(ecount_router)
 app.include_router(dual_router)
+app.include_router(salary_router)
+app.include_router(appoint_router)
 app.include_router(leave_public_router)
 app.include_router(hr_router)
 app.include_router(sign_router)

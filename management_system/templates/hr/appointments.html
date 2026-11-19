@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}인사발령{% endblock %}
+{% block page_title %}<i class="bi bi-diagram-3 me-2"></i>인사발령{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+  <form method="get" class="d-flex flex-wrap gap-2 align-items-end">
+    <div><label class="form-label small mb-0">기간</label><div class="d-flex gap-1"><input type="date" class="form-control form-control-sm" name="date_from" value="{{ f.date_from }}" aria-label="시작일"><input type="date" class="form-control form-control-sm" name="date_to" value="{{ f.date_to }}" aria-label="종료일"></div></div>
+    <div><label class="form-label small mb-0">부서</label><select class="form-select form-select-sm" name="department"><option value="">전체</option>{% for d in depts %}<option value="{{ d }}" {{ 'selected' if f.department == d }}>{{ dept_text(d) }}</option>{% endfor %}</select></div>
+    <div><label class="form-label small mb-0">구분</label><select class="form-select form-select-sm" name="appt_type"><option value="">전체</option>{% for t in types %}<option {{ 'selected' if f.appt_type == t }}>{{ t }}</option>{% endfor %}</select></div>
+    <div><label class="form-label small mb-0">발령 묶음</label><select class="form-select form-select-sm" name="batch"><option value="">전체</option>{% for b in batches %}<option value="{{ b.batch_title }}" {{ 'selected' if f.batch == b.batch_title }}>{{ b.batch_title }} ({{ b.people }}명)</option>{% endfor %}</select></div>
+    <div><label class="form-label small mb-0">이름·비고</label><input class="form-control form-control-sm" name="q" value="{{ f.q }}" style="width:130px"></div>
+    <button class="btn btn-sm btn-outline-primary"><i class="bi bi-search"></i> 조회</button>
+    {% if query %}<a class="btn btn-sm btn-link" href="/hr/appointments">조건 지우기</a>{% endif %}
+  </form>
+  <div class="ms-auto btn-group btn-group-sm">
+    <a class="btn btn-outline-secondary" href="/hr/appointments/export.csv{{ '?' ~ query if query }}"><i class="bi bi-download"></i> 엑셀(CSV)</a>
+    {% if f.batch or f.date_from %}<a class="btn btn-outline-secondary" href="/hr/appointments/notice.pdf?{{ query }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> 발령 통지 문서</a>{% endif %}
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#apptModal"><i class="bi bi-plus-lg"></i> 발령 등록</button>
+  </div>
+</div>
+
+{% if movement %}
+<div class="card mb-3"><div class="card-header">부서 이동 현황 <span class="help ms-2">지금 조회한 발령 기준 · 부서 발령만</span></div>
+  <div class="table-responsive"><table class="table table-sm mb-0 align-middle"><thead><tr><th>부서</th><th class="num">나감</th><th class="num">들어옴</th><th class="num">증감</th></tr></thead><tbody>
+  {% for m in movement %}<tr><td>{{ dept_path(m.department) }}</td><td class="num">{{ m.out or '' }}</td><td class="num">{{ m.in or '' }}</td>
+    <td class="num fw-semibold {{ 'up' if m.net > 0 else ('down' if m.net < 0 else '') }}">{{ '%+d'|format(m.net) if m.net else '0' }}</td></tr>{% endfor %}
+  </tbody></table></div></div>
+{% endif %}
+
+<div class="card"><div class="card-header d-flex align-items-center">발령 현황 <span class="badge text-bg-secondary ms-2" data-excel-count>{{ rows|length }}건</span>
+  {% if planned %}<span class="badge text-bg-info ms-2">예정 {{ planned }}건 · 발령일에 자동 적용</span>{% endif %}
+  <span class="help ms-auto">여기서 등록하면 인사·고용 정보도 함께 바뀝니다. 인사기록카드에서 바꾼 것도 자동으로 기록됩니다.</span></div>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel data-excel-unit="건">
+    <thead><tr><th>발령일</th><th>상태</th><th>성명</th><th>현재 부서</th><th>구분</th><th>변경 전</th><th></th><th>변경 후</th><th>발령 묶음</th><th>비고</th><th></th></tr></thead><tbody>
+    {% for r in rows %}
+    <tr class="{{ 'table-info' if r.planned }}"><td class="text-nowrap">{{ r.appt_date }}</td>
+      <td>{% if r.planned %}<span class="badge text-bg-info">예정</span>{% elif r.status == '이력' %}<span class="badge text-bg-light border">이력만</span>{% else %}<span class="badge text-bg-success">적용</span>{% endif %}</td>
+      <td><a href="/hr/employees/{{ r.employee_id }}?tab=history" class="fw-semibold">{{ r.name }}</a></td><td class="small">{{ r.department or '' }}</td>
+      <td><span class="badge text-bg-light border">{{ r.appt_type }}</span></td>
+      <td class="small text-muted">{{ r.from_value or ('(발령일에 확정)' if r.planned else '-') }}</td><td class="text-muted">→</td><td class="fw-semibold">{{ r.to_value or '-' }}</td>
+      <td class="small">{% if r.batch_title %}<a href="/hr/appointments?batch={{ r.batch_title|urlencode }}">{{ r.batch_title }}</a>{% endif %}</td>
+      <td class="small">{{ r.note or '' }}</td>
+      <td><form method="post" action="/hr/appointments/{{ r.id }}/remove" data-confirm="{{ r.name }}님의 {{ r.appt_date }} {{ r.appt_type }} {{ '예정 발령을 취소' if r.planned else '발령 이력을 삭제' }}할까요?{{ '' if r.planned else ' 인사·고용 정보는 되돌아가지 않습니다.' }}"><button class="btn btn-sm btn-link text-danger p-0" title="{{ '예정 취소' if r.planned else '이력 삭제' }}"><i class="bi bi-x-lg"></i></button></form></td></tr>
+    {% else %}<tr><td colspan="11" class="text-muted text-center py-4">조회된 발령이 없습니다</td></tr>{% endfor %}
+  </tbody></table></div></div>
+
+<div class="modal fade" id="apptModal" tabindex="-1"><div class="modal-dialog modal-xl"><form class="modal-content" method="post" action="/hr/appointments/register" id="apptForm">
+  <div class="modal-header"><h6 class="modal-title">인사발령 등록 <span class="help ms-2">여러 명을 체크하면 조직개편처럼 한 번에 발령합니다</span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body row g-3">
+    <div class="col-lg-5">
+      <div class="d-flex align-items-center gap-2 mb-1"><b class="small">대상 직원</b><span class="small ms-auto"><b id="apCnt">0</b>명 선택</span></div>
+      <div class="d-flex gap-1 mb-1"><select class="form-select form-select-sm" id="apDept" aria-label="부서로 좁히기"><option value="">전체 부서</option>{% for d in depts %}<option value="{{ d }}" data-scope="{{ dept_scope(d)|join('|') }}">{{ dept_text(d) }}</option>{% endfor %}</select>
+        <input class="form-control form-control-sm" id="apFind" placeholder="이름 찾기" aria-label="이름 찾기" data-no-enter>
+        <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" id="apAll">보이는 직원 모두</button>
+        <button type="button" class="btn btn-sm btn-link text-nowrap" id="apNone">해제</button></div>
+      <div class="border rounded" style="max-height:330px;overflow:auto" id="apList">
+        {% for e in emps %}<label class="d-flex gap-2 px-2 py-1 border-bottom small ap-emp" data-dept="{{ e.department or '' }}" data-name="{{ e.name }}">
+          <input type="checkbox" class="form-check-input" name="emp" value="{{ e.id }}"><span class="fw-semibold">{{ e.name }}</span>
+          <span class="text-muted">{{ e.department or '' }} · {{ e.rank or '' }}{% if e.title %} · {{ e.title }}{% endif %}{% if e.work_location %} · {{ e.work_location }}{% endif %}</span></label>{% endfor %}
+      </div>
+    </div>
+    <div class="col-lg-7"><div class="row g-2">
+      <div class="col-md-4"><label class="form-label small">발령일 <span class="text-danger">*</span></label><input type="date" class="form-control form-control-sm" name="appt_date" id="apDate" value="{{ today_iso }}" required>
+        <div class="help" id="apDateHint"></div></div>
+      <div class="col-md-8"><label class="form-label small">발령 묶음 이름 <span class="text-muted fw-normal">(조직개편 등 한 번의 발령을 묶어 봄)</span></label><input class="form-control form-control-sm" name="batch_title" maxlength="100" placeholder="예: 2026-12 조직개편"></div>
+      <div class="col-12"><div class="small fw-semibold">바꿀 항목 <span class="help fw-normal">바꾸는 것만 고르세요. 나머지는 '변경 없음'으로 둡니다</span></div></div>
+      {% for key, (label, typ, grp) in fields.items() %}
+      <div class="col-md-4"><label class="form-label small">{{ label }} <span class="badge text-bg-light border fw-normal">{{ typ }}</span></label>
+        <select class="form-select form-select-sm ap-to" name="to_{{ key }}"><option value="">변경 없음</option>
+          {% for o in codes[key] %}<option value="{{ o }}">{{ dept_text(o) if key == 'department' else o }}</option>{% endfor %}</select>
+        <input class="form-control form-control-sm mt-1 ap-from" name="from_{{ key }}" placeholder="변경 전 {{ label }} (알면 입력)" hidden></div>
+      {% endfor %}
+      <div class="col-12"><label class="form-label small">비고</label><input class="form-control form-control-sm" name="note" maxlength="300"></div>
+      <div class="col-12"><div class="small fw-semibold mb-1">처리 방식</div>
+        <label class="d-block small"><input type="radio" class="form-check-input me-1" name="mode" value="apply" checked><b>발령 적용</b> — 인사·고용 정보도 함께 바꿉니다. 발령일이 앞으로의 날짜면 '예정'으로 두었다가 그날 자동 적용합니다.</label>
+        <label class="d-block small"><input type="radio" class="form-check-input me-1" name="mode" value="history"><b>이력만 추가(소급)</b> — 지난 조직개편 기록을 채울 때. 지금의 인사·고용 정보는 바꾸지 않습니다.</label></div>
+    </div></div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-sm btn-primary">발령 등록</button></div>
+</form></div></div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const emps = [...document.querySelectorAll('.ap-emp')], cnt = document.getElementById('apCnt');
+  const dept = document.getElementById('apDept'), find = document.getElementById('apFind'), form = document.getElementById('apptForm');
+  const count = () => { cnt.textContent = emps.filter(l => l.querySelector('input').checked).length; };
+  const filter = () => {
+    const scope = dept.value ? (dept.selectedOptions[0].dataset.scope || '').split('|') : null, q = find.value.trim();
+    emps.forEach(l => { l.classList.toggle('d-none', !!((scope && !scope.includes(l.dataset.dept)) || (q && !l.dataset.name.includes(q)))); l.classList.toggle('d-flex', !l.classList.contains('d-none')); });
+  };
+  dept.addEventListener('change', filter); find.addEventListener('input', filter);
+  find.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
+  document.getElementById('apAll').addEventListener('click', () => { emps.forEach(l => { if (!l.classList.contains('d-none')) l.querySelector('input').checked = true; }); count(); });
+  document.getElementById('apNone').addEventListener('click', () => { emps.forEach(l => { l.querySelector('input').checked = false; }); count(); });
+  emps.forEach(l => l.querySelector('input').addEventListener('change', count));
+  const date = document.getElementById('apDate'), hint = document.getElementById('apDateHint');
+  const sync = () => {
+    const mode = form.querySelector('[name=mode]:checked').value, future = date.value > '{{ today_iso }}';
+    hint.textContent = mode === 'history' ? '' : (future ? '앞으로의 날짜 → 예정으로 등록, 그날 자동 적용' : '오늘·지난 날짜 → 바로 적용');
+    form.querySelectorAll('.ap-from').forEach(i => { i.hidden = mode !== 'history'; });
+  };
+  date.addEventListener('change', sync); form.querySelectorAll('[name=mode]').forEach(r => r.addEventListener('change', sync)); sync();
+  form.addEventListener('submit', (e) => {
+    const n = emps.filter(l => l.querySelector('input').checked).length;
+    const ch = [...form.querySelectorAll('.ap-to')].filter(s => s.value).map(s => `${s.closest('div').querySelector('label').firstChild.textContent.trim()} → ${s.value}`);
+    if (!n || !ch.length) { e.preventDefault(); e.stopImmediatePropagation(); alert(!n ? '직원을 한 명 이상 체크해 주세요' : '바꿀 항목을 하나 이상 골라 주세요'); return; }
+    const mode = form.querySelector('[name=mode]:checked').value;
+    const how = mode === 'history' ? '이력만 추가합니다(인사·고용 정보는 그대로).' : (date.value > '{{ today_iso }}' ? '예정으로 등록하고 발령일에 자동 적용합니다.' : '인사·고용 정보를 바로 바꿉니다.');
+    if (!confirm(`${n}명 · 발령일 ${date.value}\n${ch.join('\n')}\n\n${how} 등록할까요?`)) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
+})();
+</script>
+{% endblock %}

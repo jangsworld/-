@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}{{ e.name }} - 연봉 현황{% endblock %}
+{% block page_title %}<a href="/hr/salaries?tab=people" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> 개인별 연봉 현황{% endblock %}
+{% block content %}
+<div class="card mb-3"><div class="card-body d-flex flex-wrap gap-4 align-items-center">
+  <div><div class="fs-5 fw-bold">{{ e.name }} <span class="st st-{{ e.status }} align-middle">{{ e.status }}</span></div>
+    <div class="text-muted">{{ e.emp_no or '' }} · {{ e.department or '-' }} · {{ e.rank or '-' }}{% if e.title %} / {{ e.title }}{% endif %}</div></div>
+  <div class="small"><div class="text-muted">입사일</div><div class="fw-semibold">{{ e.hire_date or '-' }}</div></div>
+  <div class="small"><div class="text-muted">근속기간</div><div class="fw-semibold">{{ e.hire_date|service(e.resign_date) }}</div></div>
+  {% if summary %}
+  <div class="small"><div class="text-muted">{{ summary.first.year }} → {{ summary.last.year }} 총 인상</div><div class="fw-semibold">{{ summary.total|won }}원 <span class="{{ 'up' if summary.total > 0 else 'down' }}">({{ summary.total_rate|pct }})</span></div></div>
+  {% if summary.cagr is not none %}<div class="small"><div class="text-muted">연평균 인상률</div><div class="fw-semibold">{{ summary.cagr|pct }}</div></div>{% endif %}
+  {% endif %}
+  <div class="ms-auto d-flex gap-1 no-print">
+    {% if prev_id %}<a class="btn btn-sm btn-outline-secondary" href="/hr/salaries/person/{{ prev_id }}" title="이전 직원"><i class="bi bi-chevron-left"></i> 이전</a>{% endif %}
+    {% if next_id %}<a class="btn btn-sm btn-outline-secondary" href="/hr/salaries/person/{{ next_id }}" title="다음 직원">다음 <i class="bi bi-chevron-right"></i></a>{% endif %}
+    <a class="btn btn-sm btn-outline-secondary" href="/hr/employees/{{ e.id }}?tab=salary">인사기록카드</a>
+    <button type="button" class="btn btn-sm btn-outline-primary" data-print><i class="bi bi-printer"></i> 인쇄·PDF</button>
+  </div>
+</div></div>
+
+<div class="card mb-3"><div class="card-header d-flex align-items-center">연봉액 · 증감율
+  <span class="ms-auto small no-print"><label class="me-3"><input type="checkbox" class="form-check-input me-1" id="showCo" checked>회사 평균 인상률</label>
+    <label><input type="checkbox" class="form-check-input me-1" id="showRank" checked>같은 직급({{ e.rank or '-' }}) 평균 연봉</label></span></div>
+  <div class="card-body"><div style="height:300px"><canvas id="cPerson"></canvas></div>
+    {% set marked = rows|selectattr('marks')|list %}{% if marked %}<div class="small text-muted mt-2"><i class="bi bi-flag"></i> 발령:
+      {% for r in marked %}<span class="badge text-bg-light border me-1">{{ r.year }} {{ r.marks|join(' · ') }}</span>{% endfor %}</div>{% endif %}
+  </div></div>
+
+<form method="post" action="/hr/salaries/person/{{ e.id }}" class="card" id="personForm">
+  <div class="card-header d-flex align-items-center">연도별 연봉 <span class="help ms-2 no-print">연봉액 칸에 직접 입력합니다. Enter = 다음 연도, F8 = 저장. 증감액·증감율은 자동 계산됩니다. 칸을 비우면 그 해 기록이 지워집니다.</span></div>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0 text-end" id="personTable">
+    <thead><tr><th class="text-start" style="min-width:90px">구분</th>{% for r in rows %}<th style="min-width:118px">{{ r.year }}년{% if r.marks %} <i class="bi bi-flag-fill text-warning" title="{{ r.marks|join(', ') }}"></i>{% endif %}</th>{% endfor %}</tr></thead>
+    <tbody>
+      <tr><th class="text-start">연봉액</th>{% for r in rows %}<td><input class="form-control form-control-sm text-end p-yr" name="y_{{ r.year }}" value="{{ r.amount or '' }}" data-money data-old="{{ r.amount or '' }}" inputmode="numeric" aria-label="{{ r.year }}년 연봉"></td>{% endfor %}</tr>
+      <tr><th class="text-start">증감액</th>{% for r in rows %}<td class="p-diff" data-y="{{ r.year }}"></td>{% endfor %}</tr>
+      <tr><th class="text-start">증감율</th>{% for r in rows %}<td class="p-rate fw-semibold" data-y="{{ r.year }}"></td>{% endfor %}</tr>
+      <tr class="text-muted small"><th class="text-start fw-normal">회사 평균 인상률</th>{% for r in rows %}<td>{{ r.co_rate|pct if r.co_rate is not none else '' }}</td>{% endfor %}</tr>
+      <tr class="text-muted small"><th class="text-start fw-normal">같은 직급 평균</th>{% for r in rows %}<td>{{ r.rank_avg|won if r.rank_avg else '' }}</td>{% endfor %}</tr>
+    </tbody></table></div>
+  {% if perms.write %}<div class="card-footer d-flex align-items-center gap-3 no-print"><button class="btn btn-sm btn-primary">저장</button>
+    <span class="help">올해({{ this_year }}년) 연봉을 고치면 인건비·연봉에도 반영됩니다. 이미 있던 값이 바뀌거나 지워질 때는 저장 전에 한 번 더 확인합니다.</span></div>{% endif %}
+</form>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}" src="/static/vendor/chartjs/chart.umd.min.js"></script>
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const ROWS = {{ rows|tojson }};
+  const inputs = [...document.querySelectorAll('.p-yr')];
+  const num = (v) => { const s = String(v ?? '').replace(/[^\d]/g, ''); return s ? Number(s) : null; };
+  const cell = (cls, y) => document.querySelector(`.${cls}[data-y="${y}"]`);
+  const series = () => {
+    let prev = null;
+    return ROWS.map((r, i) => {
+      const amt = num(inputs[i].value);
+      const diff = (amt && prev) ? amt - prev : null;
+      const rate = diff !== null ? diff / prev * 100 : null;
+      if (amt) prev = amt;
+      return { year: r.year, amt, diff, rate };
+    });
+  };
+  const chart = new Chart(document.getElementById('cPerson'), {
+    data: { labels: ROWS.map(r => r.year + '년'), datasets: [
+      { type: 'bar', label: '연봉액', data: [], backgroundColor: '#2d5a8c', yAxisID: 'y', order: 3, maxBarThickness: 46 },
+      { type: 'line', label: '같은 직급 평균 연봉', data: ROWS.map(r => r.rank_avg), borderColor: '#9aa5b1', borderDash: [5, 4], pointRadius: 2, yAxisID: 'y', order: 2, spanGaps: true },
+      { type: 'line', label: '증감율', data: [], borderColor: '#e0483e', backgroundColor: '#e0483e', yAxisID: 'y1', order: 0, spanGaps: false, tension: 0 },
+      { type: 'line', label: '회사 평균 인상률', data: ROWS.map(r => r.co_rate), borderColor: '#f2a541', borderDash: [5, 4], pointRadius: 2, yAxisID: 'y1', order: 1, spanGaps: true },
+    ] },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: { y: { beginAtZero: true, ticks: { callback: v => (v / 10000).toLocaleString('ko-KR') + '만' } },
+                y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } } },
+      plugins: { tooltip: { callbacks: { label: (c) => c.dataset.yAxisID === 'y1'
+        ? `${c.dataset.label}: ${c.parsed.y === null ? '-' : c.parsed.y.toFixed(1) + '%'}` : `${c.dataset.label}: ${Math.round(c.parsed.y).toLocaleString('ko-KR')}원` } } } },
+  });
+  const draw = () => {
+    const s = series();
+    s.forEach((r) => {
+      const d = cell('p-diff', r.year), p = cell('p-rate', r.year);
+      d.textContent = r.diff === null ? '' : r.diff.toLocaleString('ko-KR');
+      p.textContent = r.rate === null ? '' : (r.rate >= 0 ? '+' : '') + r.rate.toFixed(2) + '%';
+      [d, p].forEach((el) => { el.classList.toggle('up', (r.diff || 0) > 0); el.classList.toggle('down', (r.diff || 0) < 0); });
+    });
+    chart.data.datasets[0].data = s.map(r => r.amt);
+    chart.data.datasets[2].data = s.map(r => r.rate);
+    chart.update('none');
+  };
+  inputs.forEach(i => i.addEventListener('input', draw)); draw();
+  const toggle = (id, idx) => document.getElementById(id).addEventListener('change', (e) => { chart.setDatasetVisibility(idx, e.target.checked); chart.update(); });
+  toggle('showRank', 1); toggle('showCo', 3);
+  // 이미 있던 값이 바뀌거나 지워지면 저장 전에 확인
+  document.getElementById('personForm').addEventListener('submit', (e) => {
+    const touched = inputs.filter(i => i.dataset.old && num(i.value) !== num(i.dataset.old));
+    if (!touched.length) return;
+    const list = touched.map(i => `${i.name.slice(2)}년: ${Number(i.dataset.old).toLocaleString('ko-KR')} → ${num(i.value) ? num(i.value).toLocaleString('ko-KR') : '삭제'}`).join('\n');
+    if (!confirm(`이미 등록된 연봉 ${touched.length}건이 바뀝니다. 저장할까요?\n\n${list}`)) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
+})();
+</script>
+{% endblock %}

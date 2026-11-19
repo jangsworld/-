@@ -60,7 +60,15 @@
 <div class="card">
   <div class="card-header d-flex align-items-center flex-wrap gap-2">{{ year }}년 개인별 연봉 · 인상 · 인건비
     <span class="badge text-bg-secondary" data-excel-count>{{ ov.rows|length }}명</span>
-    <span class="help ms-auto">행 클릭 → 연봉 등록/수정 · 머리글 ▾ 로 정렬·필터 · 인상률은 직전 등록연도 대비</span></div>
+    <span class="help ms-auto">이름 클릭 → 입사 때부터의 연봉 현황 · 행 클릭 → 연봉 등록/수정 · 머리글 ▾ 로 정렬·필터</span></div>
+  <div class="card-body py-2 border-bottom d-flex flex-wrap align-items-center gap-2 small">
+    <b><i class="bi bi-clock-history"></i> 과거 연봉 한꺼번에 넣기</b>
+    <a class="btn btn-sm btn-outline-secondary" href="/hr/salaries/history/template.csv"><i class="bi bi-download"></i> 양식 내려받기</a>
+    <form method="post" action="/hr/salaries/history/import" enctype="multipart/form-data" class="d-flex flex-wrap align-items-center gap-2" data-busy="올리는 중…">
+      <input class="form-control form-control-sm" type="file" name="file" accept=".csv" required style="width:240px">
+      <label><input type="checkbox" class="form-check-input me-1" name="overwrite" value="1">이미 있는 값도 바꾸기</label>
+      <button class="btn btn-sm btn-primary">올리기</button></form>
+    <span class="help">양식(사번·성명·연도별 금액)을 엑셀에서 채워 'CSV UTF-8'로 저장해 올립니다. 빈 칸은 건드리지 않습니다.</span></div>
   <div class="table-responsive">
   <table class="table table-sm table-hover align-middle mb-0" id="salTable" data-excel data-excel-unit="명">
     <thead><tr><th>사번</th><th>성명</th><th>부서</th><th>직급</th><th>고용형태</th><th class="num">직전 연봉</th><th class="num">{{ year }}년 연봉</th><th class="num">월 환산</th>
@@ -68,7 +76,7 @@
     <tbody>
     {% for r in ov.rows %}{% set e = r.employee %}{% set L = r.labor %}
       <tr style="cursor:pointer" data-emp="{{ e.id }}" data-name="{{ e.name }}" data-cur="{{ r.cur.annual_salary if r.cur else '' }}" data-prev="{{ r.prev.annual_salary if r.prev else '' }}" data-reason="{{ r.cur.reason if r.cur else '정기인상' }}" data-note="{{ r.cur.note if r.cur and r.cur.note else '' }}">
-        <td class="text-muted">{{ e.emp_no }}</td><td class="fw-semibold">{{ e.name }}{% if e.resign_date %} <span class="small text-muted">(퇴사)</span>{% endif %}</td>
+        <td class="text-muted">{{ e.emp_no }}</td><td class="fw-semibold"><a href="/hr/salaries/person/{{ e.id }}" title="입사 때부터의 연봉 현황 보기">{{ e.name }}</a>{% if e.resign_date %} <span class="small text-muted">(퇴사)</span>{% endif %}</td>
         <td>{{ e.department or '' }}</td><td>{{ e.rank or '' }}</td><td class="small">{{ e.employment_type }}</td>
         <td class="num text-muted" data-v="{{ r.prev.annual_salary if r.prev else '' }}">{{ r.prev.annual_salary|won if r.prev else '-' }}{% if r.prev %}<div class="small">{{ r.prev.year }}</div>{% endif %}</td>
         <td class="num fw-semibold" data-v="{{ r.cur.annual_salary if r.cur else '' }}">{{ r.cur.annual_salary|won if r.cur else '' }}{% if not r.cur and not e.resign_date %}<span class="badge text-bg-warning">미책정</span>{% endif %}</td>
@@ -140,7 +148,8 @@ new Chart(document.getElementById('cRank'), {
 const modal = new bootstrap.Modal(document.getElementById('salModal'));
 const mAmt = document.getElementById('mAmt'), mRate = document.getElementById('mRate');
 let mPrev = 0;
-document.querySelectorAll('#salTable tbody tr').forEach(tr => tr.addEventListener('click', () => {
+document.querySelectorAll('#salTable tbody tr').forEach(tr => tr.addEventListener('click', (ev) => {
+  if (ev.target.closest('a')) return;      // 이름 = 개인별 연봉 현황으로 이동
   const d = tr.dataset; mPrev = Number(d.prev) || 0;
   document.getElementById('mEmp').value = d.emp; document.getElementById('mName').textContent = d.name;
   document.getElementById('mPrev').textContent = mPrev ? `직전 연봉 ${fmt.won(mPrev)}원` : '직전 연봉 없음 (신규)';
