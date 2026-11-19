@@ -1309,6 +1309,10 @@ def insurance_bulk_page(request: Request):
         common = json.loads(get_settings().get("insurance_common") or "{}")
     except ValueError:
         common = {}
+    from app.modules.ga import company
+    excluded = company.insurance_excluded()
+    linked = repo.query_one("SELECT id, name FROM ga_company_items WHERE emp_insurance='1' AND status IN ('유효','갱신중') "
+                            "ORDER BY expire_date DESC LIMIT 1")
     t = today().isoformat()
     emps = [e for e in repo.query("SELECT id, emp_no, name, department, rank, hire_date, resign_date FROM employees "
                                   "ORDER BY department, emp_no, name") if not e.get("resign_date") or e["resign_date"] >= t]
@@ -1319,8 +1323,9 @@ def insurance_bulk_page(request: Request):
         cur = latest.get(e["id"])
         e["cur"] = cur
         e["match"] = bool(cur and common.get("product") and all((cur.get(c) or "") == (common.get(c) or "") for c in repo.INSURANCE_COLS))
-    return _render(request, "hr/insurance_bulk.html", {"c": common, "emps": emps, "today_iso": t,
-                                                       "matched": sum(1 for e in emps if e["match"])}, "hr.insurances")
+        e["excluded"] = e["id"] in excluded
+    return _render(request, "hr/insurance_bulk.html", {"c": common, "emps": emps, "today_iso": t, "linked": linked,
+                                                       "matched": sum(1 for e in emps if e["match"])}, "hr.employees")
 
 
 @router.post("/insurances/bulk")
@@ -1332,6 +1337,10 @@ async def insurance_bulk_save(request: Request):
         return _redirect("/hr/insurances", str(ex))
     ids = [int(v) for v in form.getlist("emp") if str(v).isdigit()]
     set_setting("insurance_common", json.dumps(data, ensure_ascii=False))     # 다음에 열 때·새 직원 추가 때 그대로 씀
+    # 체크를 푼 재직 직원은 '따로 관리' → 회사 관리 만기에서 저장·갱신할 때 자동 반영에서 뺌
+    t = today().isoformat()
+    active = {e["id"] for e in repo.query("SELECT id, resign_date FROM employees") if not e.get("resign_date") or e["resign_date"] >= t}
+    set_setting("insurance_excluded", json.dumps(sorted(active - set(ids))))
     if not ids:
         return _redirect("/hr/insurances", "공통 내용만 저장했습니다. 등록할 직원을 골라 주세요")
     r = await run_in_threadpool(repo.bulk_insurance, data, ids)

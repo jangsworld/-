@@ -127,3 +127,60 @@ def test_insurance_bulk_permission():
     c.headers.update(ORIGIN)
     assert c.get("/hr/insurances").status_code == 403
     assert TestClient(app).get("/hr/insurances", follow_redirects=False).status_code in (303, 401)
+
+
+def test_company_item_reflects_insurance_and_mail(hr, monkeypatch):
+    from datetime import timedelta
+
+    from app import mailer
+    from app.db import get_settings, query
+    from app.modules.ga import company
+    a, b = _emp("반영가"), _emp("반영나")
+    t = today()
+    form = {"category": "보험·보증", "name": "시험 단체상해공제", "number": "C-1", "agency": "시험공제회",
+            "start_date": (t - timedelta(days=335)).isoformat(), "expire_date": (t + timedelta(days=30)).isoformat(),
+            "cycle": "매년", "alert_days": "30", "status": "유효", "emp_insurance": "1", "alert_email": "ga@example.com, hr@example.com"}
+    # '따로 관리' 직원은 자동 반영에서 빠짐
+    from app.db import set_setting
+    import json
+    set_setting("insurance_excluded", json.dumps([b]))
+    r = hr.post("/ga/company/save", data=form, follow_redirects=False)
+    assert r.status_code == 303 and "%EB%B0%98%EC%98%81" in r.headers["location"]      # '반영'
+    ia = [i for i in repo.list_insurances(a) if i["product"] == "시험 단체상해공제"]
+    assert len(ia) == 1 and ia[0]["policy_no"] == "C-1" and ia[0]["insurer"] == "시험공제회" and ia[0]["end_date"] == form["expire_date"]
+    assert not [i for i in repo.list_insurances(b) if i["product"] == "시험 단체상해공제"]
+    item = query("SELECT * FROM ga_company_items WHERE name='시험 단체상해공제'")[0]
+    page = hr.get("/ga/company").text
+    assert "임직원 상해공제" in page and 'name="alert_email"' in page
+    # 번호를 고쳐 저장 → 직원 기록도 고쳐짐(줄은 그대로)
+    hr.post("/ga/company/save", data={**form, "id": str(item["id"]), "number": "C-2"})
+    ia = [i for i in repo.list_insurances(a) if i["product"] == "시험 단체상해공제"]
+    assert len(ia) == 1 and ia[0]["policy_no"] == "C-2"
+    # 알림 메일: 30일 전 한 번만
+    sent = []
+    monkeypatch.setattr(mailer, "configured", lambda: True)
+    monkeypatch.setattr(mailer, "send", lambda to, subject, body, **kw: sent.append((to, subject, body)))
+    assert company.send_due_mails() == 1 and [s[0] for s in sent] == ["ga@example.com", "hr@example.com"]
+    assert "시험 단체상해공제" in sent[0][1] and "C-2" not in sent[0][2]              # 번호는 메일에 넣지 않음
+    assert company.send_due_mails() == 0
+    # 갱신 → 새 기간이 새 줄로, 알림은 새 만기 기준으로 다시
+    new_exp = (t + timedelta(days=395)).isoformat()
+    hr.post(f"/ga/company/{item['id']}/renew", data={"new_expire": new_exp, "done_date": t.isoformat(), "note": ""})
+    ia = [i for i in repo.list_insurances(a) if i["product"] == "시험 단체상해공제"]
+    assert len(ia) == 2 and ia[0]["end_date"] == new_exp and ia[0]["start_date"] == (t + timedelta(days=31)).isoformat()
+    assert company.send_due_mails() == 0
+    # 잘못된 메일 주소는 저장 거부
+    r = hr.post("/ga/company/save", data={**form, "name": "메일오류", "emp_insurance": "", "alert_email": "not-an-email"}, follow_redirects=False)
+    assert not query("SELECT 1 x FROM ga_company_items WHERE name='메일오류'")
+    hr.post(f"/ga/company/{item['id']}/delete")
+
+
+def test_dashboard_shows_probation(hr):
+    from datetime import timedelta
+    eid = _emp("수습시험")
+    execute("UPDATE employees SET probation_end=? WHERE id=?", ((today() + timedelta(days=20)).isoformat(), eid))
+    old = _emp("수습끝남")
+    execute("UPDATE employees SET probation_end=? WHERE id=?", ((today() - timedelta(days=5)).isoformat(), old))
+    page = hr.get("/hr/dashboard").text
+    assert "수습 중" in page and "수습시험" in page.split('id="probation"')[1].split("</table>")[0]
+    assert "수습끝남" not in page.split('id="probation"')[1].split("</table>")[0]

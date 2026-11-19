@@ -1,7 +1,9 @@
 {% extends "base.html" %}
-{% block title %}상해공제 일괄 등록{% endblock %}
-{% block page_title %}<i class="bi bi-shield-plus me-2"></i>상해공제 일괄 등록{% endblock %}
+{% block title %}상해공제 반영 대상{% endblock %}
+{% block page_title %}<i class="bi bi-shield-plus me-2"></i>임직원 상해공제 반영 대상{% endblock %}
 {% block content %}
+<div class="alert alert-info py-2 small">상해공제의 이름·기관·증권번호·기간은 <a href="/ga/company">총무관리 → 회사 관리 만기</a>에서 한 번만 넣고 「임직원 상해공제」에 체크하면 여기와 직원별 인사기록카드에 반영됩니다{% if linked %} (지금 연결된 항목: <b>{{ linked.name }}</b>){% else %} (아직 연결된 항목이 없습니다){% endif %}.
+  이 화면에서는 <b>누구에게 반영할지</b>와 가입일·공제료만 정합니다. 체크를 푼 직원은 '따로 관리'로 기억되어 자동 반영에서 빠집니다.</div>
 <form method="post" action="/hr/insurances/bulk" data-confirm="체크한 직원의 인사기록카드에 이 상해공제를 등록할까요?">
 <div class="card mb-3">
   <div class="card-header">전 직원 공통 내용 <span class="help fw-normal ms-2">여기에 한 번 넣으면 아래에서 체크한 직원의 인사기록카드 「상해공제」에 똑같이 들어갑니다</span></div>
@@ -27,12 +29,12 @@
   <div class="table-responsive" style="max-height:520px"><table class="table table-sm table-hover align-middle mb-0">
     <thead class="sticky-top"><tr><th style="width:44px"></th><th>부서</th><th>사번</th><th>성명</th><th>직급</th><th>입사일</th><th>지금 등록된 상해공제</th></tr></thead><tbody>
     {% for e in emps %}
-    <tr><td><input type="checkbox" class="form-check-input b-emp" name="emp" value="{{ e.id }}" data-match="{{ '1' if e.match else '' }}" {{ 'checked' if not e.match }} aria-label="{{ e.name }}"></td>
+    <tr><td><input type="checkbox" class="form-check-input b-emp" name="emp" value="{{ e.id }}" data-match="{{ '1' if e.match else '' }}" {{ 'checked' if not e.excluded }} aria-label="{{ e.name }}"></td>
       <td class="small">{{ e.department or '' }}</td><td class="small">{{ e.emp_no or '' }}</td>
       <td><a href="/hr/employees/{{ e.id }}?tab=insurance">{{ e.name }}</a></td><td class="small">{{ e.rank or '' }}</td><td class="small">{{ e.hire_date or '' }}</td>
       <td class="small">{% if e.match %}<span class="badge text-bg-success">같은 내용 등록됨</span>
         {% elif e.cur %}{{ e.cur.product }} · {{ e.cur.start_date or '' }} ~ {{ e.cur.end_date or '' }}{% if e.cur.end_date and e.cur.end_date < today_iso %} <span class="badge text-bg-secondary">만기</span>{% endif %}
-        {% else %}<span class="text-muted">없음</span>{% endif %}</td></tr>
+        {% else %}<span class="text-muted">없음</span>{% endif %}{% if e.excluded %} <span class="badge text-bg-light border">따로 관리</span>{% endif %}</td></tr>
     {% else %}<tr><td colspan="7" class="text-muted text-center p-3">재직 중인 직원이 없습니다</td></tr>{% endfor %}</tbody></table></div>
   <div class="card-footer d-flex align-items-center gap-3"><button class="btn btn-sm btn-primary">체크한 직원에게 등록</button>
     <span class="help">특별한 사정이 있는 직원은 체크를 풀고, 그 직원의 인사기록카드 「상해공제」 탭에서 따로 넣으세요. 같은 공제(공제명·보장 시작일)가 이미 있으면 그 기록을 고치고, 새 기간이면 새 줄로 추가되어 지난 기록은 이력으로 남습니다.</span></div>

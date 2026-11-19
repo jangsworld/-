@@ -17,7 +17,7 @@ from app.config import APP_DIR, SYSTEM_CODE, SYSTEM_NAME, settings
 from app.db import audit, init_db, get_settings, set_setting, DEFAULT_SETTINGS, DEPT_LEVELS, dept_tree, dept_text, dept_path, dept_scope
 from app.modules import MODULES
 from app import mailer
-from app.modules.ga import cartax, contract_intake
+from app.modules.ga import cartax, company as company_alerts, contract_intake
 from app.modules.ga.constants import ASSET_BEHAVIORS
 from app.modules.hr import intake, repo as hr_repo
 from app.modules.hr.routes import router as hr_router
@@ -88,10 +88,12 @@ async def lifespan(_app):
     intake.start_worker()
     cartax.start_worker()
     contract_intake.start_worker()
+    company_alerts.start_worker()          # 회사 관리 만기 알림 메일
     yield
     intake.stop_worker()
     cartax.stop_worker()
     contract_intake.stop_worker()
+    company_alerts.stop_worker()
 
 
 app = FastAPI(title=SYSTEM_NAME, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)

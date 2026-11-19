@@ -865,6 +865,9 @@ CREATE TABLE IF NOT EXISTS ga_company_items (          -- 회사 관리 만기 (
     alert_days  INTEGER DEFAULT 60,
     status      TEXT NOT NULL DEFAULT '유효',         -- 유효/갱신중/만료/해지
     note        TEXT,
+    emp_insurance TEXT,                              -- '1' = 임직원 상해공제: 재직 직원 인사기록카드에 반영
+    alert_email TEXT,                                -- 만기 알림 받을 담당자 메일 (쉼표로 여러 명)
+    alert_sent  TEXT,                                -- 보낸 알림 표시 '만기일:단계' (같은 알림을 두 번 보내지 않음)
     created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE TABLE IF NOT EXISTS ga_company_history (        -- 갱신 이력
@@ -1032,6 +1035,7 @@ ADDED_COLUMNS = {
     "ga_contracts": ["amount_vat", "folder_name"],
     "ga_vehicle_logs": ["external_id", "external_updated", "external_purpose"],
     "ga_vehicles": ["qr_token", "oil_interval_km"],
+    "ga_company_items": ["emp_insurance", "alert_email", "alert_sent"],
     "users": ["email"],                                            # 2단계 인증 메일 받을 회사 메일
     "sessions": ["mail_code", "mail_exp", "mail_tries", "mail_sends"],  # 메일 인증번호(해시)·만료·시도
 }

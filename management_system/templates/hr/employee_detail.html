@@ -141,7 +141,7 @@
       <button type="button" class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#insModal" data-ins='{{ i|tojson }}'><i class="bi bi-pencil"></i></button>
       <form method="post" action="/hr/employees/{{ e.id }}/insurances/{{ i.id }}/delete" class="d-inline" data-confirm="이 상해공제 기록을 삭제할까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
   {% else %}<tr><td colspan="9" class="text-muted text-center p-3">상해공제 가입 기록 없음</td></tr>{% endfor %}</tbody></table>
-  <div class="card-footer help">전 직원이 같은 상해공제라면 <a href="/hr/insurances">상해공제 일괄 등록</a>에서 한 번에 넣을 수 있습니다. 갱신하면 [가입 등록]으로 새 기간을 추가하세요(이전 기록은 이력으로 남습니다). 만기 30일 전부터 인사 대시보드에 알림이 뜹니다.</div></div>
+  <div class="card-footer help">전 직원 공통 상해공제는 <a href="/ga/company">회사 관리 만기</a>에 「임직원 상해공제」로 넣으면 여기에 반영됩니다(<a href="/hr/insurances">반영 대상 보기</a>). 갱신하면 [가입 등록]으로 새 기간을 추가하세요(이전 기록은 이력으로 남습니다). 만기 30일 전부터 인사 대시보드에 알림이 뜹니다.</div></div>
 
 <div class="modal fade" id="insModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="/hr/employees/{{ e.id }}/insurances" id="insForm">
   <input type="hidden" name="ins_id">

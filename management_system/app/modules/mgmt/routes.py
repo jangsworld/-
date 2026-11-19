@@ -477,14 +477,24 @@ def company_page(request: Request, category: str = "", status: str = "관리중"
     }, "ga.company")
 
 
+async def _reflect_msg(iid: int) -> str:
+    """'임직원 상해공제' 항목이면 재직 직원 인사기록카드에 반영하고 결과 문구를 돌려줍니다."""
+    from fastapi.concurrency import run_in_threadpool
+    r = await run_in_threadpool(company.reflect_insurance, iid)
+    if not r:
+        return ""
+    return (f" · 임직원 상해공제 반영: 새로 {r['added']}명, 고침 {r['updated']}명, 그대로 {r['same']}명"
+            + (f", 따로 관리 {r['skipped']}명 제외" if r["skipped"] else ""))
+
+
 @company_router.post("/save")
 async def company_save(request: Request):
     f = await request.form()
     try:
-        company.save(dict(f), _who(request))
+        iid = company.save(dict(f), _who(request))
     except company.CompanyError as ex:
         return _go("/ga/company", str(ex))
-    return _go("/ga/company", "저장했습니다")
+    return _go("/ga/company", "저장했습니다" + await _reflect_msg(iid))
 
 
 @company_router.post("/{iid}/delete")
@@ -501,4 +511,4 @@ async def company_renew(request: Request, iid: int):
                       _who(request))
     except company.CompanyError as ex:
         return _go("/ga/company", str(ex))
-    return _go("/ga/company", "갱신했습니다")
+    return _go("/ga/company", "갱신했습니다" + await _reflect_msg(iid))

@@ -21,6 +21,7 @@
   </div>
   {% endmacro %}
   {{ kpi('재직 인원', k.active ~ '명', '휴직 ' ~ k.on_leave ~ ' · 단축 ' ~ k.reduced, 'bi-people', '/hr/employees') }}
+  {{ kpi('수습 중', k.probation ~ '명', ('가장 빠른 종료 ' ~ k.probation_next) if k.probation else '수습종료일이 남은 직원 없음', 'bi-person-check', '#probation') }}
   {{ kpi('이번 달 입사 / 퇴사', k.hires_month ~ ' / ' ~ k.resign_month, '올해 입사 ' ~ k.hires_year ~ ' · 퇴사 ' ~ k.resign_year, 'bi-arrow-left-right') }}
   {{ kpi('연간 이직률', '%.1f'|format(k.turnover) ~ '%', '올해 퇴사자 ÷ 평균 인원', 'bi-box-arrow-right') }}
   {{ kpi('평균 근속', '%.1f'|format(k.avg_tenure) ~ '년', '여성 비율 ' ~ '%.0f'|format(k.female_ratio) ~ '%', 'bi-hourglass-split') }}
@@ -30,6 +31,16 @@
   {% endif %}
 </div>
 
+{% if d.probation %}
+<div class="card mb-3" id="probation"><div class="card-header"><i class="bi bi-person-check me-2"></i>수습 중인 직원 <span class="badge text-bg-secondary ms-1">{{ d.probation|length }}</span>
+  <span class="help ms-2">인사·고용 정보의 수습종료일 기준</span></div>
+  <div class="table-responsive" style="max-height:260px"><table class="table table-sm table-hover align-middle mb-0">
+    <thead><tr><th>성명</th><th>부서</th><th>직급</th><th>입사일</th><th>수습종료일</th><th>남은 기간</th></tr></thead><tbody>
+    {% for p in d.probation %}<tr><td><a href="/hr/employees/{{ p.id }}" class="fw-semibold">{{ p.name }}</a></td><td class="small">{{ p.department }}</td><td class="small">{{ p.rank }}</td>
+      <td class="small">{{ p.hire_date }}</td><td>{{ p.end }}</td>
+      <td><span class="badge {{ 'text-bg-warning' if p.left <= 30 else 'text-bg-light border' }}">{{ 'D-' ~ p.left if p.left else '오늘 종료' }}</span></td></tr>{% endfor %}
+  </tbody></table></div></div>
+{% endif %}
 <div class="row g-3">
   {% if perms.salary %}
   <div class="col-xl-5">

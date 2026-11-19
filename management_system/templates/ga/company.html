@@ -7,7 +7,7 @@
   <form method="get" class="d-flex gap-1">
     <select class="form-select form-select-sm" name="category" data-autosubmit><option value="">전체 구분</option>{% for x in categories %}<option {{ 'selected' if category == x }}>{{ x }}</option>{% endfor %}</select>
     <select class="form-select form-select-sm" name="status" data-autosubmit>{% for x in ['관리중'] + statuses + [''] %}<option value="{{ x }}" {{ 'selected' if status == x }}>{{ x or '전체 상태' }}</option>{% endfor %}</select></form>
-  <span class="help">면허·인허가·등기·보험·인증·인감·법인카드처럼 기한을 놓치면 안 되는 것을 모아 봅니다. 계약 만료는 <a href="/ga/contracts">계약·임대차</a>, 전체 달력은 <a href="/mgmt/compliance">법정의무 일정</a>에서 함께 보입니다.</span>
+  <span class="help">면허·인허가·등기·보험·인증·인감·법인카드처럼 기한을 놓치면 안 되는 것을 모아 봅니다. 만기 알림은 총괄·총무 대시보드에 뜨고, 항목에 메일을 넣으면 메일로도 갑니다. 계약 만료는 <a href="/ga/contracts">계약·임대차</a>, 전체 달력은 <a href="/mgmt/compliance">법정의무 일정</a>에서 함께 보입니다.</span>
   {% if can_write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#itemModal" data-fill='{}'><i class="bi bi-plus-lg"></i> 등록</button>{% endif %}
 </div>
 {% if alerts %}<div class="card border-warning mb-3"><div class="card-header bg-warning-subtle"><i class="bi bi-bell"></i> 만기 알림 {{ alerts|length }}건</div><ul class="list-group list-group-flush">
@@ -15,7 +15,7 @@
 </ul></div>{% endif %}
 
 <div class="card mb-3"><div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle" data-excel><thead><tr><th>구분</th><th>이름</th><th>번호</th><th>발급·관리 기관</th><th>시작</th><th>만기·기한</th><th></th><th>주기</th><th>담당</th><th>상태</th><th>메모</th><th></th></tr></thead><tbody>
-{% for r in rows %}<tr class="{{ 'table-warning' if r.alert }}"><td>{{ r.category }}</td><td class="fw-semibold">{{ r.name }}</td><td class="small">{{ r.number or '' }}</td><td class="small">{{ r.agency or '' }}</td>
+{% for r in rows %}<tr class="{{ 'table-warning' if r.alert }}"><td>{{ r.category }}</td><td class="fw-semibold">{{ r.name }}{% if r.emp_insurance %} <a class="badge text-bg-primary text-decoration-none" href="/hr/insurances" title="재직 직원 인사기록카드에 반영됩니다. 눌러서 반영 대상을 봅니다">임직원 상해공제</a>{% endif %}{% if r.alert_email %} <i class="bi bi-envelope text-muted" title="만기 알림 메일: {{ r.alert_email }}"></i>{% endif %}</td><td class="small">{{ r.number or '' }}</td><td class="small">{{ r.agency or '' }}</td>
   <td class="small">{{ r.start_date or '' }}</td><td>{{ r.expire_date or '-' }}</td><td>{{ g.dday(r.dday, r.alert_days or 60) if r.status in ('유효', '갱신중') }}</td><td>{{ r.cycle }}</td><td class="small">{{ r.owner or '' }}</td>
   <td><span class="badge {{ 'text-bg-success' if r.status == '유효' else ('text-bg-info' if r.status == '갱신중' else 'text-bg-secondary') }}">{{ r.status }}</span></td><td class="small">{{ r.note or '' }}</td>
   <td class="text-nowrap">{% if can_write %}<button class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#itemModal" data-fill='{{ r|tojson }}'>수정</button>
@@ -43,6 +43,11 @@
     <div class="col-md-2"><label class="form-label small">갱신 주기</label><select class="form-select form-select-sm" name="cycle">{% for x in cycles %}<option>{{ x }}</option>{% endfor %}</select></div>
     <div class="col-md-2"><label class="form-label small">미리 알림(일)</label><input class="form-control form-control-sm" name="alert_days" value="60" inputmode="numeric"></div>
     <div class="col-md-2"><label class="form-label small">상태</label><select class="form-select form-select-sm" name="status">{% for x in statuses %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-md-8"><label class="form-label small">만기 알림 받을 메일 <span class="text-muted fw-normal">(담당자 · 쉼표로 여러 명)</span></label><input class="form-control form-control-sm" name="alert_email" placeholder="예: name@company.com">
+      <div class="help">넣어 두면 '미리 알림(일)' 전, 7일 전, 만기 당일에 메일을 보냅니다. 비워 두면 대시보드에만 표시됩니다.</div></div>
+    <div class="col-md-4"><label class="form-label small">임직원 상해공제</label>
+      <div><label class="small"><input type="checkbox" class="form-check-input me-1" name="emp_insurance" value="1">재직 직원 인사기록카드에 반영</label></div>
+      <div class="help">체크하면 이름·기관·번호·기간이 직원별 「상해공제」에 들어갑니다.</div></div>
     <div class="col-12"><label class="form-label small">메모 (준비 서류, 갱신 방법 등)</label><textarea class="form-control form-control-sm" name="note" rows="2"></textarea></div>
   </div>
   <div class="modal-footer"><button class="btn btn-sm btn-primary">저장</button></div>

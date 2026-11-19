@@ -333,6 +333,14 @@ def dashboard() -> dict:
         "contract_missing": sum(1 for e in active if not e["has_contract"]),
         "female_ratio": (sum(1 for e in active if e.get("gender") == "여") / len(active) * 100) if active else 0,
     }
+    # 수습 중: 수습종료일이 오늘 이후인 재직자 (종료일이 빠른 순)
+    probation = sorted(({"id": e["id"], "name": e["name"], "department": e.get("department") or "", "rank": e.get("rank") or "",
+                         "hire_date": e.get("hire_date") or "", "end": to_date(e["probation_end"]).isoformat(),
+                         "left": (to_date(e["probation_end"]) - t).days}
+                        for e in active if to_date(e.get("probation_end")) and to_date(e["probation_end"]) >= t),
+                       key=lambda x: x["end"])
+    kpi["probation"] = len(probation)
+    kpi["probation_next"] = probation[0]["end"] if probation else ""
 
     # ── 차트 데이터 ──
     dept_cnt = Counter(e["department"] or "미지정" for e in active)
@@ -358,6 +366,7 @@ def dashboard() -> dict:
 
     return {
         "kpi": kpi,
+        "probation": probation,
         "alerts": build_alerts(emps, alert_days),
         "charts": {
             "dept": [{"label": k, "count": v} for k, v in dept_cnt.most_common()],
