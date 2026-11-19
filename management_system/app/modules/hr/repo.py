@@ -10,7 +10,7 @@ from app.modules.hr.constants import LEAVE_CATEGORIES, REDUCE_CATEGORIES
 
 EMPLOYEE_FIELDS = [
     "emp_no", "name", "birth_date", "gender", "phone", "email", "address",
-    "emergency_contact", "emergency_relation", "department", "rank", "title", "job_duty",
+    "emergency_contact", "emergency_relation", "emergency_name", "department", "rank", "title", "job_duty",
     "employment_type", "work_location", "hire_date", "probation_end",
     "resign_date", "resign_reason", "bank_name", "bank_account",
     "education", "edu_level", "edu_school", "edu_major", "edu_grad_year",
@@ -19,7 +19,7 @@ EMPLOYEE_FIELDS = [
 
 # AES-256-GCM 으로 암호화 저장되는 개인정보 항목
 ENCRYPTED_EMPLOYEE_FIELDS = {
-    "birth_date", "phone", "email", "address", "emergency_contact", "emergency_relation",
+    "birth_date", "phone", "email", "address", "emergency_contact", "emergency_relation", "emergency_name",
     "bank_account", "memo", "resign_reason",
 }
 ENCRYPTED_DOC_FIELDS = {"content", "params", "annual_salary"}
@@ -629,6 +629,33 @@ def save_insurance(data: dict, ins_id: int | None = None) -> int:
     new_id = execute(f"INSERT INTO employee_insurances({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", vals)
     audit("hr", "상해공제 등록", f"emp#{data['employee_id']}", data.get("product") or "")
     return new_id
+
+
+INSURANCE_COLS = ("product", "insurer", "joined_on", "start_date", "end_date", "policy_no", "premium", "note")
+
+
+def bulk_insurance(data: dict, emp_ids: list[int]) -> dict:
+    """전 직원 공통 상해공제를 고른 직원들에게 한 번에 등록.
+    같은 공제(공제명·보장 시작일이 같음)가 이미 있으면 그 기록을 고치고, 없으면 새로 추가합니다(지난 기록은 이력으로 남음)."""
+    from app.db import batch
+    added = updated = same = 0
+    with batch():
+        for emp_id in emp_ids:
+            if not query_one("SELECT 1 x FROM employees WHERE id=?", (emp_id,)):
+                continue
+            old = query_one("SELECT * FROM employee_insurances WHERE employee_id=? AND product=? AND COALESCE(start_date,'')=? "
+                            "ORDER BY id DESC LIMIT 1", (emp_id, data["product"], data.get("start_date") or ""))
+            row = {**{c: data.get(c) or None for c in INSURANCE_COLS}, "employee_id": emp_id}
+            if old and all((old.get(c) or None) == row[c] for c in INSURANCE_COLS):
+                same += 1
+            elif old:
+                save_insurance(row, old["id"])
+                updated += 1
+            else:
+                save_insurance(row)
+                added += 1
+    audit("hr", "상해공제 일괄 등록", data["product"], f"새로 {added}명 · 고침 {updated}명 · 그대로 {same}명")
+    return {"added": added, "updated": updated, "same": same}
 
 
 def delete_insurance(ins_id: int):

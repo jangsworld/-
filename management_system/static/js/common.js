@@ -436,7 +436,6 @@ const moneyVal = (v) => { const s = String(v ?? '').replace(/[^\d-]/g, ''); retu
     if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229 || e.ctrlKey || e.altKey || e.metaKey) return;
     const el = e.target;
     if (!el.matches || !el.matches('input, select') || ['submit', 'button', 'file'].includes(el.type)) return;   // 글 상자(textarea)는 줄바꿈 그대로
-    if (el.getAttribute('list') || el.getAttribute('role') === 'combobox') return;                               // 자동완성 목록 고르기
     const form = el.form;
     if (!isEntry(form)) return;
     e.preventDefault();
@@ -464,6 +463,12 @@ const moneyVal = (v) => { const s = String(v ?? '').replace(/[^\d-]/g, ''); retu
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();   // 고치던 칸의 값 확정
     form.requestSubmit ? form.requestSubmit(b.form === form && b.matches('button, input') ? b : undefined) : b.click();
   });
+
+  // 날짜 칸: 연도 4자리를 치면 바로 월로, 월을 치면 일로 넘어가게 (연도를 4자리로 제한하면 브라우저가 알아서 넘김)
+  const dates = (root = document) => root.querySelectorAll('input[type=date]:not([max])').forEach((d) => d.setAttribute('max', '9999-12-31'));
+  dates();
+  document.addEventListener('shown.bs.modal', (e) => dates(e.target));
+  document.addEventListener('focusin', (e) => { if (e.target.matches && e.target.matches('input[type=date]:not([max])')) e.target.setAttribute('max', '9999-12-31'); });
 
   // 저장 버튼에 (F8) 표시
   const mark = (root = document) => root.querySelectorAll('form').forEach((f) => {

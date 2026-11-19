@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}상해공제 일괄 등록{% endblock %}
+{% block page_title %}<i class="bi bi-shield-plus me-2"></i>상해공제 일괄 등록{% endblock %}
+{% block content %}
+<form method="post" action="/hr/insurances/bulk" data-confirm="체크한 직원의 인사기록카드에 이 상해공제를 등록할까요?">
+<div class="card mb-3">
+  <div class="card-header">전 직원 공통 내용 <span class="help fw-normal ms-2">여기에 한 번 넣으면 아래에서 체크한 직원의 인사기록카드 「상해공제」에 똑같이 들어갑니다</span></div>
+  <div class="card-body row g-2">
+    <div class="col-md-4"><label class="form-label small">공제명 <span class="text-danger">*</span></label><input class="form-control form-control-sm" name="product" required value="{{ c.product or '' }}" placeholder="예: 근로자 상해공제"></div>
+    <div class="col-md-4"><label class="form-label small">보험사·공제사</label><input class="form-control form-control-sm" name="insurer" value="{{ c.insurer or '' }}"></div>
+    <div class="col-md-4"><label class="form-label small">증권·가입번호</label><input class="form-control form-control-sm" name="policy_no" value="{{ c.policy_no or '' }}"></div>
+    <div class="col-md-3"><label class="form-label small">가입일</label><input type="date" class="form-control form-control-sm" name="joined_on" value="{{ c.joined_on or '' }}"></div>
+    <div class="col-md-3"><label class="form-label small">보장 시작</label><input type="date" class="form-control form-control-sm" name="start_date" id="bStart" value="{{ c.start_date or '' }}"></div>
+    <div class="col-md-3"><label class="form-label small">보장 종료(만기)</label><input type="date" class="form-control form-control-sm" name="end_date" id="bEnd" value="{{ c.end_date or '' }}">
+      <button type="button" class="btn btn-sm btn-link p-0" id="bYear">시작일부터 1년</button></div>
+    <div class="col-md-3"><label class="form-label small">1인 공제료(원)</label><input class="form-control form-control-sm" name="premium" inputmode="numeric" value="{{ c.premium or '' }}"></div>
+    <div class="col-12"><label class="form-label small">비고</label><input class="form-control form-control-sm" name="note" value="{{ c.note or '' }}"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex flex-wrap align-items-center gap-2">등록할 직원 <span class="small text-muted">재직 {{ emps|length }}명 · 이미 같은 내용 {{ matched }}명</span>
+    <span class="ms-auto small"><b id="bCnt">0</b>명 선택</span>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="bAll">모두 선택</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="bTodo">아직 없는 직원만</button>
+    <button type="button" class="btn btn-sm btn-link" id="bNone">모두 해제</button></div>
+  <div class="table-responsive" style="max-height:520px"><table class="table table-sm table-hover align-middle mb-0">
+    <thead class="sticky-top"><tr><th style="width:44px"></th><th>부서</th><th>사번</th><th>성명</th><th>직급</th><th>입사일</th><th>지금 등록된 상해공제</th></tr></thead><tbody>
+    {% for e in emps %}
+    <tr><td><input type="checkbox" class="form-check-input b-emp" name="emp" value="{{ e.id }}" data-match="{{ '1' if e.match else '' }}" {{ 'checked' if not e.match }} aria-label="{{ e.name }}"></td>
+      <td class="small">{{ e.department or '' }}</td><td class="small">{{ e.emp_no or '' }}</td>
+      <td><a href="/hr/employees/{{ e.id }}?tab=insurance">{{ e.name }}</a></td><td class="small">{{ e.rank or '' }}</td><td class="small">{{ e.hire_date or '' }}</td>
+      <td class="small">{% if e.match %}<span class="badge text-bg-success">같은 내용 등록됨</span>
+        {% elif e.cur %}{{ e.cur.product }} · {{ e.cur.start_date or '' }} ~ {{ e.cur.end_date or '' }}{% if e.cur.end_date and e.cur.end_date < today_iso %} <span class="badge text-bg-secondary">만기</span>{% endif %}
+        {% else %}<span class="text-muted">없음</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="7" class="text-muted text-center p-3">재직 중인 직원이 없습니다</td></tr>{% endfor %}</tbody></table></div>
+  <div class="card-footer d-flex align-items-center gap-3"><button class="btn btn-sm btn-primary">체크한 직원에게 등록</button>
+    <span class="help">특별한 사정이 있는 직원은 체크를 풀고, 그 직원의 인사기록카드 「상해공제」 탭에서 따로 넣으세요. 같은 공제(공제명·보장 시작일)가 이미 있으면 그 기록을 고치고, 새 기간이면 새 줄로 추가되어 지난 기록은 이력으로 남습니다.</span></div>
+</div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const boxes = [...document.querySelectorAll('.b-emp')], cnt = document.getElementById('bCnt');
+  const count = () => { cnt.textContent = boxes.filter(b => b.checked).length; };
+  const set = (fn) => { boxes.forEach(b => { b.checked = fn(b); }); count(); };
+  document.getElementById('bAll').addEventListener('click', () => set(() => true));
+  document.getElementById('bNone').addEventListener('click', () => set(() => false));
+  document.getElementById('bTodo').addEventListener('click', () => set(b => !b.dataset.match));
+  boxes.forEach(b => b.addEventListener('change', count)); count();
+  document.getElementById('bYear').addEventListener('click', () => {
+    const s = document.getElementById('bStart').value; if (!s) return;
+    const d = new Date(s + 'T00:00:00'); d.setFullYear(d.getFullYear() + 1); d.setDate(d.getDate() - 1);
+    document.getElementById('bEnd').value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+})();
+</script>
+{% endblock %}

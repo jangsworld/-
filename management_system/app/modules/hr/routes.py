@@ -11,7 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse, Response
 
 from app.common import templates, today, sanitize_html, add_months, days_until, to_date
-from app.db import batch, execute, get_codes, get_settings, audit
+from app.db import batch, execute, get_codes, get_settings, set_setting, audit
 from app import mailer
 from app.config import settings as cfg
 from app.modules.hr import intake, repo, rrn as rrn_util, services, signing
@@ -129,7 +129,7 @@ def employees(request: Request, q: str = "", department: str = "", employment_ty
 CSV_COLUMNS = [
     ("emp_no", "사번"), ("name", "성명"), ("birth_date", "생년월일"), ("gender", "성별"),
     ("phone", "연락처"), ("email", "이메일"), ("address", "주소"), ("emergency_contact", "비상연락처"),
-    ("emergency_relation", "비상연락처 관계"),
+    ("emergency_relation", "비상연락처 관계"), ("emergency_name", "비상연락처 성명"),
     ("department", "부서"), ("rank", "직급"), ("title", "직책"), ("job_duty", "담당업무"),
     ("employment_type", "고용형태"), ("work_location", "근무지"), ("hire_date", "입사일"),
     ("probation_end", "수습종료일"), ("resign_date", "퇴사일"), ("resign_reason", "퇴사사유"),
@@ -1286,6 +1286,56 @@ async def insurance_save(request: Request, emp_id: int):
         return _redirect(back, "기록을 찾을 수 없습니다")
     repo.save_insurance(data, ins_id)
     return _redirect(back, "상해공제 정보를 저장했습니다")
+
+
+def _insurance_form(f: dict) -> dict:
+    """상해공제 입력값 검사 (형식 오류는 ValueError)."""
+    data = {k: (f.get(k) or "").strip()[:200] for k in repo.INSURANCE_COLS}
+    if not data["product"]:
+        raise ValueError("공제명을 입력하세요")
+    for k in ("joined_on", "start_date", "end_date"):
+        if data[k] and not to_date(data[k]):
+            raise ValueError("날짜 형식이 맞지 않습니다")
+    if data["start_date"] and data["end_date"] and data["end_date"] < data["start_date"]:
+        raise ValueError("보장 종료일이 시작일보다 빠릅니다")
+    data["premium"] = re.sub(r"[^\d]", "", data["premium"])
+    return data
+
+
+@router.get("/insurances", response_class=HTMLResponse)
+def insurance_bulk_page(request: Request):
+    """전 직원 공통 상해공제: 한 번 입력해서 재직 직원 인사기록카드에 한꺼번에 등록."""
+    try:
+        common = json.loads(get_settings().get("insurance_common") or "{}")
+    except ValueError:
+        common = {}
+    t = today().isoformat()
+    emps = [e for e in repo.query("SELECT id, emp_no, name, department, rank, hire_date, resign_date FROM employees "
+                                  "ORDER BY department, emp_no, name") if not e.get("resign_date") or e["resign_date"] >= t]
+    latest = {}
+    for i in repo.list_insurances():            # 만기 늦은 순 → 직원별 첫 줄이 가장 최근
+        latest.setdefault(i["employee_id"], i)
+    for e in emps:
+        cur = latest.get(e["id"])
+        e["cur"] = cur
+        e["match"] = bool(cur and common.get("product") and all((cur.get(c) or "") == (common.get(c) or "") for c in repo.INSURANCE_COLS))
+    return _render(request, "hr/insurance_bulk.html", {"c": common, "emps": emps, "today_iso": t,
+                                                       "matched": sum(1 for e in emps if e["match"])}, "hr.insurances")
+
+
+@router.post("/insurances/bulk")
+async def insurance_bulk_save(request: Request):
+    form = await request.form()
+    try:
+        data = _insurance_form(dict(form))
+    except ValueError as ex:
+        return _redirect("/hr/insurances", str(ex))
+    ids = [int(v) for v in form.getlist("emp") if str(v).isdigit()]
+    set_setting("insurance_common", json.dumps(data, ensure_ascii=False))     # 다음에 열 때·새 직원 추가 때 그대로 씀
+    if not ids:
+        return _redirect("/hr/insurances", "공통 내용만 저장했습니다. 등록할 직원을 골라 주세요")
+    r = await run_in_threadpool(repo.bulk_insurance, data, ids)
+    return _redirect("/hr/insurances", f"상해공제 일괄 등록: 새로 {r['added']}명 · 고침 {r['updated']}명 · 이미 같은 내용 {r['same']}명")
 
 
 @router.post("/employees/{emp_id}/insurances/{ins_id}/delete")

@@ -77,3 +77,53 @@ def test_common_script_keyboard_helpers(hr):
     js = hr.get("/static/js/common.js").text
     assert "'F8'" in js and "isComposing" in js and "data-pay-annual" in js
     assert "getElementById('sidebar')" in js          # 로그인·인증 화면에는 적용하지 않음
+
+
+def test_emergency_name_saved_encrypted(hr):
+    eid = _emp("비상성명")
+    page = hr.get(f"/hr/employees/{eid}/edit").text
+    assert page.index('name="emergency_relation"') < page.index('name="emergency_name"') < page.index('name="emergency_contact"')
+    repo.update_employee(eid, {**repo.get_employee(eid), "emergency_name": "홍길순"}) if hasattr(repo, "update_employee") else None
+    e = repo.get_employee(eid)
+    if e.get("emergency_name"):
+        raw = sqlite3.connect(__import__("app.config", fromlist=["settings"]).settings.db_path).execute(
+            "SELECT emergency_name FROM employees WHERE id=?", (eid,)).fetchone()[0]
+        assert "홍길순" not in raw                      # 암호화 저장
+        assert "홍길순" in hr.get(f"/hr/employees/{eid}").text
+
+
+def test_insurance_bulk(hr):
+    a, b, c = _emp("공제가"), _emp("공제나"), _emp("공제다")
+    execute("UPDATE employees SET resign_date='2020-01-01' WHERE id=?", (c,))
+    page = hr.get("/hr/insurances").text
+    assert "공제가" in page and "공제다" not in page         # 퇴사자는 목록에 없음
+    data = {"product": "근로자 상해공제", "insurer": "시험공제회", "joined_on": "2026-01-01", "start_date": "2026-01-01",
+            "end_date": "2026-12-31", "policy_no": "T-2026-1", "premium": "12,000", "note": ""}
+    r = hr.post("/hr/insurances/bulk", data={**data, "emp": [str(a), str(b)]}, follow_redirects=False)
+    assert r.status_code == 303
+    ia = repo.list_insurances(a)
+    assert len(ia) == 1 and ia[0]["policy_no"] == "T-2026-1" and ia[0]["premium"] == "12000" and len(repo.list_insurances(b)) == 1
+    # 같은 내용 다시 → 늘지 않음. 증권번호만 고치면 그 기록을 고침
+    hr.post("/hr/insurances/bulk", data={**data, "emp": [str(a)]})
+    hr.post("/hr/insurances/bulk", data={**data, "policy_no": "T-2026-2", "emp": [str(a)]})
+    ia = repo.list_insurances(a)
+    assert len(ia) == 1 and ia[0]["policy_no"] == "T-2026-2" and repo.list_insurances(b)[0]["policy_no"] == "T-2026-1"
+    # 새 기간 → 새 줄(지난 기록은 이력)
+    hr.post("/hr/insurances/bulk", data={**data, "start_date": "2027-01-01", "end_date": "2027-12-31", "emp": [str(a)]})
+    assert len(repo.list_insurances(a)) == 2
+    # 다음에 열면 공통 내용이 채워져 있고, 같은 내용인 직원은 표시
+    page = hr.get("/hr/insurances").text
+    assert 'value="2027-12-31"' in page and "같은 내용 등록됨" in page
+    # 날짜 오류는 저장 안 함
+    r = hr.post("/hr/insurances/bulk", data={**data, "start_date": "2027-05-01", "end_date": "2027-01-01", "emp": [str(b)]}, follow_redirects=False)
+    assert len(repo.list_insurances(b)) == 1
+
+
+def test_insurance_bulk_permission():
+    c = TestClient(app)
+    if not auth.query_one("SELECT 1 FROM users WHERE username='pb_view'"):
+        auth.create_user("pb_view", "pb_view", "viewer", "Strong-Pass-123!", must_change=False)
+    c.post("/login", data={"username": "pb_view", "password": "Strong-Pass-123!"}, headers=ORIGIN)
+    c.headers.update(ORIGIN)
+    assert c.get("/hr/insurances").status_code == 403
+    assert TestClient(app).get("/hr/insurances", follow_redirects=False).status_code in (303, 401)

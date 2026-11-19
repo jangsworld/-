@@ -23,6 +23,7 @@ MODULES = [
             {"key": "hr.specials", "restricted": True, "name": "근로특이사항", "icon": "bi-calendar-heart", "url": "/hr/specials"},
             {"key": "mgmt.training", "name": "교육 이수", "icon": "bi-mortarboard", "url": "/mgmt/training", "perm": "ga_write"},
             {"key": "mgmt.compliance", "name": "법정의무 일정", "icon": "bi-calendar2-check", "url": "/mgmt/compliance", "perm": "ga_write"},
+            {"key": "hr.insurances", "restricted": True, "name": "상해공제 일괄", "icon": "bi-shield-plus", "url": "/hr/insurances"},
             {"key": "hr.leave", "restricted": True, "name": "연차 관리", "icon": "bi-calendar-check", "url": "/hr/leave"},
             {"key": "hr.ecount", "restricted": True, "name": "이카운트 연동", "icon": "bi-arrow-left-right", "url": "/hr/ecount"},
             {"key": "hr.certificates", "restricted": True, "name": "증명서 발급", "icon": "bi-patch-check", "url": "/hr/certificates"},

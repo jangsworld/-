@@ -57,6 +57,7 @@
       <div class="col-md-3"><label class="form-label small">비상연락처 관계</label>
         <input class="form-control form-control-sm" name="emergency_relation" value="{{ e.emergency_relation or '' }}" list="relationList" placeholder="목록에서 고르거나 입력">
         <datalist id="relationList">{% for r in emergency_relations %}<option value="{{ r }}"></option>{% endfor %}</datalist></div>
+      {{ inp('emergency_name', '관계 성명', ph='비상연락처 받는 분 이름') }}
       {{ inp('emergency_contact', '비상연락처', ph='숫자만 입력 (- 자동)') }}
     </div>
   {% endcall %}

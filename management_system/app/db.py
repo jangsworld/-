@@ -176,6 +176,7 @@ CREATE TABLE IF NOT EXISTS employees (
     address           TEXT,
     emergency_contact TEXT,
     emergency_relation TEXT,              -- 비상연락처 관계 (배우자, 아들 등)
+    emergency_name TEXT,                  -- 비상연락처 관계 성명 (그 사람 이름)
     department        TEXT,
     rank              TEXT,               -- 직급
     title             TEXT,               -- 직책
@@ -1021,7 +1022,7 @@ def _all_default_codes() -> dict:
 
 # v3→v4: 기존 DB 에 없는 컬럼 추가 (CREATE TABLE IF NOT EXISTS 는 기존 테이블을 바꾸지 않음)
 ADDED_COLUMNS = {
-    "employees": ["emergency_relation", "edu_level", "edu_school", "edu_major", "edu_grad_year", "folder_name"],
+    "employees": ["emergency_relation", "emergency_name", "edu_level", "edu_school", "edu_major", "edu_grad_year", "folder_name"],
     "hr_documents": ["emailed_at"],
     "codes": ["behavior"],
     "employee_qualifications": ["expires_on"],
