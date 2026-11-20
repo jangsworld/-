@@ -28,19 +28,39 @@
   </div></div>
 
 <form method="post" action="/hr/salaries/person/{{ e.id }}" class="card" id="personForm">
-  <div class="card-header d-flex align-items-center">연도별 연봉 <span class="help ms-2 no-print">연봉액 칸에 직접 입력합니다. Enter = 다음 연도, F8 = 저장. 증감액·증감율은 자동 계산됩니다. 칸을 비우면 그 해 기록이 지워집니다.</span></div>
+  <div class="card-header d-flex align-items-center">연도별 연봉 <span class="help ms-2 no-print">연봉액 칸에 직접 입력합니다. Enter = 다음 연도, F8 = 저장. 증감액·증감율은 자동 계산됩니다. 칸을 비우면 그 기록이 지워집니다.</span>
+    {% if perms.write %}<button type="button" class="btn btn-sm btn-outline-primary ms-auto no-print" id="chgOpen"><i class="bi bi-plus-lg"></i> 같은 해에 한 번 더 바뀐 연봉 추가</button>{% endif %}</div>
   <div class="table-responsive"><table class="table table-sm align-middle mb-0 text-end" id="personTable">
-    <thead><tr><th class="text-start" style="min-width:90px">구분</th>{% for r in rows %}<th style="min-width:118px">{{ r.year }}년{% if r.marks %} <i class="bi bi-flag-fill text-warning" title="{{ r.marks|join(', ') }}"></i>{% endif %}</th>{% endfor %}</tr></thead>
+    <thead><tr><th class="text-start" style="min-width:90px">구분</th>{% for r in rows %}<th style="min-width:118px" class="{{ 'bg-body-tertiary' if r.since }}">{{ r.year }}년{% if r.marks %} <i class="bi bi-flag-fill text-warning" title="{{ r.marks|join(', ') }}"></i>{% endif %}
+      {% if perms.write and not r.step %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline no-print p-add" data-year="{{ r.year }}" title="{{ r.year }}년에 한 번 더 바뀐 연봉 추가"><i class="bi bi-plus-circle"></i></button>{% endif %}
+      {% if r.since %}<div class="small fw-normal text-primary">{{ r.since }}</div>{% endif %}</th>{% endfor %}</tr></thead>
     <tbody>
-      <tr><th class="text-start">연봉액</th>{% for r in rows %}<td><input class="form-control form-control-sm text-end p-yr" name="y_{{ r.year }}" value="{{ r.amount or '' }}" data-money data-old="{{ r.amount or '' }}" inputmode="numeric" aria-label="{{ r.year }}년 연봉"></td>{% endfor %}</tr>
-      <tr><th class="text-start">증감액</th>{% for r in rows %}<td class="p-diff" data-y="{{ r.year }}"></td>{% endfor %}</tr>
-      <tr><th class="text-start">증감율</th>{% for r in rows %}<td class="p-rate fw-semibold" data-y="{{ r.year }}"></td>{% endfor %}</tr>
+      <tr><th class="text-start">연봉액</th>{% for r in rows %}<td><input class="form-control form-control-sm text-end p-yr" name="{{ r.name }}" value="{{ r.amount or '' }}" data-money data-old="{{ r.amount or '' }}" data-label="{{ r.label }}" inputmode="numeric" aria-label="{{ r.label }} 연봉"></td>{% endfor %}</tr>
+      <tr><th class="text-start">증감액</th>{% for r in rows %}<td class="p-diff" data-i="{{ loop.index0 }}" data-y="{{ r.year if not r.step }}"></td>{% endfor %}</tr>
+      <tr><th class="text-start">증감율</th>{% for r in rows %}<td class="p-rate fw-semibold" data-i="{{ loop.index0 }}" data-y="{{ r.year if not r.step }}"></td>{% endfor %}</tr>
       <tr class="text-muted small"><th class="text-start fw-normal">회사 평균 인상률</th>{% for r in rows %}<td>{{ r.co_rate|pct if r.co_rate is not none else '' }}</td>{% endfor %}</tr>
       <tr class="text-muted small"><th class="text-start fw-normal">같은 직급 평균</th>{% for r in rows %}<td>{{ r.rank_avg|won if r.rank_avg else '' }}</td>{% endfor %}</tr>
     </tbody></table></div>
   {% if perms.write %}<div class="card-footer d-flex align-items-center gap-3 no-print"><button class="btn btn-sm btn-primary">저장</button>
-    <span class="help">올해({{ this_year }}년) 연봉을 고치면 인건비·연봉에도 반영됩니다. 이미 있던 값이 바뀌거나 지워질 때는 저장 전에 한 번 더 확인합니다.</span></div>{% endif %}
+    <span class="help">올해({{ this_year }}년) 연봉을 고치면 인건비·연봉에도 반영됩니다. 이미 있던 값이 바뀌거나 지워질 때는 저장 전에 한 번 더 확인합니다.
+      {% if has_steps %}<br>파란 날짜(예: 7/1~)가 붙은 칸은 그 날부터 적용된 연봉입니다. 그 해의 맨 오른쪽 칸이 그 해 연봉(목록·인상률 기준)이고, 인건비는 적용일이 든 달부터 새 연봉으로 계산합니다.{% endif %}</span></div>{% endif %}
 </form>
+
+{% if perms.write %}
+<div class="modal fade no-print" id="chgModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="/hr/salaries/person/{{ e.id }}/change" id="chgForm">
+  <div class="modal-header"><h6 class="modal-title">{{ e.name }} · 같은 해에 한 번 더 바뀐 연봉</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div class="help mb-3">승진·특별인상 등으로 한 해에 연봉이 두 번 이상 바뀐 경우에 씁니다. 적용일 순서대로 칸이 나뉘어 표시됩니다.</div>
+    <div class="row g-2">
+      <div class="col-6"><label class="form-label small">적용일 <span class="help">(이 날부터 새 연봉)</span></label><input type="date" class="form-control form-control-sm" name="effective_date" id="chgDate" required max="9999-12-31"></div>
+      <div class="col-6"><label class="form-label small">변경 후 연봉(원)</label><input class="form-control form-control-sm text-end" name="annual_salary" id="chgAmt" data-money inputmode="numeric" required></div>
+      <div class="col-12"><label class="form-label small">사유</label><select class="form-select form-select-sm" name="reason"><option value="">(선택)</option>{% for x in reasons %}<option>{{ x }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="help mt-2" id="chgHint"></div>
+  </div>
+  <div class="modal-footer"><button type="button" class="btn btn-sm btn-light" data-bs-dismiss="modal">닫기</button><button class="btn btn-sm btn-primary">추가</button></div>
+</form></div></div>
+{% endif %}
 {% endblock %}
 {% block scripts %}
 <script nonce="{{ csp_nonce }}" src="/static/vendor/chartjs/chart.umd.min.js"></script>
@@ -49,7 +69,7 @@
   const ROWS = {{ rows|tojson }};
   const inputs = [...document.querySelectorAll('.p-yr')];
   const num = (v) => { const s = String(v ?? '').replace(/[^\d]/g, ''); return s ? Number(s) : null; };
-  const cell = (cls, y) => document.querySelector(`.${cls}[data-y="${y}"]`);
+  const cell = (cls, i) => document.querySelector(`.${cls}[data-i="${i}"]`);
   const series = () => {
     let prev = null;
     return ROWS.map((r, i) => {
@@ -57,11 +77,11 @@
       const diff = (amt && prev) ? amt - prev : null;
       const rate = diff !== null ? diff / prev * 100 : null;
       if (amt) prev = amt;
-      return { year: r.year, amt, diff, rate };
+      return { i, year: r.year, amt, diff, rate };
     });
   };
   const chart = new Chart(document.getElementById('cPerson'), {
-    data: { labels: ROWS.map(r => r.year + '년'), datasets: [
+    data: { labels: ROWS.map(r => r.label), datasets: [
       { type: 'bar', label: '연봉액', data: [], backgroundColor: '#2d5a8c', yAxisID: 'y', order: 3, maxBarThickness: 46 },
       { type: 'line', label: '같은 직급 평균 연봉', data: ROWS.map(r => r.rank_avg), borderColor: '#9aa5b1', borderDash: [5, 4], pointRadius: 2, yAxisID: 'y', order: 2, spanGaps: true },
       { type: 'line', label: '증감율', data: [], borderColor: '#e0483e', backgroundColor: '#e0483e', yAxisID: 'y1', order: 0, spanGaps: false, tension: 0 },
@@ -76,7 +96,7 @@
   const draw = () => {
     const s = series();
     s.forEach((r) => {
-      const d = cell('p-diff', r.year), p = cell('p-rate', r.year);
+      const d = cell('p-diff', r.i), p = cell('p-rate', r.i);
       d.textContent = r.diff === null ? '' : r.diff.toLocaleString('ko-KR');
       p.textContent = r.rate === null ? '' : (r.rate >= 0 ? '+' : '') + r.rate.toFixed(2) + '%';
       [d, p].forEach((el) => { el.classList.toggle('up', (r.diff || 0) > 0); el.classList.toggle('down', (r.diff || 0) < 0); });
@@ -92,9 +112,29 @@
   document.getElementById('personForm').addEventListener('submit', (e) => {
     const touched = inputs.filter(i => i.dataset.old && num(i.value) !== num(i.dataset.old));
     if (!touched.length) return;
-    const list = touched.map(i => `${i.name.slice(2)}년: ${Number(i.dataset.old).toLocaleString('ko-KR')} → ${num(i.value) ? num(i.value).toLocaleString('ko-KR') : '삭제'}`).join('\n');
+    const list = touched.map(i => `${i.dataset.label}: ${Number(i.dataset.old).toLocaleString('ko-KR')} → ${num(i.value) ? num(i.value).toLocaleString('ko-KR') : '삭제'}`).join('\n');
     if (!confirm(`이미 등록된 연봉 ${touched.length}건이 바뀝니다. 저장할까요?\n\n${list}`)) { e.preventDefault(); e.stopImmediatePropagation(); }
   }, true);
+  // 같은 해에 한 번 더 바뀐 연봉 추가
+  const modalEl = document.getElementById('chgModal');
+  if (modalEl) {
+    const modal = new bootstrap.Modal(modalEl), date = document.getElementById('chgDate'), hint = document.getElementById('chgHint');
+    const thisYear = {{ this_year }}, todayIso = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const open = (year) => {
+      date.value = year ? (year === thisYear ? todayIso : `${year}-07-01`) : todayIso;
+      document.getElementById('chgAmt').value = ''; showHint(); modal.show();
+    };
+    const showHint = () => {
+      const y = Number(date.value.slice(0, 4)), have = ROWS.filter(r => r.year === y && r.amount);
+      hint.textContent = !y ? '' : (have.length
+        ? `${y}년에는 이미 연봉 ${have.length}건이 있습니다. 적용일 순서에 맞춰 칸이 하나 더 생기고, 가장 늦은 적용일의 금액이 ${y}년 연봉이 됩니다.`
+        : `${y}년에는 등록된 연봉이 없어, 이 금액이 ${y}년 연봉으로 들어갑니다.`);
+    };
+    date.addEventListener('change', showHint);
+    document.getElementById('chgOpen').addEventListener('click', () => open(0));
+    document.querySelectorAll('.p-add').forEach(b => b.addEventListener('click', () => open(Number(b.dataset.year))));
+    modalEl.addEventListener('shown.bs.modal', () => date.focus());
+  }
 })();
 </script>
 {% endblock %}

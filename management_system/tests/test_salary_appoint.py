@@ -160,3 +160,53 @@ def test_appointment_notice_html_escapes():
     html_ = appoint.notice_html([{"name": "<b>가</b>", "appt_type": "전보", "from_value": "A", "to_value": "B",
                                   "appt_date": "2026-01-02"}], "제목<script>")
     assert "<script>" not in html_ and "&lt;b&gt;가" in html_ and "인 사 발 령" in html_
+
+
+def test_salary_changes_within_year(hr):
+    """같은 해에 연봉이 여러 번 바뀐 경우: 적용일별 칸, 그 해 연봉은 마지막 금액, 인건비는 개월 수로."""
+    from app.modules.mgmt import labor
+    y = today().year
+    eid = _emp("연중가", f"{y - 2}-03-01")
+    sp.save_years(eid, {y - 1: 40_000_000, y: 40_000_000})
+    # 7/1 승진: 지금까지의 금액은 앞선 금액으로, 새 금액이 그 해 연봉
+    r = hr.post(f"/hr/salaries/person/{eid}/change", data={"effective_date": f"{y}-07-01", "annual_salary": "44,000,000", "reason": "승진"},
+                follow_redirects=False)
+    assert r.status_code == 303 and _sal(eid)[y] == 44_000_000
+    steps = repo.salary_steps(eid)
+    assert [(s["effective_date"], s["annual_salary"]) for s in steps] == [(f"{y}-01-01", 40_000_000)]
+    assert sp.add_change(eid, f"{y}-04-01", 42_000_000) == "added"          # 사이에 낀 변경
+    cols = [(c["label"], c["amount"], c["diff"]) for c in sp.view(eid)["rows"] if c["year"] == y]
+    assert cols == [(f"{y}년 1/1~", 40_000_000, 0), (f"{y}년 4/1~", 42_000_000, 2_000_000), (f"{y}년 7/1~", 44_000_000, 2_000_000)]
+    page = hr.get(f"/hr/salaries/person/{eid}").text
+    assert f'name="st_{steps[0]["id"]}"' in page and "7/1~" in page and 'id="chgModal"' in page
+    # 인건비: 1~3월 4천, 4~6월 4천2백, 7~12월 4천4백
+    me = next(p for p in labor.overview(y)["people"] if p["id"] == eid)
+    assert me["stepped"] and me["salary"] == round(40_000_000 * 3 / 12 + 42_000_000 * 3 / 12 + 44_000_000 * 6 / 12) and me["annual"] == 44_000_000
+    prev = next(p for p in labor.overview(y - 1)["people"] if p["id"] == eid)
+    assert not prev["stepped"] and prev["salary"] == 40_000_000
+    # 같은 적용일: 그대로 두거나(기본) 바꾸기
+    assert sp.add_change(eid, f"{y}-04-01", 42_500_000) == "kept" and sp.add_change(eid, f"{y}-04-01", 42_500_000, overwrite=True) == "changed"
+    assert sp.add_change(eid, f"{y}-07-01", 44_000_000) == "same"
+    for bad in ({"effective_date": "", "annual_salary": "1000"}, {"effective_date": f"{y}-08-01", "annual_salary": "abc"},
+                {"effective_date": "1980-01-01", "annual_salary": "1000"}):
+        hr.post(f"/hr/salaries/person/{eid}/change", data=bad)
+    assert len(repo.salary_steps(eid)) == 2 and _sal(eid)[y] == 44_000_000
+    # 표에서 앞선 금액 고치기·지우기, 그 해 마지막 금액을 지우면 앞선 금액이 그 해 연봉으로
+    s1, s2 = repo.salary_steps(eid)
+    hr.post(f"/hr/salaries/person/{eid}", data={f"st_{s1['id']}": "41,000,000", f"st_{s2['id']}": "", f"y_{y}": "44000000"})
+    assert [(s["effective_date"], s["annual_salary"]) for s in repo.salary_steps(eid)] == [(f"{y}-01-01", 41_000_000)]
+    hr.post(f"/hr/salaries/person/{eid}", data={f"y_{y}": ""})
+    assert _sal(eid)[y] == 41_000_000 and not repo.salary_steps(eid)
+    other = _emp("연중나")
+    hr.post(f"/hr/salaries/person/{other}", data={f"st_{s1['id']}": "1"})         # 남의 기록 번호는 무시
+    viewer = _client("sa_view3", "viewer")
+    assert viewer.post(f"/hr/salaries/person/{eid}/change", data={"effective_date": f"{y}-09-01", "annual_salary": "1"}).status_code == 403
+    # 적용일 양식으로 한꺼번에
+    text = f"사번,성명,적용일,연봉,사유\nSA-연중나,연중나,{y}-07-01,36000000,승진\nSA-연중나,연중나,{y}-01-01,33000000,정기인상\n"
+    assert _upload(hr, text).status_code == 303
+    assert _sal(other)[y] == 36_000_000 and [s["annual_salary"] for s in repo.salary_steps(other)] == [33_000_000]
+    _upload(hr, f"성명,적용일,연봉\n연중나,{y}-13-01,1000\n연중나,{y}-10-01,39000000\n")       # 한 줄이라도 틀리면 전체 거부
+    assert _sal(other)[y] == 36_000_000
+    tpl = hr.get("/hr/salaries/history/template.csv?kind=changes").text
+    assert "적용일" in tpl.splitlines()[0] and f"{y}-07-01,36000000" in tpl
+    execute("DELETE FROM employees WHERE id IN (?,?)", (eid, other))

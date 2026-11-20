@@ -32,22 +32,39 @@ def person_page(request: Request, emp_id: int):
 async def person_save(request: Request, emp_id: int):
     f = await request.form()
     back = f"/hr/salaries/person/{emp_id}"
-    values = {}
+    values, steps = {}, {}
     try:
         for k, v in f.items():
             if k.startswith("y_") and k[2:].isdigit() and sp.MIN_YEAR <= int(k[2:]) <= today().year + 1:
                 values[int(k[2:])] = sp.parse_amount(v)
-        r = sp.save_years(emp_id, values)
+            elif k.startswith("st_") and k[3:].isdigit():
+                steps[int(k[3:])] = sp.parse_amount(v)
+        r = sp.save_years(emp_id, values)        # 금액이 모두 맞을 때만 저장
+        s = sp.save_steps(emp_id, steps)
     except sp.SalaryError as ex:
         return _go(back, str(ex))
-    return _go(back, f"저장했습니다 (새로 {r['added']} · 고침 {r['changed']} · 삭제 {r['removed']})")
+    return _go(back, f"저장했습니다 (새로 {r['added']} · 고침 {r['changed'] + s['changed']} · 삭제 {r['removed'] + s['removed']})")
+
+
+@router.post("/person/{emp_id}/change")
+async def person_change(request: Request, emp_id: int):
+    """같은 해에 연봉이 한 번 더 바뀐 경우: 적용일·금액을 한 건 추가."""
+    f = await request.form()
+    back = f"/hr/salaries/person/{emp_id}"
+    try:
+        res = sp.add_change(emp_id, str(f.get("effective_date") or ""), sp.parse_amount(f.get("annual_salary")), str(f.get("reason") or ""))
+    except sp.SalaryError as ex:
+        return _go(back, str(ex))
+    return _go(back, {"added": "연봉 변경을 추가했습니다", "same": "같은 적용일에 같은 금액이 이미 있습니다",
+                      "kept": "같은 적용일의 금액이 이미 있습니다. 표에서 그 칸의 금액을 직접 고쳐 주세요"}.get(res, "저장했습니다"))
 
 
 @router.get("/history/template.csv")
-def history_template():
-    audit("hr", "과거 연봉 양식 내려받기", "", "")
-    fname = quote(f"연봉이력_일괄입력_{today().isoformat()}.csv")
-    return StreamingResponse(iter(["﻿" + sp.template_csv()]), media_type="text/csv; charset=utf-8",
+def history_template(kind: str = ""):
+    changes = kind == "changes"
+    audit("hr", "과거 연봉 양식 내려받기", "적용일 양식" if changes else "", "")
+    fname = quote(f"연봉{'변경_적용일' if changes else '이력_일괄입력'}_{today().isoformat()}.csv")
+    return StreamingResponse(iter(["﻿" + (sp.changes_template_csv() if changes else sp.template_csv())]), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": f"attachment; filename*=UTF-8''{fname}"})
 
 

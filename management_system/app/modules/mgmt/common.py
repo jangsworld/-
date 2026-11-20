@@ -36,6 +36,28 @@ def months_in_year(emp: dict, year: int) -> int:
     return max(0, min(12, (e.year - s.year) * 12 + e.month - s.month + 1))
 
 
+def month_span(emp: dict, year: int) -> tuple[int, int] | None:
+    """그 해 재직한 첫 달·마지막 달."""
+    hd, rd = to_date(emp.get("hire_date")), to_date(emp.get("resign_date"))
+    s = max(hd, date(year, 1, 1)) if hd else date(year, 1, 1)
+    e = min(rd, date(year, 12, 31)) if rd else date(year, 12, 31)
+    return None if e < s else (s.month, e.month)
+
+
+def stepped_salary(segs: list[tuple[str, int]], year: int, span: tuple[int, int] | None) -> int:
+    """연중에 연봉이 바뀐 해의 연봉 지급액: 적용일이 든 달부터 새 연봉으로 (그 전 달은 앞선 금액)."""
+    if not span or not segs:
+        return 0
+    total = 0.0
+    for m in range(span[0], span[1] + 1):
+        ym, cur = f"{year}-{m:02d}", segs[0][1]
+        for d, a in segs:
+            if d[:7] <= ym:
+                cur = a
+        total += cur / 12
+    return round(total)
+
+
 def salary_map() -> dict[int, dict[int, int]]:
     """{직원: {연도: 연봉}} (복호화된 값)."""
     out = defaultdict(dict)

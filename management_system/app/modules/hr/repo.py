@@ -392,7 +392,64 @@ def upsert_salary(emp_id, year, annual_salary, effective_date=None, reason="정�
 
 
 def delete_salary(sal_id: int):
+    s = query_one("SELECT employee_id FROM salaries WHERE id=?", (sal_id,))
     execute("DELETE FROM salaries WHERE id=?", (sal_id,))
+    if s:
+        promote_salary_steps(s["employee_id"])
+
+
+# ── 같은 해 연봉 변경 (salary_steps: 그 해 마지막 금액 이전에 적용되던 금액) ──
+def salary_steps(emp_id: int | None = None) -> list[dict]:
+    rows = query("SELECT * FROM salary_steps" + (" WHERE employee_id=?" if emp_id else "") + " ORDER BY employee_id, effective_date, id",
+                 (emp_id,) if emp_id else ())
+    for r in rows:
+        r["annual_salary"] = int(r["annual_salary"])
+    return rows
+
+
+def add_salary_step(emp_id: int, effective_date: str, annual_salary: int, reason: str = "") -> int:
+    return execute("INSERT INTO salary_steps(employee_id, year, effective_date, annual_salary, reason) VALUES (?,?,?,?,?)",
+                   (emp_id, int(effective_date[:4]), effective_date, enc(int(annual_salary)), reason or None))
+
+
+def update_salary_step(step_id: int, annual_salary: int):
+    execute("UPDATE salary_steps SET annual_salary=? WHERE id=?", (enc(int(annual_salary)), step_id))
+
+
+def delete_salary_step(step_id: int):
+    execute("DELETE FROM salary_steps WHERE id=?", (step_id,))
+
+
+def promote_salary_steps(emp_id: int):
+    """그 해 마지막 금액(salaries)이 지워졌는데 앞선 금액이 남아 있으면, 가장 늦은 것을 그 해 연봉으로 올린다."""
+    have = {r["year"] for r in query("SELECT year FROM salaries WHERE employee_id=?", (emp_id,))}
+    by_year: dict = {}
+    for s in salary_steps(emp_id):
+        by_year.setdefault(s["year"], []).append(s)
+    for y, steps in by_year.items():
+        if y not in have:
+            last = steps[-1]
+            upsert_salary(emp_id, y, last["annual_salary"], last["effective_date"], last.get("reason") or "정기인상", "")
+            delete_salary_step(last["id"])
+
+
+def salary_segments(year: int) -> dict[int, list[tuple[str, int]]]:
+    """그 해에 연봉이 여러 번 바뀐 직원만: {직원: [(적용일, 연봉), …]} 적용일 순, 마지막이 그 해 연봉."""
+    out: dict = {}
+    for s in query("SELECT * FROM salary_steps WHERE year=? ORDER BY effective_date, id", (year,)):
+        out.setdefault(s["employee_id"], []).append((s["effective_date"], int(s["annual_salary"])))
+    if not out:
+        return {}
+    finals = {r["employee_id"]: r for r in query("SELECT employee_id, effective_date, annual_salary FROM salaries WHERE year=?", (year,))}
+    res = {}
+    for emp_id, segs in out.items():
+        f = finals.get(emp_id)
+        if not f:
+            continue
+        d = f.get("effective_date") or ""
+        last = max(d if d[:4] == str(year) else f"{year}-01-01", segs[-1][0])
+        res[emp_id] = segs + [(last, int(f["annual_salary"]))]
+    return res
 
 
 # ════════════════════════════════════════════════════════════════════════

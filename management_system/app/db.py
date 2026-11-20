@@ -456,6 +456,17 @@ CREATE TABLE IF NOT EXISTS salaries (
     UNIQUE(employee_id, year)
 );
 
+-- 같은 해에 연봉이 여러 번 바뀐 경우: 그 해 '마지막' 금액은 salaries 에, 그 전에 적용되던 금액은 여기에
+CREATE TABLE IF NOT EXISTS salary_steps (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id    INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    year           INTEGER NOT NULL,
+    effective_date TEXT NOT NULL,          -- 이 금액이 적용되기 시작한 날
+    annual_salary  TEXT NOT NULL,          -- 암호화
+    reason         TEXT,
+    UNIQUE(employee_id, effective_date)
+);
+
 -- ── 인사: 상벌 ──────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS rewards (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,

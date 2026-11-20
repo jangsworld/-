@@ -3,7 +3,8 @@ from collections import defaultdict
 
 from app.db import get_settings
 from app.modules.mgmt import fin, incentive
-from app.modules.mgmt.common import employees_in_year, months_in_year, salary_for, salary_map
+from app.modules.hr import repo as hr_repo
+from app.modules.mgmt.common import employees_in_year, month_span, months_in_year, salary_for, salary_map, stepped_salary
 from app.modules.mgmt.constants import DEFAULT_EMPLOYER_RATE, DEFAULT_RETIRE_RATE
 
 
@@ -24,16 +25,20 @@ def overview(year: int, sal=None, inc_by_emp=None, inc_dept=None) -> dict:
     inc_by_emp = inc_by_emp if inc_by_emp is not None else incentive.employee_totals(year)
     inc_dept = inc_dept if inc_dept is not None else incentive.dept_unassigned_paid(year)
     people, missing = [], []
+    segments = hr_repo.salary_segments(year)      # 그 해에 연봉이 여러 번 바뀐 직원
     for e in employees_in_year(year):
         months = months_in_year(e, year)
         annual, base_year = salary_for(sal.get(e["id"], {}), year)
         if annual is None:
             missing.append(e)
         s = round((annual or 0) * months / 12)
+        stepped = e["id"] in segments and base_year == year
+        if stepped:
+            s = stepped_salary(segments[e["id"]], year, month_span(e, year))
         inc = inc_by_emp.get(e["id"], 0)
         gross = s + inc
         people.append({"id": e["id"], "name": e["name"], "department": e.get("department") or "미지정", "rank": e.get("rank"),
-                       "months": months, "annual": annual, "base_year": base_year, "salary": s, "incentive": inc,
+                       "months": months, "stepped": stepped, "annual": annual, "base_year": base_year, "salary": s, "incentive": inc,
                        "employer": round(gross * rt["employer"] / 100), "retire": round(gross * rt["retire"] / 100)})
     for p in people:
         p["total"] = p["salary"] + p["incentive"] + p["employer"] + p["retire"]

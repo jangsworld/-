@@ -68,7 +68,8 @@
       <input class="form-control form-control-sm" type="file" name="file" accept=".csv" required style="width:240px">
       <label><input type="checkbox" class="form-check-input me-1" name="overwrite" value="1">이미 있는 값도 바꾸기</label>
       <button class="btn btn-sm btn-primary">올리기</button></form>
-    <span class="help">양식(사번·성명·연도별 금액)을 엑셀에서 채워 'CSV UTF-8'로 저장해 올립니다. 빈 칸은 건드리지 않습니다.</span></div>
+    <span class="help">양식(사번·성명·연도별 금액)을 엑셀에서 채워 'CSV UTF-8'로 저장해 올립니다. 빈 칸은 건드리지 않습니다.
+      같은 해에 연봉이 여러 번 바뀐 직원은 <a href="/hr/salaries/history/template.csv?kind=changes">적용일 양식</a>(사번·성명·적용일·연봉, 한 줄에 한 번의 변경)으로 올립니다.</span></div>
   <div class="table-responsive">
   <table class="table table-sm table-hover align-middle mb-0" id="salTable" data-excel data-excel-unit="명">
     <thead><tr><th>사번</th><th>성명</th><th>부서</th><th>직급</th><th>고용형태</th><th class="num">직전 연봉</th><th class="num">{{ year }}년 연봉</th><th class="num">월 환산</th>
@@ -85,7 +86,7 @@
         <td class="num {{ 'up' if (r.raise_rate or 0) > 0 else 'down' if (r.raise_rate or 0) < 0 }}">{{ r.raise_rate|pct if r.raise_rate is not none else '' }}</td>
         <td class="small">{{ r.cur.reason if r.cur else '' }}</td>
         <td class="num">{{ L.incentive|won if L and L.incentive else '' }}</td>
-        <td class="num">{{ L.total|won if L else '' }}{% if L and L.months < 12 %}<div class="small text-muted">{{ L.months }}개월</div>{% endif %}</td>
+        <td class="num">{{ L.total|won if L else '' }}{% if L and L.months < 12 %}<div class="small text-muted">{{ L.months }}개월</div>{% endif %}{% if L and L.stepped %}<div class="small text-muted" title="그 해에 연봉이 바뀌어 적용일이 든 달부터 새 연봉으로 계산했습니다">연중 변경 반영</div>{% endif %}</td>
         <td>{% if r.below_min_wage %}<span class="badge text-bg-danger" title="환산시급 {{ r.hourly|won }}원">최저임금</span>{% endif %}</td>
       </tr>
     {% endfor %}
