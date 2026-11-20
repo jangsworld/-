@@ -29,11 +29,14 @@
 
 <div class="card"><div class="card-header d-flex align-items-center">발령 현황 <span class="badge text-bg-secondary ms-2" data-excel-count>{{ rows|length }}건</span>
   {% if planned %}<span class="badge text-bg-info ms-2">예정 {{ planned }}건 · 발령일에 자동 적용</span>{% endif %}
-  <span class="help ms-auto">여기서 등록하면 인사·고용 정보도 함께 바뀝니다. 인사기록카드에서 바꾼 것도 자동으로 기록됩니다.</span></div>
+  <form method="post" action="/hr/appointments/remove-selected" id="apBulk" class="ms-2">
+    {% for k, v in f.items() %}{% if v %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+    <button class="btn btn-sm btn-outline-danger" id="apBulkBtn" disabled><i class="bi bi-trash"></i> 선택 삭제 <span id="apBulkCnt"></span></button></form>
+  <span class="help ms-auto">맨 앞 칸을 체크해 여러 건을 한 번에 삭제할 수 있습니다(삭제해도 인사·고용 정보는 그대로). 여기서 등록하면 인사·고용 정보도 함께 바뀝니다.</span></div>
   <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel data-excel-unit="건">
-    <thead><tr><th>발령일</th><th>상태</th><th>성명</th><th>현재 부서</th><th>구분</th><th>변경 전</th><th></th><th>변경 후</th><th>발령 묶음</th><th>비고</th><th></th></tr></thead><tbody>
+    <thead><tr><th data-nofilter style="width:34px"><input type="checkbox" class="form-check-input" id="apBulkAll" title="지금 보이는 발령 모두 선택"></th><th>발령일</th><th>상태</th><th>성명</th><th>현재 부서</th><th>구분</th><th>변경 전</th><th></th><th>변경 후</th><th>발령 묶음</th><th>비고</th><th></th></tr></thead><tbody>
     {% for r in rows %}
-    <tr class="{{ 'table-info' if r.planned }}"><td class="text-nowrap">{{ r.appt_date }}</td>
+    <tr class="{{ 'table-info' if r.planned }}"><td><input type="checkbox" class="form-check-input ap-bulk" name="ids" value="{{ r.id }}" form="apBulk" aria-label="{{ r.name }} {{ r.appt_date }} 선택"></td><td class="text-nowrap">{{ r.appt_date }}</td>
       <td>{% if r.planned %}<span class="badge text-bg-info">예정</span>{% elif r.status == '이력' %}<span class="badge text-bg-light border">이력만</span>{% else %}<span class="badge text-bg-success">적용</span>{% endif %}</td>
       <td><a href="/hr/employees/{{ r.employee_id }}?tab=history" class="fw-semibold">{{ r.name }}</a></td><td class="small">{{ r.department or '' }}</td>
       <td><span class="badge text-bg-light border">{{ r.appt_type }}</span></td>
@@ -41,7 +44,7 @@
       <td class="small">{% if r.batch_title %}<a href="/hr/appointments?batch={{ r.batch_title|urlencode }}">{{ r.batch_title }}</a>{% endif %}</td>
       <td class="small">{{ r.note or '' }}</td>
       <td><form method="post" action="/hr/appointments/{{ r.id }}/remove" data-confirm="{{ r.name }}님의 {{ r.appt_date }} {{ r.appt_type }} {{ '예정 발령을 취소' if r.planned else '발령 이력을 삭제' }}할까요?{{ '' if r.planned else ' 인사·고용 정보는 되돌아가지 않습니다.' }}"><button class="btn btn-sm btn-link text-danger p-0" title="{{ '예정 취소' if r.planned else '이력 삭제' }}"><i class="bi bi-x-lg"></i></button></form></td></tr>
-    {% else %}<tr><td colspan="11" class="text-muted text-center py-4">조회된 발령이 없습니다</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="12" class="text-muted text-center py-4">조회된 발령이 없습니다</td></tr>{% endfor %}
   </tbody></table></div></div>
 
 <div class="modal fade" id="apptModal" tabindex="-1"><div class="modal-dialog modal-xl"><form class="modal-content" method="post" action="/hr/appointments/register" id="apptForm">
@@ -81,6 +84,20 @@
 {% endblock %}
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
+(() => {   // 여러 건 선택 삭제
+  const boxes = [...document.querySelectorAll('.ap-bulk')], all = document.getElementById('apBulkAll');
+  const btn = document.getElementById('apBulkBtn'), cnt = document.getElementById('apBulkCnt'), form = document.getElementById('apBulk');
+  const shown = b => b.closest('tr').offsetParent !== null;
+  const picked = () => boxes.filter(b => b.checked);
+  const sync = () => { const n = picked().length; btn.disabled = !n; cnt.textContent = n ? `(${n}건)` : ''; };
+  all.addEventListener('change', () => { boxes.forEach(b => { b.checked = all.checked && shown(b); }); sync(); });
+  boxes.forEach(b => b.addEventListener('change', sync));
+  form.addEventListener('submit', (e) => {
+    boxes.forEach(b => { if (!shown(b)) b.checked = false; });     // 필터로 가려진 줄은 지우지 않음
+    const n = picked().length, plan = picked().filter(b => b.closest('tr').classList.contains('table-info')).length;
+    if (!n || !confirm(`체크한 발령 기록 ${n}건을 삭제할까요?` + (plan ? `\n(예정 발령 ${plan}건은 취소됩니다)` : '') + '\n\n인사·고용 정보는 되돌아가지 않고 지금 그대로 남습니다. 삭제한 기록은 되살릴 수 없습니다.')) { e.preventDefault(); e.stopImmediatePropagation(); sync(); }
+  }, true);
+})();
 (() => {
   const emps = [...document.querySelectorAll('.ap-emp')], cnt = document.getElementById('apCnt');
   const dept = document.getElementById('apDept'), find = document.getElementById('apFind'), form = document.getElementById('apptForm');

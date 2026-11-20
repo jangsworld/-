@@ -696,9 +696,13 @@ def contract_new(request: Request, employee_id: int | None = None, category: str
     }, "hr.contracts")
 
 
-def _create_contract(emp: dict, tpl: dict, params: dict, status="작성중") -> int:
-    ctx = services.build_context(emp, params)
-    content = services.render_template(tpl["content"], ctx)
+def _contract_content(emp: dict, tpl: dict, params: dict) -> str:
+    return services.render_template(tpl["content"], services.build_context(emp, params))
+
+
+def _create_contract(emp: dict, tpl: dict, params: dict, status="작성중", content: str | None = None) -> int:
+    if content is None:
+        content = _contract_content(emp, tpl, params)
     sal = int(params["annual_salary"]) if str(params.get("annual_salary") or "").isdigit() else None
     wh = float(params["weekly_hours"]) if params.get("weekly_hours") else None
     return repo.create_document(
@@ -716,12 +720,54 @@ async def contract_create(request: Request):
     tpl = repo.get_template(int(f["template_id"]))
     if not tpl:
         return _redirect("/hr/contracts/new", "템플릿을 선택해주세요")
-    params = {k: v for k, v in f.items() if k not in ("employee_id", "template_id")}
-    doc_id = _create_contract(emp, tpl, params)
-    if f.get("sync_salary") and params.get("annual_salary") and tpl["category"] == "연봉계약":
+    params = {k: str(v) for k, v in f.items() if k not in ("employee_id", "template_id")}
+    # 여기서는 저장하지 않는다: 에디터에서 [저장]을 눌러야 계약서가 만들어진다 (열어만 보고 나가면 아무것도 남지 않음)
+    sal = str(params.get("annual_salary") or "")
+    d = {"id": None, "doc_group": "contract", "employee_id": emp["id"], "name": emp["name"], "emp_no": emp.get("emp_no"),
+         "department": emp.get("department"), "category": tpl["category"], "title": f"{tpl['name']} - {emp['name']}",
+         "annual_salary": int(sal) if sal.isdigit() else None, "start_date": params.get("start_date") or None,
+         "end_date": params.get("end_date") or None, "status": "작성중", "signed_date": None,
+         "content": _contract_content(emp, tpl, params), "pdf_path": None, "updated_at": "", "emailed_at": None, "email": None}
+    return _render(request, "hr/document_editor.html", {
+        "d": d, "statuses": CONTRACT_STATUSES, "params": params, "sign": None, "sign_link": "", "locked": False,
+        "mail_ready": False, "mails": [], "history": repo.list_documents("contract", employee_id=emp["id"]),
+        "draft": {"employee_id": emp["id"], "template_id": tpl["id"], "params": params},
+    }, "hr.contracts")
+
+
+@router.post("/contracts/create")
+async def contract_create_save(request: Request):
+    """미리보기 에디터에서 [저장]을 눌렀을 때 비로소 계약서를 만든다."""
+    body = await request.json()
+    try:
+        emp = repo.get_employee(int(body.get("employee_id")))
+        tpl = repo.get_template(int(body.get("template_id")))
+    except (TypeError, ValueError):
+        emp = tpl = None
+    if not emp or not tpl or tpl.get("doc_group", "contract") != "contract":
+        raise HTTPException(400, "직원 또는 템플릿을 찾을 수 없습니다")
+    raw = body.get("params") if isinstance(body.get("params"), dict) else {}
+    params = {str(k)[:60]: str(v)[:2000] for k, v in list(raw.items())[:60] if k not in ("employee_id", "template_id")}
+    status = body.get("status") if body.get("status") in CONTRACT_STATUSES else "작성중"
+    content = sanitize_html(body["content"]) if isinstance(body.get("content"), str) and body["content"].strip() else None
+    doc_id = _create_contract(emp, tpl, params, content=content)
+    kw = {}
+    if status != "작성중":
+        kw["status"] = status
+    if body.get("signed_date") and to_date(body["signed_date"]):
+        kw["signed_date"] = to_date(body["signed_date"]).isoformat()
+    if status == "체결완료" and not kw.get("signed_date"):
+        kw["signed_date"] = today().isoformat()
+    repo.update_document(doc_id, **kw)
+    sal = str(params.get("annual_salary") or "")
+    if params.get("sync_salary") and sal.isdigit() and tpl["category"] == "연봉계약":
         sd = to_date(params.get("start_date")) or today()
-        repo.upsert_salary(emp["id"], sd.year, int(params["annual_salary"]), sd.isoformat(), "정기인상", "연봉계약서 연동")
-    return _redirect(f"/hr/documents/{doc_id}", "계약서가 자동 작성되었습니다. 내용을 검토·수정하세요")
+        repo.upsert_salary(emp["id"], sd.year, int(sal), sd.isoformat(), "정기인상", "연봉계약서 연동")
+    msg = "계약서가 저장되었습니다"
+    if status == "체결완료" and cfg.pdf_on_signed:
+        ok, m = await run_in_threadpool(services.store_document_pdf, doc_id)
+        msg += " · " + m
+    return {"ok": True, "id": doc_id, "url": f"/hr/documents/{doc_id}?msg={quote(msg)}"}
 
 
 @router.post("/contracts/bulk")

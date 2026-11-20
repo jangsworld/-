@@ -152,7 +152,8 @@ def _in_service(emp: dict, year: int) -> bool:
 
 
 def salary_overview(year: int) -> dict:
-    emps = query("SELECT * FROM employees ORDER BY department, emp_no")
+    # 임직원 현황과 같은 순서: 재직자 먼저, 입사일 순, 사번 순
+    emps = query("SELECT * FROM employees ORDER BY CASE WHEN resign_date IS NULL OR resign_date='' THEN 0 ELSE 1 END, hire_date, emp_no")
     sals = repo.all_salaries()
     by_emp = defaultdict(dict)
     for s in sals:

@@ -142,6 +142,18 @@ def test_appointments_apply_bulk_planned_history(hr):
     assert viewer.post("/hr/appointments/register", data={**base, "emp": [str(a)], "to_rank": ranks[0]}).status_code == 403
     hr.post(f"/hr/appointments/{h['id']}/remove")
     assert not appoint.rows(batch_title="2021 소급")
+    # 선택 삭제: 고른 것만 지우고 인사·고용 정보는 그대로
+    ids = [r["id"] for r in appoint.rows(batch_title="시험 조직개편")]
+    keep = len(appoint.rows())
+    assert viewer.post("/hr/appointments/remove-selected", data={"ids": [str(i) for i in ids]}).status_code == 403
+    r = hr.post("/hr/appointments/remove-selected", data={"ids": [str(i) for i in ids[:3]] + ["abc", "99999999"], "batch": "시험 조직개편"},
+                follow_redirects=False)
+    assert r.status_code == 303 and "batch=" in r.headers["location"]
+    assert len(appoint.rows()) == keep - 3 and len(appoint.rows(batch_title="시험 조직개편")) == 1
+    assert repo.get_employee(a)["department"] == depts[1]
+    hr.post("/hr/appointments/remove-selected", data={})
+    assert len(appoint.rows()) == keep - 3
+    assert 'id="apBulkAll"' in hr.get("/hr/appointments").text
 
 
 def test_appointment_notice_html_escapes():

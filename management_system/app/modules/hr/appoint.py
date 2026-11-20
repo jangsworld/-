@@ -159,6 +159,24 @@ def delete(appt_id: int) -> str:
     return "예정 발령을 취소했습니다" if a.get("status") == "예정" else "발령 이력을 삭제했습니다 (인사·고용 정보는 그대로입니다)"
 
 
+def delete_many(ids: list[int]) -> dict:
+    """고른 발령 기록을 한 번에 삭제. 인사·고용 정보는 건드리지 않는다."""
+    ids = sorted({int(i) for i in ids})[:2000]
+    if not ids:
+        return {"deleted": 0, "planned": 0}
+    found = []
+    for i in range(0, len(ids), 500):
+        part = ids[i:i + 500]
+        found += query("SELECT id, status FROM appointments WHERE id IN (" + ",".join("?" * len(part)) + ")", part)
+    for i in range(0, len(found), 500):
+        part = [r["id"] for r in found[i:i + 500]]
+        execute("DELETE FROM appointments WHERE id IN (" + ",".join("?" * len(part)) + ")", part)
+    planned = sum(1 for r in found if r.get("status") == "예정")
+    if found:
+        audit("hr", "인사발령 선택 삭제", f"{len(found)}건", f"예정 취소 {planned}건" if planned else "")
+    return {"deleted": len(found), "planned": planned}
+
+
 def notice_html(rs: list[dict], title: str) -> str:
     """인사발령 통지 문서 본문."""
     esc = html.escape

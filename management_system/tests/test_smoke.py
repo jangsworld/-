@@ -82,11 +82,17 @@ def test_employee_lifecycle(client):
 
     from app.modules.hr import repo
     tpl_id = next(t for t in repo.list_templates("contract") if t["category"] == "기간제")["id"]
-    r = client.post("/hr/contracts/new", data={
-        "employee_id": emp_id, "template_id": tpl_id, "start_date": "2026-03-02", "end_date": "2027-03-01",
-        "annual_salary": "36000000", "weekly_hours": "40",
-    }, follow_redirects=False)
-    doc_id = _id_from(r)
+    cparams = {"start_date": "2026-03-02", "end_date": "2027-03-01", "annual_salary": "36000000", "weekly_hours": "40"}
+    n_docs = len(repo.list_documents("contract", employee_id=emp_id))
+    r = client.post("/hr/contracts/new", data={"employee_id": emp_id, "template_id": tpl_id, **cparams}, follow_redirects=False)
+    # 에디터로 열기만 해서는 계약서가 만들어지지 않음 (미리보기)
+    assert r.status_code == 200 and "미리보기입니다" in r.text and "삼천육백만" in r.text
+    assert len(repo.list_documents("contract", employee_id=emp_id)) == n_docs
+    r = client.post("/hr/contracts/create", json={"employee_id": emp_id, "template_id": tpl_id, "params": cparams,
+                                                  "content": "<p>본문 삼천육백만 2027년 03월 01일 테스트<script>x()</script></p>", "status": "작성중"})
+    doc_id = r.json()["id"]
+    assert "x()" not in repo.get_document(doc_id)["content"] and repo.get_document(doc_id)["status"] == "작성중"
+    assert client.post("/hr/contracts/create", json={"employee_id": 999999, "template_id": tpl_id}).status_code == 400
     page = client.get(f"/hr/documents/{doc_id}").text
     assert "테스트" in page and "삼천육백만" in page and "2027년 03월 01일" in page
     assert client.post(f"/hr/api/documents/{doc_id}", json={
@@ -124,5 +130,7 @@ def test_template_value_escaped(client):
     tpl_id = next(t for t in repo.list_templates("contract") if t["category"] == "정규직")["id"]
     r = client.post("/hr/contracts/new", data={"employee_id": emp_id, "template_id": tpl_id,
                                                "start_date": "2026-01-01"}, follow_redirects=False)
-    doc = repo.get_document(_id_from(r))
+    assert "&lt;b&gt;악성&lt;/b&gt;" in r.text and "<b>악성</b>" not in r.text
+    r = client.post("/hr/contracts/create", json={"employee_id": emp_id, "template_id": tpl_id, "params": {"start_date": "2026-01-01"}})
+    doc = repo.get_document(r.json()["id"])
     assert "&lt;b&gt;악성&lt;/b&gt;" in doc["content"]

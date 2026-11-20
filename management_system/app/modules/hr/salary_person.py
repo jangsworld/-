@@ -65,9 +65,9 @@ def view(emp_id: int) -> dict | None:
             marks.setdefault(int(y), []).append(f"{a['appt_type']}{' ' + a['to_value'] if a.get('to_value') else ''}")
     for r in rows:
         r["marks"] = marks.get(r["year"], [])
-    # 이전·다음 직원 (부서·이름 순, 재직자)
+    # 이전·다음 직원 (임직원 현황·개인별 연봉 목록과 같은 순서: 입사일·사번, 재직자)
     t = today().isoformat()
-    order = [e["id"] for e in query("SELECT id, resign_date FROM employees ORDER BY department, name, id")
+    order = [e["id"] for e in query("SELECT id, resign_date FROM employees ORDER BY hire_date, emp_no, id")
              if not e.get("resign_date") or e["resign_date"] >= t or e["id"] == emp_id]
     i = order.index(emp_id) if emp_id in order else -1
     return {"e": emp, "rows": rows, "summary": summary,

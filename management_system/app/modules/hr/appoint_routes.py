@@ -70,6 +70,19 @@ async def register(request: Request):
     return _go(msg, batch=str(form.get("batch_title") or "").strip()[:100])
 
 
+@router.post("/remove-selected")
+async def remove_selected(request: Request):
+    """목록에서 체크한 발령 기록을 한 번에 삭제 (인사·고용 정보는 그대로)."""
+    form = await request.form()
+    ids = [int(v) for v in form.getlist("ids") if str(v).isdigit()]
+    back = {k: str(form.get(k) or "").strip()[:100] for k in ("date_from", "date_to", "department", "appt_type", "batch", "q")}
+    if not ids:
+        return _go("삭제할 발령을 체크해 주세요", **back)
+    r = await run_in_threadpool(appoint.delete_many, ids)
+    msg = f"발령 기록 {r['deleted']}건을 삭제했습니다" + (f" (예정 취소 {r['planned']}건 포함)" if r["planned"] else "") + ". 인사·고용 정보는 그대로입니다"
+    return _go(msg, **back)
+
+
 @router.post("/{appt_id}/remove")
 def remove(appt_id: int):
     return _go(appoint.delete(appt_id) or "기록을 찾을 수 없습니다")
