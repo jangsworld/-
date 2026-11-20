@@ -21,6 +21,7 @@
     {% if perms.write %}<div class="d-flex gap-2 {{ '' if perms.salary else 'ms-auto' }}">
       <a class="btn btn-sm btn-outline-primary" href="/hr/contracts/new?employee_id={{ e.id }}"><i class="bi bi-file-earmark-plus"></i> 계약서 작성</a>
       <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#certModal"><i class="bi bi-patch-check"></i> 증명서</button>
+      {% if perms.salary %}<a class="btn btn-sm btn-outline-secondary" href="/hr/offboard/{{ e.id }}" title="퇴사 예정자에게 퇴사 안내문을 보내고, 단계별 진행표로 챙깁니다"><i class="bi bi-box-arrow-right"></i> 퇴사 안내</a>{% endif %}
       {% set secmap = {'info': 's-basic', 'salary': 's-salary', 'payroll': 's-payroll', 'insurance': 's-ins', 'check': 's-check', 'history': 's-job'} %}<a class="btn btn-sm btn-primary" href="/hr/employees/{{ e.id }}/edit?back={{ tab }}#{{ secmap.get(tab, 's-basic') }}" title="기본정보·인사·연봉·급여·상해공제·자격·체크리스트를 한 화면에서 고치고 한 번에 저장"><i class="bi bi-pencil-square"></i> 한 화면에서 수정</a>
     </div>{% endif %}
   </div>

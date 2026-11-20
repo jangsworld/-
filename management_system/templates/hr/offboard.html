@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}퇴사 절차 안내{% endblock %}
+{% block page_title %}<i class="bi bi-box-arrow-right me-2"></i>퇴사 절차 안내{% endblock %}
+{% block content %}
+<div class="card mb-3"><div class="card-body d-flex flex-wrap gap-2 align-items-end">
+  <form method="get" action="/hr/offboard/start" class="d-flex flex-wrap gap-2 align-items-end">
+    <div><label class="form-label small mb-0" for="obEmp">퇴사 예정 직원</label>
+      <select class="form-select form-select-sm" name="emp" id="obEmp" required style="min-width:260px"><option value="">직원을 고르세요</option>
+        {% for e in emps %}<option value="{{ e.id }}">{{ e.name }} · {{ e.department or '' }} {{ e.rank or '' }}</option>{% endfor %}</select></div>
+    <button class="btn btn-sm btn-primary"><i class="bi bi-send"></i> 퇴사 안내 시작</button>
+  </form>
+  <span class="help ms-auto">사직서가 대표이사 결재까지 끝나면 여기서 시작합니다. 인사기록카드의 [퇴사 안내] 버튼으로도 들어올 수 있습니다.</span>
+</div></div>
+
+<div class="card mb-3"><div class="card-header d-flex align-items-center">퇴사 진행 현황 <span class="badge text-bg-secondary ms-2">{{ rows|length }}명</span></div>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+    <thead><tr><th>상태</th><th>성명</th><th>부서·직급</th><th>퇴직 예정일</th><th>인수인계 기한</th><th>인수자</th><th>안내문</th><th>진행</th></tr></thead><tbody>
+    {% for r in rows %}
+    <tr><td>{% if r.closed_at %}<span class="badge text-bg-secondary">완료</span>{% else %}<span class="badge text-bg-warning">진행 중</span>{% endif %}</td>
+      <td><a class="fw-semibold" href="/hr/offboard/{{ r.employee_id }}">{{ r.name }}</a></td>
+      <td class="small">{{ r.department or '' }} {{ r.rank or '' }}</td>
+      <td class="text-nowrap">{{ r.last_day }}{% if not r.closed_at and r.dday is not none %} <span class="small {{ 'text-danger' if r.dday <= 7 else 'text-muted' }}">({{ 'D-' ~ r.dday if r.dday >= 0 else '지남' }})</span>{% endif %}</td>
+      <td class="text-nowrap">{{ r.handover_due or '-' }}</td><td>{{ r.successor or '-' }}</td>
+      <td class="small">{% if r.sent_at %}<span class="text-success"><i class="bi bi-check2"></i> {{ r.sent_at[:10] }}</span>{% else %}<span class="text-danger">아직 안 보냄</span>{% endif %}</td>
+      <td class="small text-nowrap">{{ r.done }} / {{ r.total }}</td></tr>
+    {% else %}<tr><td colspan="8" class="text-muted text-center py-4">진행 중인 퇴사 절차가 없습니다</td></tr>{% endfor %}
+  </tbody></table></div></div>
+
+<div class="card mb-3"><div class="card-header">퇴사 처리 단계 <span class="help ms-2">인사담당자 참고용 · 직원별 화면에서 항목마다 체크합니다</span></div>
+  <div class="card-body row g-3">
+    {% for sk, sname, when, items in stages %}
+    <div class="col-lg-4 col-md-6"><div class="border rounded h-100 p-2">
+      <div class="fw-semibold">{{ loop.index }}단계 · {{ sname }}</div><div class="help mb-1">{{ when }}</div>
+      <ol class="small mb-0 ps-3">{% for k, text, hint in items %}<li class="mb-1">{{ text }}<div class="help">{{ hint }}</div></li>{% endfor %}</ol>
+    </div></div>
+    {% endfor %}
+  </div></div>
+
+<div class="card"><div class="card-header d-flex align-items-center">안내문 기본 글귀
+  <span class="help ms-2">직원별 화면에서 보내기 전에 한 번 더 고칠 수 있습니다{% if tpl.custom %} · <b>수정한 글귀 사용 중</b>{% endif %}</span></div>
+  <form class="card-body" method="post" action="/hr/offboard/template">
+    <div class="help mb-2">아래 글자는 보낼 때 자동으로 바뀝니다: {% for k in fields %}<code>{{ '{' ~ k ~ '}' }}</code> {% endfor %}</div>
+    <label class="form-label small" for="tSub">제목</label><input class="form-control form-control-sm mb-2" id="tSub" name="subject" value="{{ tpl.subject }}" maxlength="200" required>
+    <label class="form-label small" for="tBody">내용</label><textarea class="form-control form-control-sm" id="tBody" name="body" rows="16" maxlength="8000" required data-no-enter>{{ tpl.body }}</textarea>
+    <div class="d-flex gap-2 mt-2"><button class="btn btn-sm btn-primary"><i class="bi bi-save"></i> 기본 글귀 저장</button>
+      {% if tpl.custom %}<button class="btn btn-sm btn-outline-secondary" name="reset" value="1" data-confirm="처음 글귀로 되돌릴까요? 지금 고친 글귀는 사라집니다.">처음 글귀로 되돌리기</button>{% endif %}</div>
+  </form></div>
+{% endblock %}

@@ -19,6 +19,7 @@ MODULES = [
             {"key": "hr.contracts", "restricted": True, "name": "근로계약서", "icon": "bi-file-earmark-text", "url": "/hr/contracts"},
             {"key": "hr.salaries", "restricted": True, "name": "인건비·연봉", "icon": "bi-graph-up-arrow", "url": "/hr/salaries"},
             {"key": "hr.appointments", "restricted": True, "name": "인사발령", "icon": "bi-diagram-3", "url": "/hr/appointments"},
+            {"key": "hr.offboard", "restricted": True, "name": "퇴사 절차 안내", "icon": "bi-box-arrow-right", "url": "/hr/offboard"},
             {"key": "hr.rewards", "restricted": True, "name": "상벌현황", "icon": "bi-award", "url": "/hr/rewards"},
             {"key": "hr.technicians", "restricted": True, "name": "기술자 현황", "icon": "bi-tools", "url": "/hr/technicians"},
             {"key": "hr.specials", "restricted": True, "name": "근로특이사항", "icon": "bi-calendar-heart", "url": "/hr/specials"},

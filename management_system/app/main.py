@@ -27,6 +27,7 @@ from app.modules.hr.ecount_routes import router as ecount_router
 from app.modules.hr.dual_routes import router as dual_router
 from app.modules.hr.salary_routes import router as salary_router
 from app.modules.hr.appoint_routes import router as appoint_router
+from app.modules.hr.offboard_routes import router as offboard_router
 from app.modules.ga.routes import router as ga_router, public_router as ga_public_router
 from app.modules.ga.fleet_routes import router as fleet_router, public_router as fleet_public_router
 from app.modules.ga import repo as ga_repo
@@ -116,6 +117,7 @@ app.include_router(ecount_router)
 app.include_router(dual_router)
 app.include_router(salary_router)
 app.include_router(appoint_router)
+app.include_router(offboard_router)
 app.include_router(leave_public_router)
 app.include_router(hr_router)
 app.include_router(sign_router)

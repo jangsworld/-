@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}{{ e.name }} - 퇴사 절차 안내{% endblock %}
+{% block page_title %}<a href="/hr/offboard" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> 퇴사 절차 안내{% endblock %}
+{% block content %}
+<div class="card mb-3"><div class="card-body">
+  <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+    <div class="fs-5 fw-bold">{{ e.name }}</div>
+    <div class="text-muted">{{ e.emp_no }} · {{ e.department or '-' }} · {{ e.rank or '-' }} · 입사 {{ e.hire_date }}</div>
+    {% if ob and ob.closed_at %}<span class="badge text-bg-secondary">완료 {{ ob.closed_at }}</span>{% elif ob %}<span class="badge text-bg-warning">진행 중</span>{% endif %}
+    {% if e.resign_date %}<span class="badge text-bg-light border">인사기록카드 퇴사일 {{ e.resign_date }}</span>{% endif %}
+    <a class="btn btn-sm btn-link ms-auto" href="/hr/employees/{{ e.id }}">인사기록카드</a>
+  </div>
+  <form method="post" action="/hr/offboard/{{ e.id }}/save" class="row g-2 align-items-end">
+    <div class="col-md-2 col-6"><label class="form-label small mb-0" for="obLast">퇴직 예정일 <span class="text-danger">*</span></label><input type="date" class="form-control form-control-sm" id="obLast" name="last_day" value="{{ ob.last_day if ob else '' }}" required></div>
+    <div class="col-md-2 col-6"><label class="form-label small mb-0" for="obDue">인수인계 기한</label><input type="date" class="form-control form-control-sm" id="obDue" name="handover_due" value="{{ ob.handover_due or '' if ob else '' }}"></div>
+    <div class="col-md-2 col-6"><label class="form-label small mb-0" for="obSuc">인수자</label><input class="form-control form-control-sm" id="obSuc" name="successor" maxlength="50" value="{{ ob.successor or '' if ob else '' }}" placeholder="예: 홍길동 과장"></div>
+    <div class="col-md-4 col-6"><label class="form-label small mb-0" for="obNote">메모</label><input class="form-control form-control-sm" id="obNote" name="note" maxlength="500" value="{{ ob.note or '' if ob else '' }}"></div>
+    <div class="col-md-2"><button class="btn btn-sm btn-primary w-100"><i class="bi bi-save"></i> {{ '저장' if ob else '저장하고 시작' }}</button></div>
+  </form>
+  <div class="help mt-1">퇴직 예정일은 이 화면에만 저장됩니다. 인사기록카드의 퇴사일은 실제 퇴직일에 따로 입력하세요(미리 넣으면 재직자에서 빠집니다).</div>
+</div></div>
+
+{% if not ob %}
+<div class="alert alert-info">먼저 위에서 <b>퇴직 예정일</b>을 저장하세요. 저장하면 안내문에 날짜가 들어가고, 단계별 진행표를 체크할 수 있습니다.</div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-5"><div class="card h-100"><div class="card-header d-flex align-items-center">단계별 진행표
+    <span class="badge text-bg-secondary ms-2"><span id="obDone">{{ checks|length }}</span> / {{ total }}</span>
+    <span class="help ms-auto">체크하면 바로 저장됩니다</span></div>
+    <div class="card-body">
+      {% for sk, sname, when, items in stages %}
+      <div class="mb-3"><div class="fw-semibold">{{ loop.index }}단계 · {{ sname }} <span class="help fw-normal ms-1">{{ when }}{% if dates.get(sk) %} · {{ dates[sk] }}{% endif %}</span></div>
+        {% for k, text, hint in items %}{% set c = checks.get(k) %}
+        <label class="d-flex gap-2 py-1 border-bottom small"><input type="checkbox" class="form-check-input ob-chk flex-shrink-0" data-key="{{ k }}" {{ 'checked' if c }} {{ 'disabled' if not ob }}>
+          <span><span class="{{ 'text-decoration-line-through text-muted' if c }}">{{ text }}</span>
+            <span class="help d-block">{{ hint }}{% if c %} · <span class="text-success">{{ c.done_at[:10] }} {{ c.done_by or '' }}</span>{% endif %}</span></span></label>
+        {% endfor %}</div>
+      {% endfor %}
+      {% if ob %}<div class="d-flex gap-2">
+        <form method="post" action="/hr/offboard/{{ e.id }}/close">{% if ob.closed_at %}<button class="btn btn-sm btn-outline-secondary" name="reopen" value="1">다시 진행 중으로</button>
+          {% else %}<button class="btn btn-sm btn-outline-success" data-confirm="퇴사 절차를 완료로 표시할까요?"><i class="bi bi-check2-circle"></i> 절차 완료로 표시</button>{% endif %}</form>
+        <form method="post" action="/hr/offboard/{{ e.id }}/delete" class="ms-auto" data-confirm="{{ e.name }}님의 퇴사 절차 기록(체크·발송 기록)을 모두 지울까요? 퇴사를 취소한 경우에만 쓰세요. 인사기록카드는 그대로입니다.">
+          <button class="btn btn-sm btn-link text-danger">기록 삭제</button></form>
+      </div>{% endif %}
+    </div></div></div>
+
+  <div class="col-lg-7"><div class="card mb-3"><div class="card-header d-flex align-items-center">퇴사 안내문
+    <span class="help ms-2">보내기 전에 여기서 고칠 수 있습니다 · 기본 글귀는 <a href="/hr/offboard">퇴사 절차 안내</a> 첫 화면에서 수정</span></div>
+    <form class="card-body" method="post" action="/hr/offboard/{{ e.id }}/send" id="obSend">
+      <label class="form-label small" for="obSub">제목</label><input class="form-control form-control-sm mb-2" id="obSub" name="subject" value="{{ subject }}" maxlength="200" required>
+      <label class="form-label small" for="obBody">내용</label><textarea class="form-control form-control-sm" id="obBody" name="body" rows="20" maxlength="8000" required data-no-enter>{{ body }}</textarea>
+      <div class="border rounded p-2 mt-2">
+        <div class="small fw-semibold mb-1">받는 사람</div>
+        <label class="d-block small"><input type="radio" class="form-check-input me-1" name="target" value="employee" {{ 'checked' if email_ok }} {{ 'disabled' if not email_ok }}>인사기록카드 이메일
+          {% if email_ok %}<span class="text-muted">({{ email_masked }})</span>{% else %}<span class="text-danger">(등록된 주소 없음)</span>{% endif %}</label>
+        <label class="d-flex gap-1 small align-items-center mt-1"><input type="radio" class="form-check-input me-1" name="target" value="manual" {{ 'checked' if not email_ok }}>주소 직접 입력
+          <input type="email" class="form-control form-control-sm ms-2" name="manual_to" id="obTo" placeholder="name@example.com" style="max-width:260px" aria-label="받는 사람 메일 주소"></label>
+        <label class="d-block small mt-1"><input type="radio" class="form-check-input me-1" name="target" value="hand">메일로 보내지 않고 직접 전달함 <span class="text-muted">(인쇄·메신저 등, 기록만 남김)</span></label>
+      </div>
+      {% if not mail_ready %}<div class="alert alert-warning py-2 small mt-2 mb-0">메일 서버가 설정되지 않아 메일로는 보낼 수 없습니다. [내용 복사]로 전달한 뒤 '직접 전달함'으로 기록하세요.</div>{% endif %}
+      <div class="d-flex flex-wrap gap-2 mt-2">
+        <button class="btn btn-sm btn-primary" {{ 'disabled' if not ob }} data-confirm="{{ e.name }}님에게 퇴사 안내문을 보낼까요? (또는 전달 기록을 남길까요?)"><i class="bi bi-send"></i> 안내문 보내기</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="obCopy"><i class="bi bi-clipboard"></i> 내용 복사</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="obPrint"><i class="bi bi-printer"></i> 인쇄</button>
+        <span class="help align-self-center" id="obCopyMsg"></span>
+      </div>
+    </form></div>
+
+    <div class="card"><div class="card-header">안내 기록 <span class="badge text-bg-secondary ms-2">{{ mails|length }}건</span></div>
+      <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>보낸 때</th><th>방법</th><th>받는 곳</th><th>보낸 사람</th><th>제목</th></tr></thead><tbody>
+      {% for m in mails %}<tr><td class="small text-nowrap">{{ m.sent_at[:16] }}</td><td class="small">{{ m.how }}</td><td class="small">{{ m.to_masked or '-' }}</td><td class="small">{{ m.sent_by or '' }}</td>
+        <td class="small"><details><summary>{{ m.subject }}</summary><pre class="small mb-0 mt-1" style="white-space:pre-wrap">{{ m.body }}</pre></details></td></tr>
+      {% else %}<tr><td colspan="5" class="text-muted text-center py-3">아직 안내한 기록이 없습니다</td></tr>{% endfor %}
+      </tbody></table></div></div>
+  </div>
+</div>
+
+<div id="obPrintArea" class="d-none"></div>
+<style nonce="{{ csp_nonce }}">
+@media print { body * { visibility: hidden; } #obPrintArea, #obPrintArea * { visibility: visible; }
+  #obPrintArea { display: block !important; position: absolute; left: 0; top: 0; width: 100%; white-space: pre-wrap; font-size: 11pt; line-height: 1.6; } }
+</style>
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const base = '/hr/offboard/{{ e.id }}';
+  document.querySelectorAll('.ob-chk').forEach((c) => c.addEventListener('change', async () => {
+    try {
+      const r = await postJSON(base + '/check', { key: c.dataset.key, done: c.checked });
+      document.getElementById('obDone').textContent = r.done;
+      c.closest('label').querySelector('span > span').classList.toggle('text-decoration-line-through', c.checked);
+      c.closest('label').querySelector('span > span').classList.toggle('text-muted', c.checked);
+    } catch (e) { c.checked = !c.checked; alert('저장하지 못했습니다. 다시 시도해 주세요.'); }
+  }));
+  const body = document.getElementById('obBody'), sub = document.getElementById('obSub');
+  document.getElementById('obCopy').addEventListener('click', async () => {
+    const msg = document.getElementById('obCopyMsg');
+    try { await navigator.clipboard.writeText(body.value); msg.textContent = '복사했습니다'; }
+    catch (e) { body.select(); document.execCommand('copy'); msg.textContent = '복사했습니다'; }
+  });
+  document.getElementById('obPrint').addEventListener('click', () => {
+    const area = document.getElementById('obPrintArea');
+    area.textContent = sub.value + String.fromCharCode(10, 10) + body.value;
+    window.print();
+  });
+  document.getElementById('obTo').addEventListener('focus', () => { document.querySelector('input[name=target][value=manual]').checked = true; });
+})();
+</script>
+{% endblock %}

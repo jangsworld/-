@@ -467,6 +467,35 @@ CREATE TABLE IF NOT EXISTS salary_steps (
     UNIQUE(employee_id, effective_date)
 );
 
+-- ── 인사: 퇴사 절차 안내 (퇴직 예정일은 여기에만. 인사기록카드 퇴사일은 실제 퇴직일에 입력) ──
+CREATE TABLE IF NOT EXISTS offboardings (
+    employee_id  INTEGER PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+    last_day     TEXT NOT NULL,            -- 퇴직 예정일(마지막 근무일)
+    handover_due TEXT,                     -- 인수인계 기한
+    successor    TEXT,                     -- 인수자
+    note         TEXT,
+    closed_at    TEXT,                     -- 절차 완료 표시한 날
+    created_by   TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS offboard_checks (
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    key         TEXT NOT NULL,             -- 단계 항목 (a1, b1 …)
+    done_by     TEXT,
+    done_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (employee_id, key)
+);
+CREATE TABLE IF NOT EXISTS offboard_mails (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    how         TEXT NOT NULL,             -- 메일(인사기록카드) / 메일(직접입력) / 직접 전달
+    to_addr     TEXT,                      -- 암호화
+    subject     TEXT,
+    body        TEXT,                      -- 암호화 (보낸 글 그대로)
+    sent_by     TEXT,
+    sent_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
 -- ── 인사: 상벌 ──────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS rewards (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
