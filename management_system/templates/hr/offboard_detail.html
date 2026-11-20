@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_rte.html" import rte %}
 {% block title %}{{ e.name }} - 퇴사 절차 안내{% endblock %}
 {% block page_title %}<a href="/hr/offboard" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> 퇴사 절차 안내{% endblock %}
 {% block content %}
@@ -26,7 +27,7 @@
 
 <div class="row g-3">
   <div class="col-lg-5"><div class="card h-100"><div class="card-header d-flex align-items-center">단계별 진행표
-    <span class="badge text-bg-secondary ms-2"><span id="obDone">{{ checks|length }}</span> / {{ total }}</span>
+    <span class="badge text-bg-secondary ms-2"><span id="obDone">{{ done }}</span> / {{ total }}</span>
     <span class="help ms-auto">체크하면 바로 저장됩니다</span></div>
     <div class="card-body">
       {% for sk, sname, when, items in stages %}
@@ -49,7 +50,8 @@
     <span class="help ms-2">보내기 전에 여기서 고칠 수 있습니다 · 기본 글귀는 <a href="/hr/offboard">퇴사 절차 안내</a> 첫 화면에서 수정</span></div>
     <form class="card-body" method="post" action="/hr/offboard/{{ e.id }}/send" id="obSend">
       <label class="form-label small" for="obSub">제목</label><input class="form-control form-control-sm mb-2" id="obSub" name="subject" value="{{ subject }}" maxlength="200" required>
-      <label class="form-label small" for="obBody">내용</label><textarea class="form-control form-control-sm" id="obBody" name="body" rows="20" maxlength="8000" required data-no-enter>{{ body }}</textarea>
+      <div class="form-label small">내용 <span class="help ms-1">글자를 고른 다음 단추(굵게, 색, 크기)를 누르면 모양이 바뀝니다</span></div>
+      {{ rte('body', 'obBody', body, 560) }}
       <div class="border rounded p-2 mt-2">
         <div class="small fw-semibold mb-1">받는 사람</div>
         <label class="d-block small"><input type="radio" class="form-check-input me-1" name="target" value="employee" {{ 'checked' if email_ok }} {{ 'disabled' if not email_ok }}>인사기록카드 이메일
@@ -70,17 +72,50 @@
     <div class="card"><div class="card-header">안내 기록 <span class="badge text-bg-secondary ms-2">{{ mails|length }}건</span></div>
       <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>보낸 때</th><th>방법</th><th>받는 곳</th><th>보낸 사람</th><th>제목</th></tr></thead><tbody>
       {% for m in mails %}<tr><td class="small text-nowrap">{{ m.sent_at[:16] }}</td><td class="small">{{ m.how }}</td><td class="small">{{ m.to_masked or '-' }}</td><td class="small">{{ m.sent_by or '' }}</td>
-        <td class="small"><details><summary>{{ m.subject }}</summary><pre class="small mb-0 mt-1" style="white-space:pre-wrap">{{ m.body }}</pre></details></td></tr>
+        <td class="small"><details><summary>{{ m.subject }}</summary>{% if m.body_html %}<div class="rich-view border rounded p-2 mt-1">{{ m.body_html|safe }}</div>
+          {% else %}<pre class="small mb-0 mt-1" style="white-space:pre-wrap">{{ m.body }}</pre>{% endif %}</details></td></tr>
       {% else %}<tr><td colspan="5" class="text-muted text-center py-3">아직 안내한 기록이 없습니다</td></tr>{% endfor %}
       </tbody></table></div></div>
   </div>
 </div>
 
-<div id="obPrintArea" class="d-none"></div>
+<div id="obPrintArea" class="d-none">
+  <div class="obp-top"><span>{{ co_name }}</span><span>안내일 {{ today_iso }}</span></div>
+  <div class="obp-title">퇴직 절차 안내</div>
+  <div class="obp-lead">퇴직일까지 챙기실 사항을 순서대로 정리했습니다.</div>
+  <table class="obp-info">
+    <tr><th>성명</th><td>{{ e.name }}</td><th>소속 · 직급</th><td>{{ e.department or '-' }} · {{ e.rank or '-' }}</td></tr>
+    <tr><th>퇴직 예정일</th><td class="obp-strong">{{ last_day_k or '미정' }}</td><th>인수인계 기한</th><td>{{ due_k or '퇴직일 전까지' }}</td></tr>
+    <tr><th>인수자</th><td>{{ (ob.successor if ob else '') or '부서장이 지정' }}</td><th>문의</th><td>{{ sender }}</td></tr>
+  </table>
+  <div class="obp-body" id="obPrintBody"></div>
+  <div class="obp-foot"><span>{{ co_name }}</span><span>이 안내문은 퇴직 절차를 돕기 위해 드리는 것입니다.</span></div>
+</div>
 <style nonce="{{ csp_nonce }}">
-@media print { body * { visibility: hidden; } #obPrintArea, #obPrintArea * { visibility: visible; }
-  #obPrintArea { display: block !important; position: absolute; left: 0; top: 0; width: 100%; white-space: pre-wrap; font-size: 11pt; line-height: 1.6; } }
+#obPrintArea { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; color: #222; }
+.obp-top { display: flex; justify-content: space-between; font-size: 9.5pt; color: #5b6570; padding-bottom: 5pt; border-bottom: 3pt solid #1f4e79; }
+.obp-title { font-size: 22pt; font-weight: 700; color: #1f4e79; letter-spacing: 2pt; margin-top: 16pt; }
+.obp-lead { font-size: 10pt; color: #5b6570; margin: 3pt 0 12pt; }
+.obp-info { width: 100%; border-collapse: collapse; margin-bottom: 14pt; font-size: 10pt; }
+.obp-info th, .obp-info td { border: 0.6pt solid #c9d3de; padding: 5pt 8pt; text-align: left; }
+.obp-info th { width: 16%; background: #eef3f8; color: #1f4e79; font-weight: 600; white-space: nowrap; }
+.obp-info td { width: 34%; }
+.obp-strong { font-weight: 700; color: #b42318; }
+.obp-body { font-size: 10.5pt; line-height: 1.7; }
+.obp-body ul, .obp-body ol { margin: 2pt 0 7pt; padding-left: 15pt; }
+.obp-body li { margin-bottom: 1.5pt; }
+.obp-foot { display: flex; justify-content: space-between; margin-top: 18pt; padding-top: 6pt; border-top: 0.8pt solid #1f4e79; font-size: 8.5pt; color: #5b6570; }
+@media print {
+  @page { size: A4; margin: 15mm 16mm; }
+  body.ob-print > *:not(#obPrintArea) { display: none !important; }
+  body.ob-print #obPrintArea { display: block !important; }
+  #obPrintArea, #obPrintArea * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .obp-info, .obp-body li { break-inside: avoid; }
+}
 </style>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}" src="/static/js/rte.js?v={{ asset_v }}"></script>
 <script nonce="{{ csp_nonce }}">
 (() => {
   const base = '/hr/offboard/{{ e.id }}';
@@ -92,17 +127,21 @@
       c.closest('label').querySelector('span > span').classList.toggle('text-muted', c.checked);
     } catch (e) { c.checked = !c.checked; alert('저장하지 못했습니다. 다시 시도해 주세요.'); }
   }));
-  const body = document.getElementById('obBody'), sub = document.getElementById('obSub');
+  const body = document.getElementById('obBody');
   document.getElementById('obCopy').addEventListener('click', async () => {
     const msg = document.getElementById('obCopyMsg');
-    try { await navigator.clipboard.writeText(body.value); msg.textContent = '복사했습니다'; }
-    catch (e) { body.select(); document.execCommand('copy'); msg.textContent = '복사했습니다'; }
+    try {      // 메신저에는 글자로, 메일·문서에는 모양까지 붙도록 두 가지로 복사
+      await navigator.clipboard.write([new ClipboardItem({ 'text/plain': new Blob([body.innerText], { type: 'text/plain' }), 'text/html': new Blob([body.innerHTML], { type: 'text/html' }) })]);
+      msg.textContent = '복사했습니다';
+    } catch (e) {
+      try { await navigator.clipboard.writeText(body.innerText); msg.textContent = '복사했습니다'; } catch (x) { msg.textContent = '복사하지 못했습니다. 글을 직접 골라 복사해 주세요'; }
+    }
   });
-  document.getElementById('obPrint').addEventListener('click', () => {
-    const area = document.getElementById('obPrintArea');
-    area.textContent = sub.value + String.fromCharCode(10, 10) + body.value;
-    window.print();
-  });
+  // 인쇄: 안내문 한 장만 꾸며서 찍는다 (인쇄 영역을 화면 맨 바깥으로 옮기고 나머지는 숨김)
+  const area = document.getElementById('obPrintArea');
+  const ready = () => { document.getElementById('obPrintBody').innerHTML = body.innerHTML; document.body.appendChild(area); document.body.classList.add('ob-print'); };
+  window.addEventListener('afterprint', () => document.body.classList.remove('ob-print'));
+  document.getElementById('obPrint').addEventListener('click', () => { ready(); window.print(); });
   document.getElementById('obTo').addEventListener('focus', () => { document.querySelector('input[name=target][value=manual]').checked = true; });
 })();
 </script>

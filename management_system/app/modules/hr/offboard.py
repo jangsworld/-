@@ -2,13 +2,20 @@
 
 - 퇴직 예정일은 여기(offboardings.last_day)에만 적는다. 인사기록카드의 퇴사일은 실제 퇴직일에 따로 입력한다
   (미리 넣으면 재직자 목록·인건비 계산이 달라지므로).
-- 안내문 기본 글귀는 설정(offboard_subject / offboard_body)에 저장한 것을 쓰고, 없으면 아래 기본값.
+- 안내문 기본 글귀는 설정(offboard_subject / offboard_body_html)에 저장한 것을 쓰고, 없으면 아래 기본값.
+  내용은 글씨 편집기로 쓴 HTML 이며 저장·표시 때마다 richtext.clean() 으로 허용한 모양만 남긴다.
+- 단계와 항목은 설정(offboard_stages)에 저장한 것을 쓰고, 없으면 아래 STAGES.
 """
+import json
+import re
+import secrets
 from datetime import timedelta
+from html import escape
 
 from app import mailer
 from app.common import to_date, today
 from app.db import audit, batch, current_actor, execute, get_settings, query, query_one, set_setting
+from app.modules.hr import richtext
 from app.security.crypto import enc
 
 # (단계 키, 단계 이름, 언제, [(항목 키, 할 일, 참고)])
@@ -46,7 +53,69 @@ STAGES = [
         ("e6", "PC 자료 최종 확인 후 초기화", "업무자료 보존을 확인한 뒤 시스템관리자만 초기화"),
     ]),
 ]
-KEYS = [k for _s, _n, _w, items in STAGES for k, _t, _h in items]
+KEYS_DEFAULT = [k for _s, _n, _w, items in STAGES for k, _t, _h in items]
+NOTICE_KEY = "b1"      # 안내문을 보내면 자동으로 체크되는 항목
+_KEY_RE = re.compile(r"^[a-z][a-z0-9]{0,9}$")
+
+
+def stages() -> list:
+    raw = get_settings().get("offboard_stages")
+    if raw:
+        try:
+            return [(s["k"], s["name"], s.get("when") or "", [(i["k"], i["text"], i.get("hint") or "") for i in s["items"]])
+                    for s in json.loads(raw)]
+        except (ValueError, KeyError, TypeError):
+            pass
+    return STAGES
+
+
+def stages_custom() -> bool:
+    return bool(get_settings().get("offboard_stages"))
+
+
+def keys() -> list:
+    return [k for _s, _n, _w, items in stages() for k, _t, _h in items]
+
+
+def save_stages(data, reset: bool = False) -> str:
+    """단계·항목 고치기. 이미 있던 키는 그대로 두어야 지금까지 체크한 기록이 이어진다. 새 항목은 키를 새로 만든다."""
+    if reset:
+        with batch():
+            set_setting("offboard_stages", "")
+            audit("hr", "퇴사 처리 단계 처음 내용으로 되돌림", "", "")
+        return ""
+    if not isinstance(data, list) or not 1 <= len(data) <= 12:
+        return "단계는 1개 이상 12개 이하로 만드세요"
+    seen, out = set(), []
+
+    def key(v, prefix):
+        v = str(v or "")
+        if not _KEY_RE.match(v) or v in seen:
+            v = prefix + secrets.token_hex(3)
+        seen.add(v)
+        return v
+
+    for s in data:
+        if not isinstance(s, dict):
+            return "형식이 올바르지 않습니다"
+        name = str(s.get("name") or "").strip()[:40]
+        if not name:
+            return "단계 이름이 비어 있습니다"
+        items = []
+        for i in s.get("items") or []:
+            text = str((i or {}).get("text") or "").strip()[:150] if isinstance(i, dict) else ""
+            if text:      # 할 일이 빈 줄은 버림
+                items.append({"k": key(i.get("k"), "n"), "text": text, "hint": str(i.get("hint") or "").strip()[:300]})
+        if len(items) > 30:
+            return "한 단계의 항목은 30개까지입니다"
+        out.append({"k": key(s.get("k"), "s"), "name": name, "when": str(s.get("when") or "").strip()[:40], "items": items})
+    if not any(s["items"] for s in out):
+        return "항목이 하나도 없습니다"
+    with batch():
+        set_setting("offboard_stages", json.dumps(out, ensure_ascii=False))
+        audit("hr", "퇴사 처리 단계 수정", "", f"{len(out)}단계 {sum(len(s['items']) for s in out)}항목")
+    return ""
+
 
 DEFAULT_SUBJECT = "[{회사명}] 퇴직 절차 안내 ({이름}님)"
 DEFAULT_BODY = """{이름}님, 안녕하세요. 경영관리팀입니다.
@@ -100,21 +169,27 @@ FIELDS = ("이름", "퇴직일", "인수인계기한", "인수자", "담당자",
 
 
 def templates_text() -> dict:
+    """body 는 편집기용 HTML. 예전에 글자만으로 저장한 글귀(offboard_body)는 읽을 때 HTML 로 바꾼다."""
     s = get_settings()
-    return {"subject": s.get("offboard_subject") or DEFAULT_SUBJECT, "body": s.get("offboard_body") or DEFAULT_BODY,
-            "custom": bool(s.get("offboard_subject") or s.get("offboard_body"))}
+    body = richtext.clean(s.get("offboard_body_html") or "") or richtext.from_text(s.get("offboard_body") or DEFAULT_BODY)
+    return {"subject": s.get("offboard_subject") or DEFAULT_SUBJECT, "body": body,
+            "custom": bool(s.get("offboard_subject") or s.get("offboard_body") or s.get("offboard_body_html"))}
 
 
 def _clean(subject: str, body: str) -> tuple[str, str]:
-    return (subject or "").strip()[:200], (body or "").replace("\r\n", "\n").strip()[:8000]
+    return (subject or "").strip()[:200], richtext.clean((body or "")[:40000])
 
 
-def save_template(subject: str, body: str, reset: bool = False):
+def save_template(subject: str, body: str, reset: bool = False) -> str:
     subject, body = _clean(subject, body)
+    if not reset and (not subject or not richtext.to_text(body)):
+        return "제목과 내용을 입력하세요"
     with batch():
         set_setting("offboard_subject", "" if reset or subject == DEFAULT_SUBJECT else subject)
-        set_setting("offboard_body", "" if reset or body == DEFAULT_BODY else body)
+        set_setting("offboard_body_html", "" if reset else body)
+        set_setting("offboard_body", "")
         audit("hr", "퇴사 안내문 기본 글귀 " + ("처음 글귀로 되돌림" if reset else "수정"), "", "")
+    return ""
 
 
 def _kdate(v) -> str:
@@ -122,13 +197,13 @@ def _kdate(v) -> str:
     return f"{d.year}년 {d.month}월 {d.day}일" if d else ""
 
 
-def fill(text: str, emp: dict, ob: dict | None, sender: str) -> str:
+def fill(text: str, emp: dict, ob: dict | None, sender: str, html: bool = False) -> str:
     ob = ob or {}
     vals = {"이름": emp.get("name") or "", "퇴직일": _kdate(ob.get("last_day")) or "(퇴직일 미정)",
             "인수인계기한": _kdate(ob.get("handover_due")) or "퇴직일 전까지", "인수자": ob.get("successor") or "부서장이 지정",
             "담당자": sender or "경영관리팀 인사담당자", "회사명": get_settings().get("company_name", "")}
     for k in FIELDS:
-        text = text.replace("{" + k + "}", vals[k])
+        text = text.replace("{" + k + "}", escape(vals[k], quote=False) if html else vals[k])
     return text
 
 
@@ -154,7 +229,7 @@ def save(emp_id: int, last_day, handover_due, successor: str, note: str) -> str:
 
 
 def set_check(emp_id: int, key: str, done: bool) -> bool:
-    if key not in KEYS or not get(emp_id):
+    if key not in keys() or not get(emp_id):
         return False
     if done:
         execute("INSERT INTO offboard_checks(employee_id, key, done_by) VALUES (?,?,?) ON CONFLICT(employee_id, key) DO NOTHING",
@@ -190,9 +265,9 @@ def log_notice(emp_id: int, how: str, to_addr: str, subject: str, body: str):
     """how: 메일(인사기록카드) / 메일(직접입력) / 직접 전달"""
     subject, body = _clean(subject, body)
     with batch():
-        execute("INSERT INTO offboard_mails(employee_id, how, to_addr, subject, body, sent_by) VALUES (?,?,?,?,?,?)",
+        execute("INSERT INTO offboard_mails(employee_id, how, to_addr, subject, body, sent_by, fmt) VALUES (?,?,?,?,?,?,'html')",
                 (emp_id, how, enc(to_addr) if to_addr else None, subject, enc(body), current_actor.get()[1]))
-        set_check(emp_id, "b1", True)
+        set_check(emp_id, NOTICE_KEY, True)
         audit("hr", "퇴사 안내문 " + ("전달 기록" if how == "직접 전달" else "메일 발송"), f"emp#{emp_id}", how)  # 주소 원문은 남기지 않음
 
 
@@ -200,16 +275,31 @@ def unfilled(text: str) -> bool:
     return any("{" + k + "}" in text for k in FIELDS)
 
 
+def notice_error(subject: str, body: str) -> str:
+    subject, body = _clean(subject, body)
+    if not subject or not richtext.to_text(body):
+        return "제목과 내용을 입력하세요"
+    if unfilled(subject + body):
+        return "채워지지 않은 항목({이름} 등)이 남아 있습니다"
+    return ""
+
+
+def _mail_html(body: str) -> str:
+    sig = mailer.config().get("signature") or ""
+    sig = f'<div style="margin-top: 24px; color: #555">{escape(sig, quote=False).replace(chr(10), "<br>")}</div>' if sig else ""
+    return ("<div style=\"font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; font-size: 14px; line-height: 1.7; "
+            f"color: #222; max-width: 760px\">{body}{sig}</div>")
+
+
 def send(emp_id: int, to: str, how: str, subject: str, body: str) -> tuple[bool, str]:
     subject, body = _clean(subject, body)
-    if not subject or not body:
-        return False, "제목과 내용을 입력하세요"
-    if unfilled(subject + body):
-        return False, "채워지지 않은 항목({이름} 등)이 남아 있습니다"
+    err = notice_error(subject, body)
+    if err:
+        return False, err
     if not mailer.configured():
         return False, "메일 서버가 설정되지 않았습니다 (회사정보·환경설정 → 메일)"
     try:
-        mailer.send(to, subject, body)
+        mailer.send(to, subject, richtext.to_text(body), html=_mail_html(body))
     except mailer.MailError as ex:
         audit("hr", "퇴사 안내문 발송 실패", f"emp#{emp_id}", str(ex)[:120])
         return False, str(ex)
@@ -220,14 +310,14 @@ def send(emp_id: int, to: str, how: str, subject: str, body: str) -> tuple[bool,
 def rows() -> list[dict]:
     out = query("SELECT o.*, e.name, e.emp_no, e.department, e.rank, e.resign_date FROM offboardings o "
                 "JOIN employees e ON e.id=o.employee_id ORDER BY (o.closed_at IS NOT NULL), o.last_day")
-    done = {}
+    done, ks = {}, keys()
     for r in query("SELECT employee_id, key FROM offboard_checks"):
-        if r["key"] in KEYS:
+        if r["key"] in ks:
             done[r["employee_id"]] = done.get(r["employee_id"], 0) + 1
     sent = {r["employee_id"]: r["at"] for r in query("SELECT employee_id, MAX(sent_at) AS at FROM offboard_mails GROUP BY employee_id")}
     t = today()
     for r in out:
-        r["done"], r["total"] = done.get(r["employee_id"], 0), len(KEYS)
+        r["done"], r["total"] = done.get(r["employee_id"], 0), len(ks)
         r["sent_at"] = sent.get(r["employee_id"])
         ld = to_date(r["last_day"])
         r["dday"] = (ld - t).days if ld else None

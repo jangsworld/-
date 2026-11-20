@@ -493,7 +493,8 @@ CREATE TABLE IF NOT EXISTS offboard_mails (
     subject     TEXT,
     body        TEXT,                      -- 암호화 (보낸 글 그대로)
     sent_by     TEXT,
-    sent_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    sent_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    fmt         TEXT                       -- 'html' = 글씨 편집기로 쓴 글, 비어 있으면 글자만
 );
 
 -- ── 인사: 상벌 ──────────────────────────────────────────────────────
@@ -1105,6 +1106,7 @@ ADDED_COLUMNS = {
     "ga_vehicles": ["qr_token", "oil_interval_km"],
     "ga_company_items": ["emp_insurance", "alert_email", "alert_sent"],
     "appointments": ["field", "status", "batch_title", "created_by"],
+    "offboard_mails": ["fmt"],
     "users": ["email"],                                            # 2단계 인증 메일 받을 회사 메일
     "sessions": ["mail_code", "mail_exp", "mail_tries", "mail_sends"],  # 메일 인증번호(해시)·만료·시도
 }

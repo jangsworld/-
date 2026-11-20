@@ -1,0 +1,30 @@
+{# 글씨 편집기. html 은 서버에서 richtext.clean() 을 거친 것만 넘긴다. 화면 아래에 /static/js/rte.js 를 불러야 한다. #}
+{% macro rte(name, id, html, height=420) %}
+<div class="rte">
+  <div class="rte-bar">
+    <button type="button" class="btn btn-sm btn-light border" data-cmd="bold" title="굵게"><b>가</b></button>
+    <button type="button" class="btn btn-sm btn-light border" data-cmd="italic" title="기울이기"><i>가</i></button>
+    <button type="button" class="btn btn-sm btn-light border" data-cmd="underline" title="밑줄"><u>가</u></button>
+    <span class="rte-sep"></span>
+    <span class="small text-muted">글자색</span>
+    {% for c, n in [('#222222', '검정'), ('#d32f2f', '빨강'), ('#1f4e79', '남색'), ('#1565c0', '파랑'), ('#2e7d32', '초록'), ('#e65100', '주황')] %}
+    <button type="button" class="rte-color" data-cmd="foreColor" data-val="{{ c }}" title="{{ n }}" aria-label="글자색 {{ n }}" style="background: {{ c }}"></button>
+    {% endfor %}
+    <input type="color" class="rte-pick" data-cmd="foreColor" value="#1f4e79" title="다른 색 고르기" aria-label="다른 글자색 고르기">
+    <span class="rte-sep"></span>
+    <button type="button" class="btn btn-sm btn-light border" data-cmd="hiliteColor" data-val="#fff59d" title="형광펜"><span style="background: #fff59d">형광펜</span></button>
+    <button type="button" class="btn btn-sm btn-light border" data-cmd="hiliteColor" data-val="transparent" title="형광펜 지우기">지움</button>
+    <span class="rte-sep"></span>
+    <select class="form-select form-select-sm rte-size" data-cmd="fontSize" aria-label="글자 크기" title="글자 크기">
+      <option value="">글자 크기</option><option value="2">작게</option><option value="3">보통</option><option value="4">조금 크게</option><option value="5">크게</option><option value="6">아주 크게</option>
+    </select>
+    <button type="button" class="btn btn-sm btn-light border" data-cmd="insertUnorderedList" title="글머리 목록"><i class="bi bi-list-ul"></i></button>
+    <button type="button" class="btn btn-sm btn-light border" data-cmd="justifyCenter" title="가운데 맞춤"><i class="bi bi-text-center"></i></button>
+    <button type="button" class="btn btn-sm btn-light border" data-cmd="justifyLeft" title="왼쪽 맞춤"><i class="bi bi-text-left"></i></button>
+    <span class="rte-sep"></span>
+    <button type="button" class="btn btn-sm btn-light border" data-cmd="removeFormat" title="고른 글자의 모양을 처음으로">모양 지우기</button>
+  </div>
+  <div class="rte-body" id="{{ id }}" contenteditable="true" role="textbox" aria-multiline="true" aria-label="내용" style="max-height: {{ height }}px">{{ html|safe }}</div>
+  <input type="hidden" name="{{ name }}">
+</div>
+{% endmacro %}

@@ -1,6 +1,31 @@
 {% extends "base.html" %}
+{% from "_rte.html" import rte %}
 {% block title %}퇴사 절차 안내{% endblock %}
 {% block page_title %}<i class="bi bi-box-arrow-right me-2"></i>퇴사 절차 안내{% endblock %}
+{% macro item_row(k, text, hint) %}
+<div class="obs-item d-flex flex-wrap gap-1 align-items-start mb-1" data-k="{{ k }}">
+  <input class="form-control form-control-sm obs-text" value="{{ text }}" maxlength="150" placeholder="할 일" aria-label="할 일" style="flex: 2 1 220px">
+  <input class="form-control form-control-sm obs-hint" value="{{ hint }}" maxlength="300" placeholder="참고 (없어도 됩니다)" aria-label="참고" style="flex: 3 1 260px">
+  <button type="button" class="btn btn-sm btn-light border" data-act="up" title="위로"><i class="bi bi-arrow-up"></i></button>
+  <button type="button" class="btn btn-sm btn-light border" data-act="down" title="아래로"><i class="bi bi-arrow-down"></i></button>
+  <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" title="이 항목 삭제"><i class="bi bi-x-lg"></i></button>
+  {% if k == notice_key %}<div class="help w-100">이 항목은 안내문을 보내면 자동으로 체크됩니다. 지우면 자동 체크도 없어집니다.</div>{% endif %}
+</div>
+{% endmacro %}
+{% macro stage_box(sk, sname, when, items) %}
+<div class="obs-stage border rounded p-2 mb-2" data-k="{{ sk }}">
+  <div class="d-flex flex-wrap gap-1 align-items-center mb-2">
+    <span class="badge text-bg-primary obs-no"></span>
+    <input class="form-control form-control-sm fw-semibold obs-name" value="{{ sname }}" maxlength="40" placeholder="단계 이름" aria-label="단계 이름" style="flex: 2 1 200px">
+    <input class="form-control form-control-sm obs-when" value="{{ when }}" maxlength="40" placeholder="언제 (예: 퇴직일 전까지)" aria-label="언제" style="flex: 2 1 200px">
+    <button type="button" class="btn btn-sm btn-light border" data-act="sup" title="단계를 위로"><i class="bi bi-arrow-up"></i></button>
+    <button type="button" class="btn btn-sm btn-light border" data-act="sdown" title="단계를 아래로"><i class="bi bi-arrow-down"></i></button>
+    <button type="button" class="btn btn-sm btn-outline-danger" data-act="sdel">단계 삭제</button>
+  </div>
+  <div class="obs-items">{% for k, text, hint in items %}{{ item_row(k, text, hint) }}{% endfor %}</div>
+  <button type="button" class="btn btn-sm btn-link px-0" data-act="add"><i class="bi bi-plus-lg"></i> 항목 추가</button>
+</div>
+{% endmacro %}
 {% block content %}
 <div class="card mb-3"><div class="card-body d-flex flex-wrap gap-2 align-items-end">
   <form method="get" action="/hr/offboard/start" class="d-flex flex-wrap gap-2 align-items-end">
@@ -26,23 +51,91 @@
     {% else %}<tr><td colspan="8" class="text-muted text-center py-4">진행 중인 퇴사 절차가 없습니다</td></tr>{% endfor %}
   </tbody></table></div></div>
 
-<div class="card mb-3"><div class="card-header">퇴사 처리 단계 <span class="help ms-2">인사담당자 참고용 · 직원별 화면에서 항목마다 체크합니다</span></div>
-  <div class="card-body row g-3">
+<div class="card mb-3"><div class="card-header d-flex flex-wrap align-items-center gap-2">퇴사 처리 단계
+  <span class="help">인사담당자 참고용 · 직원별 화면에서 항목마다 체크합니다{% if stages_custom %} · <b>수정한 단계 사용 중</b>{% endif %}</span>
+  <button type="button" class="btn btn-sm btn-outline-primary ms-auto" id="obsEditBtn"><i class="bi bi-pencil"></i> 단계 수정</button></div>
+  <div class="card-body row g-3" id="obsView">
     {% for sk, sname, when, items in stages %}
     <div class="col-lg-4 col-md-6"><div class="border rounded h-100 p-2">
       <div class="fw-semibold">{{ loop.index }}단계 · {{ sname }}</div><div class="help mb-1">{{ when }}</div>
       <ol class="small mb-0 ps-3">{% for k, text, hint in items %}<li class="mb-1">{{ text }}<div class="help">{{ hint }}</div></li>{% endfor %}</ol>
     </div></div>
     {% endfor %}
+  </div>
+  <div class="card-body d-none" id="obsEdit">
+    <div class="alert alert-info py-2 small">단계와 항목을 고치고, 더하고, 지울 수 있습니다. 맨 아래 <b>[단계 저장]</b>을 눌러야 반영됩니다.
+      글자만 고친 항목은 이미 체크한 기록이 그대로 남고, 지운 항목은 진행표에서 빠집니다.</div>
+    <div id="obsList">{% for sk, sname, when, items in stages %}{{ stage_box(sk, sname, when, items) }}{% endfor %}</div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="obsAddStage"><i class="bi bi-plus-lg"></i> 단계 추가</button>
+    <div class="d-flex flex-wrap gap-2 mt-3 pt-3 border-top">
+      <button type="button" class="btn btn-sm btn-primary" id="obsSave"><i class="bi bi-save"></i> 단계 저장</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="obsCancel">취소</button>
+      {% if stages_custom %}<button type="button" class="btn btn-sm btn-link text-danger ms-auto" id="obsReset">처음 단계로 되돌리기</button>{% endif %}
+    </div>
   </div></div>
+<template id="obsTplStage">{{ stage_box('', '', '', []) }}</template>
+<template id="obsTplItem">{{ item_row('', '', '') }}</template>
 
 <div class="card"><div class="card-header d-flex align-items-center">안내문 기본 글귀
   <span class="help ms-2">직원별 화면에서 보내기 전에 한 번 더 고칠 수 있습니다{% if tpl.custom %} · <b>수정한 글귀 사용 중</b>{% endif %}</span></div>
   <form class="card-body" method="post" action="/hr/offboard/template">
-    <div class="help mb-2">아래 글자는 보낼 때 자동으로 바뀝니다: {% for k in fields %}<code>{{ '{' ~ k ~ '}' }}</code> {% endfor %}</div>
+    <div class="help mb-2">아래 글자는 보낼 때 자동으로 바뀝니다: {% for k in fields %}<code>{{ '{' ~ k ~ '}' }}</code> {% endfor %}
+      · 글자를 마우스로 고른 다음 위쪽 단추(굵게, 색, 크기)를 누르면 모양이 바뀝니다.</div>
     <label class="form-label small" for="tSub">제목</label><input class="form-control form-control-sm mb-2" id="tSub" name="subject" value="{{ tpl.subject }}" maxlength="200" required>
-    <label class="form-label small" for="tBody">내용</label><textarea class="form-control form-control-sm" id="tBody" name="body" rows="16" maxlength="8000" required data-no-enter>{{ tpl.body }}</textarea>
+    <div class="form-label small">내용</div>
+    {{ rte('body', 'tBody', tpl.body, 520) }}
     <div class="d-flex gap-2 mt-2"><button class="btn btn-sm btn-primary"><i class="bi bi-save"></i> 기본 글귀 저장</button>
       {% if tpl.custom %}<button class="btn btn-sm btn-outline-secondary" name="reset" value="1" data-confirm="처음 글귀로 되돌릴까요? 지금 고친 글귀는 사라집니다.">처음 글귀로 되돌리기</button>{% endif %}</div>
   </form></div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}" src="/static/js/rte.js?v={{ asset_v }}"></script>
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const view = document.getElementById('obsView'), edit = document.getElementById('obsEdit'), list = document.getElementById('obsList');
+  const tpl = (id) => document.getElementById(id).content.firstElementChild.cloneNode(true);
+  const number = () => list.querySelectorAll('.obs-stage').forEach((s, i) => { s.querySelector('.obs-no').textContent = (i + 1) + '단계'; });
+  const show = (on) => { view.classList.toggle('d-none', on); edit.classList.toggle('d-none', !on); document.getElementById('obsEditBtn').classList.toggle('d-none', on); };
+  const move = (el, up) => {
+    const other = up ? el.previousElementSibling : el.nextElementSibling;
+    if (!other) return;
+    if (up) el.parentNode.insertBefore(el, other); else el.parentNode.insertBefore(other, el);
+  };
+  number();
+  document.getElementById('obsEditBtn').addEventListener('click', () => show(true));
+  document.getElementById('obsCancel').addEventListener('click', () => location.reload());
+  document.getElementById('obsAddStage').addEventListener('click', () => {
+    const s = tpl('obsTplStage');
+    s.querySelector('.obs-items').appendChild(tpl('obsTplItem'));
+    list.appendChild(s); number(); s.querySelector('.obs-name').focus();
+  });
+  list.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-act]');
+    if (!b) return;
+    const stage = b.closest('.obs-stage'), item = b.closest('.obs-item'), act = b.dataset.act;
+    if (act === 'add') { const it = tpl('obsTplItem'); stage.querySelector('.obs-items').appendChild(it); it.querySelector('.obs-text').focus(); }
+    else if (act === 'del') item.remove();
+    else if (act === 'up' || act === 'down') move(item, act === 'up');
+    else if (act === 'sup' || act === 'sdown') move(stage, act === 'sup');
+    else if (act === 'sdel') {
+      const n = stage.querySelectorAll('.obs-item').length;
+      if (!n || confirm('이 단계와 그 안의 항목 ' + n + '개를 지울까요? [단계 저장]을 눌러야 반영됩니다.')) stage.remove();
+    }
+    number();
+  });
+  const send = async (body) => {
+    try { const r = await postJSON('/hr/offboard/stages', body); location.href = '/hr/offboard?msg=' + encodeURIComponent(r.msg); }
+    catch (e) { let m = '저장하지 못했습니다. 다시 시도해 주세요.'; try { m = JSON.parse(e.message).detail || m; } catch (x) { /* 글자 그대로 */ } alert(m); }
+  };
+  document.getElementById('obsSave').addEventListener('click', () => {
+    const stages = [...list.querySelectorAll('.obs-stage')].map((s) => ({
+      k: s.dataset.k, name: s.querySelector('.obs-name').value, when: s.querySelector('.obs-when').value,
+      items: [...s.querySelectorAll('.obs-item')].map((i) => ({ k: i.dataset.k, text: i.querySelector('.obs-text').value, hint: i.querySelector('.obs-hint').value })),
+    }));
+    send({ stages });
+  });
+  const reset = document.getElementById('obsReset');
+  if (reset) reset.addEventListener('click', () => { if (confirm('처음 단계로 되돌릴까요? 지금 고친 단계는 사라집니다.')) send({ reset: true }); });
+})();
+</script>
 {% endblock %}

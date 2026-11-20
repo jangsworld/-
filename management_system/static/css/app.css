@@ -258,3 +258,15 @@ form.is-dirty .form-actions .dirty-note { display: inline; }
 }
 /* 저장 버튼 줄이 있는 화면에서는 알림이 버튼을 가리지 않게 */
 body:has(.form-actions) .toast-container { bottom: 64px !important; }
+
+/* 글씨 편집기 (templates/_rte.html) */
+.rte { border: 1px solid #ced4da; border-radius: .375rem; background: #fff; }
+.rte-bar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 6px; border-bottom: 1px solid #e5e7eb; background: #f8f9fa; border-radius: .375rem .375rem 0 0; }
+.rte-sep { width: 1px; height: 22px; background: #d0d5db; margin: 0 4px; }
+.rte-color { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #c5cad1; padding: 0; }
+.rte-pick { width: 28px; height: 26px; padding: 0; border: 1px solid #c5cad1; border-radius: 4px; background: #fff; }
+.rte-size { width: auto; }
+.rte-body { min-height: 180px; overflow-y: auto; padding: 12px 14px; font-size: .9rem; line-height: 1.7; outline: none; }
+.rte-body:focus { box-shadow: inset 0 0 0 2px rgba(45, 90, 140, .25); }
+.rte-body ul, .rte-body ol, .rich-view ul, .rich-view ol { margin: 2px 0 6px; padding-left: 1.3rem; }
+.rich-view { font-size: .85rem; line-height: 1.65; }
