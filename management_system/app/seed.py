@@ -4,9 +4,9 @@ import random
 from datetime import timedelta
 
 from app.common import today, add_years, add_months, to_date
-from app.db import query_one, execute, get_settings
+from app.db import batch, query, query_one, execute, get_settings, set_setting
 from app.modules.hr import repo, services
-from app.modules.hr.default_templates import DEFAULT_TEMPLATES
+from app.modules.hr.default_templates import CERT_UPGRADES, DEFAULT_TEMPLATES
 
 
 def ensure_templates():
@@ -14,6 +14,33 @@ def ensure_templates():
         return
     for group, cat, name, content in DEFAULT_TEMPLATES:
         repo.save_template(None, group, cat, name, content.strip())
+
+
+def _same(a: str, b: str) -> bool:
+    flat = lambda v: "".join((v or "").split())     # noqa: E731
+    return flat(a) == flat(b)
+
+
+def upgrade_cert_templates():
+    """증명서 양식 2판으로 한 번만 바꿉니다. 고치지 않고 쓰던 예전 기본 양식은 그 자리에서 바꾸고,
+    직접 고친 양식은 '(이전 양식)'으로 이름을 바꿔 꺼 두고(지우지 않음) 새 양식을 추가합니다."""
+    from app.common import sanitize_html
+    if get_settings().get("cert_tpl_ver") == "2":
+        return
+    with batch():
+        for cat, name, old, new in CERT_UPGRADES:
+            rows = query("SELECT * FROM doc_templates WHERE doc_group='certificate' AND category=?", (cat,))
+            if any("doc-seal" in (t["content"] or "") for t in rows):
+                continue
+            plain = [t for t in rows if _same(t["content"], old) or _same(t["content"], sanitize_html(old))]
+            for t in plain:
+                execute("UPDATE doc_templates SET content=? WHERE id=?", (new.strip(), t["id"]))
+            if rows and not plain:
+                for t in rows:
+                    if t["is_active"]:
+                        execute("UPDATE doc_templates SET name=?, is_active=0 WHERE id=?", (t["name"] + " (이전 양식)", t["id"]))
+                repo.save_template(None, "certificate", cat, name, new.strip())
+        set_setting("cert_tpl_ver", "2")
 
 
 # (성명, 성별, 출생연도, 부서, 직급, 직책, 고용형태, 입사 경과(개월 전), 기본 연봉(만원))

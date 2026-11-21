@@ -16,7 +16,7 @@ from app.common import templates
 from app.config import APP_DIR, SYSTEM_CODE, SYSTEM_NAME, settings
 from app.db import audit, init_db, get_settings, set_setting, DEFAULT_SETTINGS, DEPT_LEVELS, dept_tree, dept_text, dept_path, dept_scope
 from app.modules import MODULES
-from app import mailer
+from app import brand, mailer
 from app.modules.ga import cartax, company as company_alerts, contract_intake
 from app.modules.ga.constants import ASSET_BEHAVIORS
 from app.modules.hr import intake, repo as hr_repo
@@ -67,11 +67,12 @@ def _bootstrap_admin():
 
 @asynccontextmanager
 async def lifespan(_app):
-    from app.seed import ensure_templates, seed_sample, seed_ga_sample
+    from app.seed import ensure_templates, seed_sample, seed_ga_sample, upgrade_cert_templates
     _setup_logging()
     is_new = init_db()
     os.makedirs(os.path.join(os.path.dirname(settings.db_path), "asset_photos"), exist_ok=True)   # 백업 대상
     ensure_templates()
+    upgrade_cert_templates()
     ga_repo.ensure_event_rules()
     if is_new and settings.seed_sample:
         seed_sample()
@@ -131,6 +132,7 @@ app.include_router(ga_public_router)
 templates.env.globals["MODULES"] = MODULES
 templates.env.globals["SYSTEM_CODE"] = SYSTEM_CODE
 templates.env.globals["company"] = lambda: get_settings().get("company_name", "")
+templates.env.globals["brand_css"] = brand.css      # 증명서 도장·로고 자리 (정해진 글자로만 만들어지는 CSS)
 templates.env.globals["ROLE_NAMES"] = auth.ROLES
 templates.env.globals["dept_text"] = dept_text     # 부서 선택 목록: 하위 부서 들여쓰기
 templates.env.globals["dept_path"] = dept_path
@@ -214,6 +216,7 @@ CODE_HINTS = {
 def settings_page(request: Request):
     return templates.TemplateResponse(request, "settings.html", {
         "s": get_settings(), "labels": SETTING_LABELS,
+        "brand": {k: {"label": v, "has": bool(brand.get(k))} for k, v in brand.KINDS.items()},
         "active_menu": "settings", "msg": request.query_params.get("msg", ""),
         "cfg": {"포트": settings.port, "HTTPS": "사용" if settings.https else "미사용(내부 테스트용)",
                 "2단계 인증": "필수" if settings.require_2fa else "선택",
@@ -313,6 +316,22 @@ async def settings_save(request: Request):
             set_setting(k, str(form[k]).strip())
     audit("system", "설정 변경", "회사정보", "")
     return RedirectResponse("/settings?msg=" + quote("설정이 저장되었습니다"), status_code=303)
+
+
+@app.post("/settings/brand/{kind}")
+async def settings_brand(kind: str, request: Request):
+    """증명서에 넣는 법인 도장·회사 로고 그림 올리기·지우기 (관리자만: /settings 규칙)."""
+    if kind not in brand.KINDS:
+        raise StarletteHTTPException(404)
+    form = await request.form()
+    label = brand.KINDS[kind]
+    if form.get("remove"):
+        brand.remove(kind)
+        return _settings_redirect(f"{label} 그림을 지웠습니다", "brand")
+    f = form.get("file")
+    raw = await f.read(brand.MAX_BYTES + 1) if hasattr(f, "read") else b""
+    err = brand.save(kind, raw)
+    return _settings_redirect(err or f"{label} 그림을 저장했습니다. 새로 만드는 증명서 PDF 부터 들어갑니다", "brand")
 
 
 @app.get("/settings/codes", response_class=HTMLResponse)

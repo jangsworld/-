@@ -123,6 +123,7 @@ def test_offboard_template_and_roles(hr):
     e2 = _emp("<i>기울임</i>", email="")
     page = hr.get(f"/hr/offboard/{e2}").text
     assert "<b>&lt;i&gt;기울임&lt;/i&gt;</b>님링크" in page and "xss_mark" not in page
+    execute("DELETE FROM employees WHERE id=?", (e2,))          # 폴더 이름으로 못 쓰는 이름이라 다른 시험에 남기지 않음
     hr.post("/hr/offboard/template", data={"subject": "안내", "body": "<div><br></div>"})        # 빈 글은 저장 안 됨
     assert offboard.templates_text()["body"] == "<b>{이름}</b>님링크"
     hr.post("/hr/offboard/template", data={"reset": "1", "subject": "x", "body": "y"})

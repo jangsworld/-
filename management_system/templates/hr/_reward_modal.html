@@ -5,7 +5,7 @@
   <div class="modal-body row g-2">
     {% if e is defined and e.id %}<input type="hidden" name="employee_id" value="{{ e.id }}">
     {% else %}
-    <div class="col-md-4"><label class="form-label small">대상자</label><select class="form-select form-select-sm" name="employee_id" required>
+    <div class="col-md-4"><label class="form-label small">대상자</label><select data-search class="form-select form-select-sm" name="employee_id" required>
       {% for x in emps %}<option value="{{ x.id }}">{{ x.name }} ({{ x.department or '' }} {{ x.rank or '' }})</option>{% endfor %}</select></div>
     {% endif %}
     <div class="col-md-2"><label class="form-label small">구분</label><select class="form-select form-select-sm" name="kind" id="rwKind">

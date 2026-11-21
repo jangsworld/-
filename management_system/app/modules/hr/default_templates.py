@@ -149,7 +149,7 @@ SALARY_CONTRACT = """
 </table>
 """
 
-CERT_EMPLOYMENT = """
+CERT_EMPLOYMENT_V1 = """
 <p style="text-align:right">발급번호 : {{발급번호}}</p>
 <h1 class="doc-title" style="letter-spacing:12px">재 직 증 명 서</h1>
 <table class="doc-table">
@@ -165,7 +165,7 @@ CERT_EMPLOYMENT = """
 <p style="text-align:center;font-size:.9em">{{회사주소}} / 사업자등록번호 {{사업자번호}}</p>
 """
 
-CERT_CAREER = """
+CERT_CAREER_V1 = """
 <p style="text-align:right">발급번호 : {{발급번호}}</p>
 <h1 class="doc-title" style="letter-spacing:12px">경 력 증 명 서</h1>
 <table class="doc-table">
@@ -181,6 +181,43 @@ CERT_CAREER = """
 <p style="text-align:center;margin-top:36px;font-size:1.2em"><b>{{회사명}}</b><br>대표이사 {{대표자}} (직인)</p>
 <p style="text-align:center;font-size:.9em">{{회사주소}} / 사업자등록번호 {{사업자번호}}</p>
 """
+
+# 증명서 양식 2판: 위쪽에 회사 로고 자리·발급번호, 가운데 큰 제목, 아래 회사명·대표이사·도장 자리.
+# 로고와 도장 그림은 회사정보·환경설정에서 올린 것이 자리(doc-logo, doc-seal)에 그려진다. 올리지 않으면 "(직인)" 글자가 보인다.
+_CERT_HEAD = """
+<div class="doc-head"><div class="doc-logo"></div><div class="doc-no">발급번호 : {{발급번호}}</div></div>
+"""
+_CERT_FOOT = """
+<p class="cert-date">{{작성일}}</p>
+<div class="cert-sign"><div class="cert-company">{{회사명}}</div>
+<div class="cert-ceo">대표이사 &nbsp; {{대표자}} &nbsp; <span class="doc-seal">(직인)</span></div></div>
+<p class="cert-foot">{{회사주소}}</p>
+"""
+
+CERT_EMPLOYMENT = _CERT_HEAD + """<h1 class="doc-title cert-title">재직증명서</h1>
+<table class="doc-table cert-table">
+  <tr><th>성 명</th><td>{{성명}}</td><th>생년월일</th><td>{{생년월일}}</td></tr>
+  <tr><th>주 소</th><td colspan="3">{{주소}}</td></tr>
+  <tr><th>소 속</th><td>{{부서}}</td><th>직 위</th><td>{{직급}}</td></tr>
+  <tr><th>재직기간</th><td colspan="3">{{입사일}} ~ 현재 ({{재직기간}})</td></tr>
+  <tr><th>용 도</th><td colspan="3">{{용도}}</td></tr>
+</table>
+<p class="cert-text">위와 같이 재직하고 있음을 증명합니다.</p>
+""" + _CERT_FOOT
+
+CERT_CAREER = _CERT_HEAD + """<h1 class="doc-title cert-title">경력증명서</h1>
+<table class="doc-table cert-table">
+  <tr><th>성 명</th><td>{{성명}}</td><th>생년월일</th><td>{{생년월일}}</td></tr>
+  <tr><th>주 소</th><td colspan="3">{{주소}}</td></tr>
+  <tr><th>근무부서</th><td>{{부서}}</td><th>최종직위</th><td>{{직급}}</td></tr>
+  <tr><th>근무기간</th><td colspan="3">{{입사일}} ~ {{퇴사일}} ({{재직기간}})</td></tr>
+  <tr><th>담당업무</th><td colspan="3">{{담당업무}}</td></tr>
+  <tr><th>용 도</th><td colspan="3">{{용도}}</td></tr>
+</table>
+<p class="cert-text">위와 같이 근무하였음을 증명합니다.</p>
+""" + _CERT_FOOT
+
+CERT_UPGRADES = [("재직증명", "재직증명서", CERT_EMPLOYMENT_V1, CERT_EMPLOYMENT), ("경력증명", "경력증명서", CERT_CAREER_V1, CERT_CAREER)]
 
 DEFAULT_TEMPLATES = [
     ("contract", "정규직", "표준근로계약서(정규직)", REGULAR),

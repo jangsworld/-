@@ -6,7 +6,7 @@
   <div class="col-lg-4">
     <div class="card"><div class="card-header">① 대상자 · 구분</div><div class="card-body row g-2">
       <div class="col-12"><label class="form-label small">임직원</label>
-        <select class="form-select form-select-sm" name="employee_id" id="empSel" required>
+        <select data-search class="form-select form-select-sm" name="employee_id" id="empSel" required>
           <option value="">선택</option>
           {% for x in emps %}<option value="{{ x.id }}" {% if emp and emp.id == x.id %}selected{% endif %}>{{ x.name }} · {{ x.department or '' }} · {{ x.employment_type }}</option>{% endfor %}
         </select></div>

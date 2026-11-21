@@ -64,12 +64,15 @@ def test_parse_days():
 
 
 def test_entitlement_fiscal_year():
-    assert leave.entitlement("2020-03-01", 2026)["annual"] == 17          # 6년차: 15 + (6-1)//2
-    assert leave.entitlement("2024-01-01", 2026)["annual"] == 15
-    assert leave.entitlement("2023-05-01", 2026)["annual"] == 16
+    # 메일플러그 회계연도 기준과 같은 값 (입사 연도별 2026년 발생)
+    for hire, days in (("2025-01-01", 15), ("2024-08-19", 15), ("2023-05-01", 15), ("2022-05-02", 16), ("2021-06-14", 16),
+                       ("2020-03-01", 17), ("2019-10-01", 17), ("2018-10-08", 18)):
+        assert leave.entitlement(hire, 2026)["annual"] == days, hire
+    for hire, days in (("2025-01-10", 15), ("2025-01-31", 14), ("2025-02-01", 14), ("2025-03-17", 12), ("2025-04-14", 11)):
+        assert leave.entitlement(hire, 2026)["annual"] == days, hire        # 입사 다음 해: 비례, 1일 단위 올림
     assert leave.entitlement("1980-01-01", 2026)["annual"] == 25          # 최대 25일
     e = leave.entitlement("2025-07-01", 2026)                            # 입사 다음 해: 비례 + 남은 월차
-    assert e["annual"] == 7.6 and e["monthly"] == 6 and e["monthly_expires"] == "2026-07-01"
+    assert e["annual"] == 8 and e["monthly"] == 6 and e["monthly_expires"] == "2026-07-01"
     e = leave.entitlement("2026-01-01", 2026)                            # 입사 연도: 월차만 (오늘 7/2 까지 6개)
     assert e["annual"] == 0 and e["monthly"] == 6 and e["first_year"]
     assert leave.entitlement("2027-01-01", 2026)["annual"] == 0
@@ -100,7 +103,8 @@ def test_import_dedup_cancel_and_link(client, monkeypatch):
             _row("휴가-T-2", emp["name"], "2026-05-29", "2026-06-01", "2d (16h)"),
             _row("휴가-T-5", emp["name"], "2026-06-15", time="오전 (4h)")],
     }
-    monkeypatch.setattr(leave, "read_rows", lambda path, name: list(files[name]))
+    monkeypatch.setattr(leave, "_sheet", lambda path, name: [])
+    monkeypatch.setattr(leave, "read_rows", lambda path, name, rows=None: list(files[name]))
     r = client.post("/hr/leave/import", files=[("files", (n, b"x", "application/vnd.ms-excel")) for n in files],
                     follow_redirects=False)
     assert r.status_code == 303
@@ -124,8 +128,9 @@ def test_import_dedup_cancel_and_link(client, monkeypatch):
 
 
 def test_import_rejects_bad_file(client, monkeypatch):
-    def bad(path, name):
+    def bad(path, name, rows=None):
         raise leave.LeaveImportError("메일플러그 '휴가 내역' 엑셀이 아닙니다")
+    monkeypatch.setattr(leave, "_sheet", lambda path, name: [])
     monkeypatch.setattr(leave, "read_rows", bad)
     r = client.post("/hr/leave/import", files=[("files", ("x.xls", b"x", "x"))], follow_redirects=False)
     assert "%ED%9C%B4%EA%B0%80" in r.headers["location"] or "msg=" in r.headers["location"]
@@ -292,3 +297,69 @@ def test_injury_insurance_crud_and_alert(client, monkeypatch):
     assert len(repo.list_insurances(emp["id"])) == 1
     client.post(f"/hr/employees/{emp['id']}/insurances/{rows[0]['id']}/delete")
     assert not repo.list_insurances(emp["id"])
+
+
+# ── 메일플러그 직원 연차현황 ─────────────────────────────────────────────
+def test_parse_amount():
+    assert leave.parse_amount("15d") == 15 and leave.parse_amount("2d 4h") == 2.5 and leave.parse_amount("4h") == 0.5
+    assert leave.parse_amount("0h") == 0 and leave.parse_amount("-") == 0 and leave.parse_amount("") == 0
+    with pytest.raises(ValueError):
+        leave.parse_amount("많음")
+
+
+def _status_sheet(rows, base="2026-07-02"):
+    head = ["이름", "소속", "직위", "입사일자", "퇴사일자", "산정 기간", "1년 미만 연차", "근속연차", "총 연차", "사용일", "잔여일"]
+    return [["직원 연차현황"] + [""] * 10, [f"기준일: {base}"] + [""] * 10, head] + rows
+
+
+def test_status_import_sets_granted_and_flags_diff(client, monkeypatch):
+    emp = next(e for e in repo.list_employees(status="재직(전체)") if e["hire_date"] < "2024-01-01" and
+               not query_one("SELECT 1 x FROM leave_records WHERE employee_id=?", (e["id"],)))
+    execute("DELETE FROM leave_adjust WHERE employee_id=?", (emp["id"],))
+    execute("INSERT INTO leave_records(employee_id, mp_name, leave_type, start_date, end_date, time_text, days, status, doc_no) "
+            "VALUES (?,?,?,?,?,?,?,?,?)", (emp["id"], emp["name"], "연차", "2026-03-03", "2026-03-04", "2d (16h)", 2, "승인", "휴가-S-1"))
+    sheet = _status_sheet([
+        [emp["name"], "팀", "과장", emp["hire_date"], "", "2026-01-01~2026-12-31", "-", "20d", "20d", "2d 4h", "17d 4h"],
+        ["없는 사람", "팀", "사원", "2022-01-03", "", "2026-01-01~2026-12-31", "-", "16d", "16d", "1d", "15d"],
+        ["지난 퇴사자", "소속없음", "사원", "2020-01-02", "2025-12-31", "2026-01-01~2026-12-31", "-", "17d", "17d", "0h", "17d"],
+        ["입사 예정", "팀", "사원", "2026-09-01", "", "", "-", "-", "0h", "0h", "0h"]])
+    assert leave._is_status(sheet) and not leave._is_status([["문서번호", "이름"]])
+    monkeypatch.setattr(leave, "_sheet", lambda path, name: sheet)
+    r = client.post("/hr/leave/import", files=[("files", ("Vacation_status.xls", b"x", "x"))], follow_redirects=False)
+    assert r.status_code == 303
+    snap = leave.get_status(emp["id"], 2026)
+    assert snap["total"] == 20 and snap["used"] == 2.5 and snap["remain"] == 17.5 and snap["base_date"] == "2026-07-02"
+    assert not query_one("SELECT 1 x FROM leave_status WHERE mp_name IN ('없는 사람', '지난 퇴사자', '입사 예정')")
+    s = leave.summary(repo.get_employee(emp["id"]), 2026)
+    assert s["granted"] == 20 and s["used"] == 2 and s["remaining"] == 18                 # 발생은 메일플러그 총 연차
+    assert s["mp"]["remain"] == 17.5 and s["mp"]["diff"] == 0.5                           # 잔여 차이 알림
+    client.post(f"/hr/leave/{emp['id']}/adjust", data={"year": 2026, "days": "3", "used_before": "0.5", "note": "맞춤"})
+    s = leave.summary(repo.get_employee(emp["id"]), 2026)
+    assert s["granted"] == 20 and s["remaining"] == 17.5 and s["mp"]["diff"] == 0          # 발생 가감은 무시, 이전 사용분은 반영
+    page = client.get("/hr/leave?year=2026").text
+    assert "기준일 2026-07-02 올림" in page and "연차현황 · 기준일 2026-07-02" in page
+    assert "잔여 일치" in client.get(f"/hr/leave/{emp['id']}?year=2026").text
+    assert leave.covered_months(2026) == [5, 6]                                            # 연차현황은 '올린 달'에 넣지 않음
+    # 다시 올리면 최근 값으로 바뀜, 다른 해는 그대로 BMS 계산
+    sheet[3][8:] = ["21d", "2d", "19d"]
+    client.post("/hr/leave/import", files=[("files", ("Vacation_status.xls", b"x", "x"))])
+    assert leave.get_status(emp["id"], 2026)["total"] == 21 and leave.summary(repo.get_employee(emp["id"]), 2025)["mp"] is None
+    # 칸이 빠진 파일·기준일 없는 파일은 저장하지 않음
+    monkeypatch.setattr(leave, "_sheet", lambda path, name: [["기준일: 2026-07-02"], ["이름", "총 연차", "잔여일"]])
+    client.post("/hr/leave/import", files=[("files", ("Vacation_status.xls", b"x", "x"))])
+    assert leave.get_status(emp["id"], 2026)["total"] == 21
+    execute("DELETE FROM leave_status WHERE employee_id=?", (emp["id"],))
+    execute("DELETE FROM leave_adjust WHERE employee_id=?", (emp["id"],))
+    execute("DELETE FROM leave_records WHERE doc_no='휴가-S-1'")
+
+
+def test_status_first_year_counts_previous_year_usage():
+    eid = execute("INSERT INTO employees(name, emp_no, department, rank, hire_date) VALUES (?,?,?,?,?)",
+                  ("연차현황일년미만", "LS-1", "팀", "사원", "2025-10-13"))
+    for doc, start in (("휴가-S-2", "2025-12-22"), ("휴가-S-3", "2026-02-02")):
+        execute("INSERT INTO leave_records(employee_id, mp_name, leave_type, start_date, end_date, time_text, days, status, doc_no) "
+                "VALUES (?,?,?,?,?,?,?,?,?)", (eid, "연차현황일년미만", "연차", start, start, "1d (8h)", 1, "승인", doc))
+    leave.import_status(_status_sheet([["연차현황일년미만", "팀", "사원", "2025-10-13", "", "2025-10-13~2026-12-31", "11d", "4d", "15d", "2d", "13d"]]), "s.xls")
+    s = leave.summary(repo.get_employee(eid), 2026)
+    assert s["granted"] == 15 and s["used"] == 2 and s["mp"]["diff"] == 0       # 산정 기간이 전년도부터면 전년도 사용도 셈
+    execute("DELETE FROM employees WHERE id=?", (eid,))

@@ -55,7 +55,7 @@
     {% if cur_user %}<div class="fs-5 fw-semibold">{{ cur_user.name }}</div><div class="text-muted">{{ cur_user.department or '' }} · {{ cur_user.start_date }}부터</div>
     {% else %}<div class="text-muted">지정된 사용자가 없습니다 (공용·보관)</div>{% endif %}
     {% if can_write %}<form method="post" action="/ga/vehicles/{{ v.id }}/assign" class="row g-1 mt-2" data-confirm="사진 점검 없이 사용자를 바꿉니다. 파손 책임을 가리려면 「사진 점검」으로 바꾸세요. 계속할까요?">
-      <div class="col-7"><select class="form-select form-select-sm" name="employee_id"><option value="">(반납 · 사용자 없음)</option>{% for o in emp_opts %}<option value="{{ o.v }}">{{ o.t }}</option>{% endfor %}</select></div>
+      <div class="col-7"><select data-search class="form-select form-select-sm" name="employee_id"><option value="">(반납 · 사용자 없음)</option>{% for o in emp_opts %}<option value="{{ o.v }}">{{ o.t }}</option>{% endfor %}</select></div>
       <div class="col-5"><input class="form-control form-control-sm" type="date" name="on_date" value="{{ today().isoformat() }}"></div>
       <div class="col-12 d-flex gap-1"><input class="form-control form-control-sm" name="note" placeholder="메모"><button class="btn btn-sm btn-outline-secondary text-nowrap">바로 변경</button></div></form>{% endif %}
     </div>

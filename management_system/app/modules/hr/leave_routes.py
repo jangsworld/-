@@ -70,6 +70,7 @@ def leave_home(request: Request, year: int | None = None, department: str = ""):
     return _render(request, "hr/leave.html", {
         "year": year, "rows": rows, "department": department, "depts": depts, "months": months,
         "last_month": (t.month if year == t.year else 12), "sch": sch, "stage": stage,
+        "status_base": leave.status_base(year), "diffs": [r for r in rows if r["mp"] and abs(r["mp"]["diff"]) >= 0.01],
         "unmatched": leave.unmatched(), "imports": query("SELECT * FROM leave_imports ORDER BY id DESC LIMIT 8"),
         "mail_ready": mailer.configured(), "years": list(range(t.year + 1, t.year - 4, -1)),
         "notice": leave.stage_notice(year) if year == t.year else None,
@@ -106,6 +107,15 @@ async def leave_import(files: list[UploadFile] = File(...)):
                 with os.fdopen(fd, "wb") as fh:
                     fh.write(raw)
                 s = leave.import_file(path, name)
+                if s.get("kind") == "status":
+                    msg = f"연차현황(기준일 {s['base']}): {s['saved']}명 반영"
+                    if s["resigned"] or s["empty"]:
+                        msg += f" · 퇴사자·산정기간 없는 사람 {s['resigned'] + s['empty']}명 제외"
+                    if s["unmatched"]:
+                        msg += f" · 임직원과 이름이 맞지 않아 빠진 사람 {len(s['unmatched'])}명({', '.join(s['unmatched'][:5])}" + \
+                               (" 외" if len(s["unmatched"]) > 5 else "") + ")"
+                    msgs.append(msg)
+                    continue
                 msg = f"{s['period']}: 추가 {s['added']} · 변경 {s['changed']} · 취소반영 {s['removed']}"
                 if s["skipped"]:
                     msg += f" · 연차 외 {s['skipped']}건 제외"

@@ -2,6 +2,7 @@
 {% block title %}{{ d.title }}{% endblock %}
 {% block page_title %}<a href="{{ ('/hr/employees/' ~ d.employee_id ~ '?tab=contract') if draft else '/hr/contracts' if d.doc_group == 'contract' else ('/hr/leave/' ~ d.employee_id) if d.doc_group == 'leave' else '/hr/certificates' }}" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> {{ d.title }}{% endblock %}
 {% block content %}
+<style>{{ brand_css()|safe }}</style>{# 도장·로고 자리. 정해진 글자로만 만들어지는 CSS #}
 <div class="row g-3">
   <div class="col-xl-9 print-col">
     {% if draft %}<div class="alert alert-info py-2 small no-print"><i class="bi bi-eye"></i> <b>미리보기입니다. 아직 저장되지 않았습니다.</b>
@@ -27,13 +28,15 @@
       <label class="form-label small">{{ '체결일' if d.doc_group == 'contract' else '발급일' }}</label>
       <input type="date" class="form-control form-control-sm mb-3" id="signed" value="{{ d.signed_date or '' }}">
       <div class="d-grid gap-2">
-        <button class="btn btn-primary btn-sm" id="saveBtn"><i class="bi bi-save"></i> {{ '저장 (계약서 만들기)' if draft else '저장' }} <span class="small opacity-75">(Ctrl+S)</span></button>
-        <button class="btn btn-outline-dark btn-sm" data-print><i class="bi bi-printer"></i> 인쇄 / PDF 저장</button>
+        <button class="btn btn-primary btn-sm" id="saveBtn"><i class="bi bi-save"></i> {{ '저장 (계약서 만들기)' if draft else 'BMS에 저장' if d.doc_group == 'certificate' else '저장' }} <span class="small opacity-75">(Ctrl+S)</span></button>
+        <button class="btn btn-outline-dark btn-sm" data-print><i class="bi bi-printer"></i> {{ '인쇄' if d.doc_group == 'certificate' else '인쇄 / PDF 저장' }}</button>
         {% if draft %}<a class="btn btn-outline-secondary btn-sm" href="/hr/employees/{{ d.employee_id }}?tab=contract"><i class="bi bi-x-lg"></i> 저장하지 않고 나가기</a>
         {% else %}
         <form method="post" action="/hr/documents/{{ d.id }}/pdf" class="d-grid">
           <button class="btn btn-outline-success btn-sm"><i class="bi bi-folder-check"></i> 임직원 폴더에 PDF 저장</button></form>
-        {% if d.pdf_path %}<a class="btn btn-success btn-sm" href="/hr/documents/{{ d.id }}/pdf" target="_blank"><i class="bi bi-file-earmark-pdf"></i> 보관본 열기 <span class="small opacity-75">({{ d.pdf_saved_at[:16] }})</span></a>{% endif %}
+        {% if d.pdf_path %}<a class="btn btn-success btn-sm" href="/hr/documents/{{ d.id }}/pdf" target="_blank"><i class="bi bi-file-earmark-pdf"></i> 폴더에 저장한 PDF 열기 <span class="small opacity-75">({{ d.pdf_saved_at[:16] }})</span></a>
+        <div class="help text-break"><i class="bi bi-folder2-open"></i> 저장 위치: 임직원 서류 폴더 \ {{ pdf_where }}
+          {% if pdf_stale %}<div class="text-danger">폴더에 저장한 뒤 내용을 고쳤습니다. 폴더에도 반영하려면 [임직원 폴더에 PDF 저장]을 다시 누르세요.</div>{% endif %}</div>{% endif %}
         {% if d.doc_group == 'contract' and not locked %}
         <form method="post" action="/hr/documents/{{ d.id }}/sign-request" class="d-grid" data-confirm="저장된 내용으로 {{ d.name }}님께 전자서명을 요청합니다. 요청 후 문서를 고치면 다시 요청해야 합니다. 계속할까요?">
           <button class="btn btn-warning btn-sm"><i class="bi bi-send"></i> {{ '서명 다시 요청' if sign and sign.status == '대기' else '직원에게 전자서명 요청' }}</button></form>
@@ -45,10 +48,17 @@
         {% endif %}
         <form method="post" action="/hr/documents/{{ d.id }}/regenerate" class="d-grid" data-confirm="편집한 내용이 사라지고 템플릿+최신 임직원 정보로 다시 작성됩니다. 계속할까요?">
           <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-repeat"></i> 최신 정보로 다시 작성</button></form>
-        <form method="post" action="/hr/documents/{{ d.id }}/delete" class="d-grid" data-confirm="문서를 삭제할까요?">
+        <form method="post" action="/hr/documents/{{ d.id }}/delete" class="d-grid" data-confirm="BMS 대장에서 이 문서를 삭제할까요?{{ ' 임직원 폴더에 저장한 PDF 파일은 지워지지 않고 그대로 남습니다.' if d.pdf_path }}">
           <button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> 삭제</button></form>
         {% endif %}
       </div>
+      {% if d.doc_group == 'certificate' and not draft %}
+      <div class="help mt-2 border rounded p-2">
+        <b>BMS에 저장</b>: 고친 내용·상태를 BMS 대장에만 저장합니다.<br>
+        <b>임직원 폴더에 PDF 저장</b>: 이 버튼을 눌렀을 때만 그 직원 폴더에 PDF 파일이 만들어집니다.<br>
+        <b>메일로 보내기</b>: PDF를 첨부해 보내기만 하고 폴더에는 저장하지 않습니다.<br>
+        <b>발급취소·삭제</b>: BMS 대장만 바뀝니다. 폴더에 이미 저장한 PDF 파일은 지워지지 않습니다.</div>
+      {% endif %}
       <div class="help mt-2" id="saveState">{{ '아직 저장되지 않음 (미리보기)' if draft else '마지막 저장 ' ~ d.updated_at }}</div>
       {% if d.doc_group == 'contract' and not draft %}
       {% if sign and sign.status == '완료' %}

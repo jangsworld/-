@@ -393,7 +393,10 @@ def test_certificate_saved_to_folder_and_emailed(client, mail, fake_pdf, root):
                     follow_redirects=False)
     doc_id = int(r.headers["location"].split("/")[-1].split("?")[0])
     d = repo.get_document(doc_id)
-    assert (root / (emp.get("folder_name") or emp["name"])).is_dir() and d["pdf_path"]   # 발급 즉시 임직원 폴더에 PDF 저장
+    assert not d["pdf_path"]                                    # 발급만으로는 폴더에 저장하지 않음 (버튼을 눌렀을 때만)
+    client.post(f"/hr/documents/{doc_id}/pdf")
+    d = repo.get_document(doc_id)
+    assert (root / (emp.get("folder_name") or emp["name"])).is_dir() and d["pdf_path"]
     assert storage.read_verified(d["pdf_path"], d["pdf_sha256"]).startswith(b"%PDF")
     client.post(f"/hr/documents/{doc_id}/email")
     assert mail.sent[-1]["to"] == emp["email"] and mail.sent[-1]["attachments"]

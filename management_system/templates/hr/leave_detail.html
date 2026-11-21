@@ -13,8 +13,11 @@
     <div class="small text-muted mb-3">
       발생 내역: 정기 {{ '%g'|format(s.ent.annual) }}일{% if s.ent.note %} ({{ s.ent.note }}){% endif %}
       {% if s.ent.monthly %} + 1년 미만 월차 {{ '%g'|format(s.ent.monthly) }}일 (입사 1년 되는 {{ s.ent.monthly_expires }} 소멸){% endif %}
-      {% if s.adj.days %} + 조정 {{ '%+g'|format(s.adj.days) }}일{% endif %}
+      {% if s.adj.days and not s.mp %} + 조정 {{ '%+g'|format(s.adj.days) }}일{% endif %}
       {% if s.adj.used_before %} · 사용에 올리기 전 사용분 {{ '%g'|format(s.adj.used_before) }}일 포함{% endif %}
+      {% if s.mp %}<div class="mt-1">메일플러그 연차현황(기준일 {{ s.mp.base }}, 산정 {{ s.mp.from }} ~ {{ s.mp.to }}): 총 {{ '%g'|format(s.mp.total) }} · 사용 {{ '%g'|format(s.mp.used) }} · 잔여 {{ '%g'|format(s.mp.remain) }}일
+        {% if s.mp.diff|abs >= 0.01 %}<span class="badge text-bg-warning">잔여가 {{ '%+g'|format(s.mp.diff) }}일 다릅니다</span> <span>휴가 내역을 1/1~12/31 로 다시 올려 보세요. 그래도 다르면 오른쪽 조정의 '올리기 전 사용분'으로 맞춥니다.</span>
+        {% else %}<span class="badge text-bg-success">잔여 일치</span>{% endif %}</div>{% endif %}
     </div>
 
     <div class="card mb-3"><div class="card-header small"><i class="bi bi-calendar2-week"></i> 사용 내역 (메일플러그)</div>

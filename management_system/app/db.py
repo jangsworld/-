@@ -321,6 +321,22 @@ CREATE TABLE IF NOT EXISTS leave_imports (
     imported_by TEXT,
     imported_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
+-- 메일플러그 '직원 연차현황' (직원·연도별 최근 올린 값: 총 연차·사용·잔여)
+CREATE TABLE IF NOT EXISTS leave_status (
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    year        INTEGER NOT NULL,         -- 기준일의 연도
+    base_date   TEXT NOT NULL,            -- 엑셀의 기준일
+    period_from TEXT, period_to TEXT,     -- 산정 기간
+    first_days  REAL NOT NULL DEFAULT 0,  -- 1년 미만 연차
+    annual_days REAL NOT NULL DEFAULT 0,  -- 근속연차
+    total       REAL NOT NULL DEFAULT 0,
+    used        REAL NOT NULL DEFAULT 0,
+    remain      REAL NOT NULL DEFAULT 0,
+    mp_name     TEXT,
+    import_id   INTEGER,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (employee_id, year)
+);
 -- 메일플러그 이름 ↔ 임직원 (동명이인·영문 이름 등 담당자가 한 번 연결)
 CREATE TABLE IF NOT EXISTS leave_name_map (
     mp_name     TEXT PRIMARY KEY,
@@ -1107,6 +1123,7 @@ ADDED_COLUMNS = {
     "ga_company_items": ["emp_insurance", "alert_email", "alert_sent"],
     "appointments": ["field", "status", "batch_title", "created_by"],
     "offboard_mails": ["fmt"],
+    "leave_imports": ["kind"],                                     # 'status' = 연차현황 엑셀, 비어 있으면 휴가 내역
     "users": ["email"],                                            # 2단계 인증 메일 받을 회사 메일
     "sessions": ["mail_code", "mail_exp", "mail_tries", "mail_sends"],  # 메일 인증번호(해시)·만료·시도
 }

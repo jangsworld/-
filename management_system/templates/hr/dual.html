@@ -68,7 +68,7 @@
   <div class="modal-header"><h6 class="modal-title">프로젝트 이중가입 <span data-mode-title>등록</span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body row g-2">
     <div class="col-md-4"><label class="form-label small">직원 <span class="text-danger">*</span></label>
-      <select class="form-select form-select-sm" name="employee_id" required><option value="">직원을 고르세요</option>
+      <select data-search class="form-select form-select-sm" name="employee_id" required><option value="">직원을 고르세요</option>
         {% for e in emps %}<option value="{{ e.id }}">{{ e.name }} · {{ e.department or '' }} · {{ e.emp_no or '' }}</option>{% endfor %}</select></div>
     <div class="col-md-4"><label class="form-label small">상대 사업장 <span class="text-danger">*</span></label><input class="form-control form-control-sm" name="workplace" required maxlength="100" placeholder="이중가입되는 회사 이름"></div>
     <div class="col-md-4"><label class="form-label small">발주처</label><input class="form-control form-control-sm" name="client" maxlength="200"></div>

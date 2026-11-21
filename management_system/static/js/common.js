@@ -482,3 +482,25 @@ const moneyVal = (v) => { const s = String(v ?? '').replace(/[^\d-]/g, ''); retu
   document.addEventListener('shown.bs.modal', (e) => mark(e.target));
 })();
 
+
+// 직원 고르는 칸에 이름 찾기: <select data-search> 위에 입력 칸이 생기고, 쓰는 대로 목록이 줄어듭니다
+document.querySelectorAll('select[data-search]').forEach((sel) => {
+  const all = [...sel.options];
+  const box = document.createElement('input');
+  box.type = 'search'; box.className = 'form-control form-control-sm sel-search'; box.placeholder = '이름을 써서 찾기';
+  box.autocomplete = 'off'; box.setAttribute('aria-label', '이름을 써서 찾기');
+  const none = new Option('찾는 이름이 없습니다', ''); none.disabled = true;
+  sel.parentNode.insertBefore(box, sel);
+  const apply = () => {
+    const q = box.value.trim().toLowerCase(), keep = sel.value;
+    const hit = all.filter((o) => !q || (o.value && o.text.toLowerCase().includes(q)));
+    sel.replaceChildren(...(hit.length ? hit : [none]));
+    const real = hit.filter((o) => o.value);
+    sel.value = real.some((o) => o.value === keep) ? keep : (q && real.length ? real[0].value : (hit.length ? hit[0].value : ''));
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  box.addEventListener('input', apply);
+  box.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sel.focus(); } });   // Enter 로 저장되지 않게
+  const modal = sel.closest('.modal');
+  if (modal) modal.addEventListener('hidden.bs.modal', () => { box.value = ''; sel.replaceChildren(...all); });
+});

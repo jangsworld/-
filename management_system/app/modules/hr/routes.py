@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Stre
 
 from app.common import templates, today, sanitize_html, add_months, days_until, to_date
 from app.db import batch, execute, get_codes, get_settings, set_setting, audit
-from app import mailer
+from app import brand, mailer
 from app.config import settings as cfg
 from app.modules.hr import intake, repo, rrn as rrn_util, services, signing
 from app.modules.hr.constants import (
@@ -860,6 +860,8 @@ def document_editor(request: Request, doc_id: int):
         "mail_ready": mailer.configured(),
         "mails": [{**m, "to_masked": _mask_email(m["to_addr"])} for m in repo.list_doc_mails(doc_id)],
         "history": repo.list_documents(d["doc_group"], employee_id=d["employee_id"]),
+        "pdf_where": " \\ ".join(re.split(r"[\\/]+", d["pdf_path"])[-2:]) if d.get("pdf_path") else "",
+        "pdf_stale": bool(d.get("pdf_path")) and (d.get("pdf_saved_at") or "") < (d.get("updated_at") or ""),
     }, {"contract": "hr.contracts", "leave": "hr.leave"}.get(d["doc_group"], "hr.certificates"))
 
 
@@ -876,6 +878,9 @@ async def document_save(doc_id: int, request: Request):
         kw["signed_date"] = today().isoformat()
     repo.update_document(doc_id, **kw)
     audit("hr", "문서 저장", f"doc#{doc_id}", kw.get("status", ""))
+    d = repo.get_document(doc_id)
+    if d and d["doc_group"] == "certificate":      # 증명서: [저장]은 BMS 에만. 폴더에는 [임직원 폴더에 PDF 저장]을 눌렀을 때만
+        return {"ok": True, "message": "BMS에 저장되었습니다" + (" · 폴더에 저장한 PDF는 그대로입니다" if d.get("pdf_path") else "")}
     msg = "저장되었습니다"
     if kw.get("status") in ("체결완료", "발급완료") and cfg.pdf_on_signed:
         ok, m = await run_in_threadpool(services.store_document_pdf, doc_id)
@@ -937,7 +942,13 @@ def email_document(doc_id: int, target: str = "employee", manual_to: str = "", n
         return False, f"{d['status']} 상태의 문서는 보낼 수 없습니다"
     if "ph-missing" in (d["content"] or ""):
         return False, "비어 있는 항목([항목] 표시)이 있습니다. 문서를 완성·저장한 뒤 보내 주세요"
-    if not d.get("pdf_path") or (d.get("pdf_saved_at") or "") < (d.get("updated_at") or ""):
+    pdf = None
+    if d["doc_group"] == "certificate":                   # 증명서: 지금 내용으로 PDF 를 만들어 보내기만 함 (폴더에 저장하지 않음)
+        try:
+            pdf = storage.render_pdf(d["content"], d["title"])
+        except storage.StorageError as ex:
+            return False, str(ex)
+    elif not d.get("pdf_path") or (d.get("pdf_saved_at") or "") < (d.get("updated_at") or ""):
         ok, m = services.store_document_pdf(doc_id)       # 고친 뒤 PDF 를 다시 만들어 최신본을 보냄
         if not ok:
             return False, m
@@ -951,7 +962,7 @@ def email_document(doc_id: int, target: str = "employee", manual_to: str = "", n
         body += f"\n\n{note}"
     body += f"\n\n{company} 경영관리팀"
     try:
-        pdf = storage.read_verified(d["pdf_path"], d["pdf_sha256"])
+        pdf = pdf or storage.read_verified(d["pdf_path"], d["pdf_sha256"])
         mailer.send(to, f"[{company}] {d['title']}", body, [(f"{d['category']}_{d['name']}.pdf", pdf)])
     except (storage.StorageError, mailer.MailError) as ex:
         audit("hr", "메일 전송 실패", f"doc#{doc_id}", str(ex)[:120])
@@ -1012,7 +1023,17 @@ def document_delete(doc_id: int):
     d = repo.get_document(doc_id)
     repo.delete_document(doc_id)
     back = "/hr/certificates" if d and d["doc_group"] == "certificate" else "/hr/contracts"
-    return _redirect(back, "삭제되었습니다")
+    kept = " (임직원 폴더에 저장한 PDF 파일은 지우지 않았습니다)" if d and d.get("pdf_path") else ""
+    return _redirect(back, "BMS에서 삭제되었습니다" + kept)
+
+
+@router.get("/api/doc-asset/{kind}")
+def doc_asset(kind: str):
+    """증명서 화면에 도장·로고를 보여 주는 주소. 인사 담당 이상만 (/hr/api 규칙)."""
+    got = brand.get(kind)
+    if not got:
+        raise HTTPException(404, "그림이 없습니다")
+    return Response(got[0], media_type=got[1], headers={"Cache-Control": "private, max-age=300"})
 
 
 # ── 템플릿 관리 ──
@@ -1131,11 +1152,8 @@ async def certificate_create(request: Request):
         params=json.dumps(params, ensure_ascii=False), content=content, status="발급완료",
         signed_date=today().isoformat(),
     )
-    msg = f"{params['doc_no']} 발급되었습니다"
+    msg = f"{params['doc_no']} 발급되었습니다 (BMS 대장에 저장)"
     mail_mode = f.get("mail_mode") or "none"
-    if cfg.pdf_on_signed or mail_mode in ("employee", "manual"):
-        _, m = await run_in_threadpool(services.store_document_pdf, doc_id)
-        msg += " · " + m
     if mail_mode in ("employee", "manual"):
         ok, m = await run_in_threadpool(email_document, doc_id, mail_mode, f.get("mail_to") or "", "")
         msg += " · " + ("메일 " + m if ok else "메일은 보내지 못했습니다: " + m)

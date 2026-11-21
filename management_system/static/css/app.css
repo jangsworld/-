@@ -270,3 +270,19 @@ body:has(.form-actions) .toast-container { bottom: 64px !important; }
 .rte-body:focus { box-shadow: inset 0 0 0 2px rgba(45, 90, 140, .25); }
 .rte-body ul, .rte-body ol, .rich-view ul, .rich-view ol { margin: 2px 0 6px; padding-left: 1.3rem; }
 .rich-view { font-size: .85rem; line-height: 1.65; }
+
+/* 증명서 양식 2판 (재직·경력증명서): 화면과 PDF 가 같은 모양 */
+.paper .doc-head { display: flex; justify-content: space-between; align-items: flex-end; min-height: 14mm; padding-bottom: 3mm; border-bottom: 2px solid #222; }
+.paper .doc-logo { display: none; }
+.paper .doc-no { margin-left: auto; font-size: 10pt; color: #333; }
+.paper .cert-title { font-size: 26pt; letter-spacing: .55em; text-indent: .55em; margin: 17mm 0 14mm; }
+.doc-table.cert-table { table-layout: fixed; }
+.doc-table.cert-table th, .doc-table.cert-table td { padding: 9px 14px; font-size: 11pt; height: 12mm; border-color: #555; }
+.doc-table.cert-table th { width: 17%; background: #f3f5f7; letter-spacing: .12em; }
+.paper .cert-text { text-align: center; font-size: 13pt; margin: 22mm 0 16mm; }
+.paper .cert-date { text-align: center; font-size: 12pt; margin-bottom: 22mm; }
+.paper .cert-sign { text-align: center; }
+.paper .cert-company { font-size: 18pt; font-weight: 700; letter-spacing: .08em; }
+.paper .cert-ceo { font-size: 14pt; margin-top: 5mm; }
+.paper .cert-foot { text-align: center; font-size: 9pt; color: #555; margin-top: 16mm; padding-top: 3mm; border-top: 1px solid #bbb; }
+.sel-search { margin-bottom: 4px; }

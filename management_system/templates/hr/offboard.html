@@ -30,7 +30,7 @@
 <div class="card mb-3"><div class="card-body d-flex flex-wrap gap-2 align-items-end">
   <form method="get" action="/hr/offboard/start" class="d-flex flex-wrap gap-2 align-items-end">
     <div><label class="form-label small mb-0" for="obEmp">퇴사 예정 직원</label>
-      <select class="form-select form-select-sm" name="emp" id="obEmp" required style="min-width:260px"><option value="">직원을 고르세요</option>
+      <select data-search class="form-select form-select-sm" name="emp" id="obEmp" required style="min-width:260px"><option value="">직원을 고르세요</option>
         {% for e in emps %}<option value="{{ e.id }}">{{ e.name }} · {{ e.department or '' }} {{ e.rank or '' }}</option>{% endfor %}</select></div>
     <button class="btn btn-sm btn-primary"><i class="bi bi-send"></i> 퇴사 안내 시작</button>
   </form>

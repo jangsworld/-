@@ -3,7 +3,9 @@
 - 메일플러그 근태는 외부 연결(API)이 없어 관리자가 매월 '휴가 내역' 엑셀을 내려받아 올립니다.
   같은 문서번호는 한 번만 저장되고, 같은 기간 파일을 다시 올리면 그 기간에서 사라진(취소된) 문서는 지웁니다.
 - 연차 종류만 보관합니다. 사유·결재자·보건휴가 등은 저장하지 않습니다(개인정보 최소화).
-- 회계연도(1/1~12/31) 기준으로 발생 연차를 계산합니다. 메일플러그 숫자와 다르면 조정값으로 맞춥니다.
+- 회계연도(1/1~12/31) 기준으로 발생 연차를 계산합니다(메일플러그와 같은 방식).
+- 메일플러그 '직원 연차현황' 엑셀도 올릴 수 있습니다. 올리면 그 해 발생(총 연차)은 메일플러그 숫자를 그대로 쓰고,
+  사용일은 휴가 내역으로 세어 메일플러그 잔여와 다른 사람을 알려 줍니다.
 - BMS 는 메일플러그를 읽기만 합니다. 휴가 신청·승인은 지금처럼 메일플러그에서 합니다.
 """
 import math
@@ -29,7 +31,8 @@ class LeaveImportError(Exception):
 def entitlement(hire, year: int, resign=None) -> dict:
     """회계연도 기준 발생 연차.
 
-    annual : 그 해 1/1 에 생기는 연차 (입사 다음 해는 입사 연도 재직일수 비례, 그 뒤 15일 + 2년마다 1일, 최대 25일)
+    annual : 그 해 1/1 에 생기는 연차. 입사 다음 해는 입사 연도 재직일수 비례(1일 단위 올림),
+             그다음 두 해는 15일, 이후 2년마다 1일씩 더해 최대 25일 (메일플러그 회계연도 기준과 같음)
     monthly: 입사 1년 미만 기간에 매월 1일씩 생기는 연차 중 그 해에 생긴 일수 (최대 11일, 입사 1년이 되는 날 소멸)
     """
     h = to_date(hire)
@@ -40,11 +43,11 @@ def entitlement(hire, year: int, resign=None) -> dict:
     k = year - h.year
     if k == 1:
         days_in = (date(h.year, 12, 31) - h).days + 1
-        out["annual"] = math.ceil(15 * days_in / (366 if _leap(h.year) else 365) * 10) / 10
+        out["annual"] = float(math.ceil(round(15 * days_in / (366 if _leap(h.year) else 365), 6)))
         if h.month != 1 or h.day != 1:
             out["note"] = f"입사 연도 재직 {days_in}일 비례"
     elif k >= 2:
-        out["annual"] = float(min(MAX_ANNUAL, 15 + (k - 1) // 2))
+        out["annual"] = float(min(MAX_ANNUAL, 15 + (k - 2) // 2))
     limit = min(today(), end) if end else today()
     first_anniv = add_years(h, 1)
     accrued = [add_months(h, m) for m in range(1, 12)]
@@ -87,8 +90,7 @@ def _date_cell(v) -> str:
     return d.isoformat() if d else ""
 
 
-def read_rows(path: str, filename: str) -> list[dict]:
-    """메일플러그 '휴가 내역' 엑셀(.xls/.xlsx) → 행 목록. 머리글 이름으로 칸을 찾습니다."""
+def _sheet(path: str, filename: str) -> list[list]:
     ext = os.path.splitext(filename)[1].lower()
     try:
         if ext == ".xls":
@@ -107,6 +109,17 @@ def read_rows(path: str, filename: str) -> list[dict]:
         raise LeaveImportError(".xlsx 는 읽을 수 없습니다. 메일플러그에서 받은 .xls 그대로 올려 주세요") from ex
     except Exception as ex:
         raise LeaveImportError(f"엑셀을 읽지 못했습니다 ({ex.__class__.__name__})") from ex
+    return rows
+
+
+def _is_status(rows: list[list]) -> bool:
+    """'직원 연차현황' 엑셀인지 (머리글에 총 연차·잔여일이 있음)."""
+    return any({"총 연차", "잔여일"} <= {str(c).strip() for c in r} for r in rows[:6])
+
+
+def read_rows(path: str, filename: str, rows: list[list] | None = None) -> list[dict]:
+    """메일플러그 '휴가 내역' 엑셀(.xls/.xlsx) → 행 목록. 머리글 이름으로 칸을 찾습니다."""
+    rows = rows if rows is not None else _sheet(path, filename)
     head_idx = next((i for i, r in enumerate(rows[:10]) if "문서번호" in [str(c).strip() for c in r]), None)
     if head_idx is None:
         raise LeaveImportError("메일플러그 '휴가 내역' 엑셀이 아닙니다 (문서번호 칸이 없습니다)")
@@ -171,8 +184,120 @@ def _name_map() -> dict:
     return {r["mp_name"]: r["employee_id"] for r in query("SELECT * FROM leave_name_map")}
 
 
+# ── 직원 연차현황 (메일플러그가 계산한 총 연차·사용·잔여) ─────────────────
+STATUS_HEADERS = {"name": "이름", "hire": "입사일자", "total": "총 연차", "used": "사용일", "remain": "잔여일"}
+STATUS_OPTIONAL = {"resign": "퇴사일자", "period": "산정 기간", "first": "1년 미만 연차", "annual": "근속연차"}
+
+
+def parse_amount(text) -> float:
+    """'15d' → 15, '2d 4h' → 2.5, '4h' → 0.5, '0h'·'-'·빈칸 → 0 (8시간 = 1일)."""
+    t = str(text if text is not None else "").strip()
+    if t in ("", "-"):
+        return 0.0
+    m = re.fullmatch(r"(?:(\d+(?:\.\d+)?)\s*d)?\s*(?:(\d+(?:\.\d+)?)\s*h)?", t)
+    if not m or not (m.group(1) or m.group(2)):
+        raise ValueError(f"일수를 읽을 수 없습니다: {t}")
+    return round(float(m.group(1) or 0) + float(m.group(2) or 0) / 8, 2)
+
+
+def read_status(rows: list[list]) -> tuple[str, list[dict]]:
+    """(기준일, 행 목록)."""
+    base = ""
+    for r in rows[:6]:
+        m = re.search(r"기준일\s*[:：]\s*(\d{4}-\d{2}-\d{2})", " ".join(str(c) for c in r))
+        if m:
+            base = m.group(1)
+    head_idx = next(i for i, r in enumerate(rows[:6]) if {"총 연차", "잔여일"} <= {str(c).strip() for c in r})
+    head = [str(c).strip() for c in rows[head_idx]]
+    missing = [v for v in STATUS_HEADERS.values() if v not in head]
+    if missing:
+        raise LeaveImportError("연차현황 엑셀에 필요한 칸이 없습니다: " + ", ".join(missing))
+    if not to_date(base):
+        raise LeaveImportError("연차현황 엑셀에서 기준일을 찾지 못했습니다")
+    col = {k: head.index(v) for k, v in {**STATUS_HEADERS, **STATUS_OPTIONAL}.items() if v in head}
+    out = []
+    for n, r in enumerate(rows[head_idx + 1:], start=head_idx + 2):
+        g = lambda k: str(r[col[k]]).strip() if k in col and col[k] < len(r) else ""   # noqa: E731
+        if not g("name"):
+            continue
+        row = {"line": n, "name": g("name"), "hire": _date_cell(r[col["hire"]]), "resign": _date_cell(g("resign")),
+               "from": "", "to": ""}
+        m = re.fullmatch(r"(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})", g("period"))
+        if m:
+            row["from"], row["to"] = m.group(1), m.group(2)
+        try:
+            for k in ("first", "annual", "total", "used", "remain"):
+                row[k] = parse_amount(g(k))
+        except ValueError as ex:
+            row["error"] = str(ex)
+        out.append(row)
+    return base, out
+
+
+def _match_status(row: dict, mapping: dict, employees: list[dict]) -> int | None:
+    """이름 연결표 → 같은 이름 한 명 → 같은 이름이 여럿이면 입사일까지 같은 한 명."""
+    if row["name"] in mapping:
+        return mapping[row["name"]]
+    for key in (lambda e: (e["name"] or "").strip() == row["name"], lambda e: _norm(e["name"]) == _norm(row["name"])):
+        hits = [e for e in employees if key(e)]
+        if len(hits) > 1:
+            hits = [e for e in hits if (e["hire_date"] or "") == row["hire"]]
+        if len(hits) == 1:
+            return hits[0]["id"]
+    return None
+
+
+def import_status(rows: list[list], filename: str) -> dict:
+    base, items = read_status(rows)
+    errors = [f"{r['line']}행: {r['error']}" for r in items if r.get("error")]
+    if errors:
+        raise LeaveImportError("저장하지 않았습니다. " + " / ".join(errors[:5]) + (" 외" if len(errors) > 5 else ""))
+    year = int(base[:4])
+    mapping = _name_map()
+    employees = query("SELECT id, name, hire_date FROM employees")
+    stats = {"kind": "status", "file": filename, "base": base, "year": year, "saved": 0, "resigned": 0, "empty": 0, "unmatched": []}
+    with batch():
+        imp = execute("INSERT INTO leave_imports(filename, period_from, period_to, total, imported_by, kind) VALUES (?,?,?,?,?,'status')",
+                      (filename, base, base, len(items), current_actor.get()[1]))
+        for r in items:
+            if r["resign"] and r["resign"] < f"{year}-01-01":
+                stats["resigned"] += 1              # 그 해 전에 퇴사한 사람
+                continue
+            if not r["from"]:
+                stats["empty"] += 1                 # 산정 기간이 아직 없는 사람 (입사 예정 등)
+                continue
+            emp_id = _match_status(r, mapping, employees)
+            if not emp_id:
+                stats["unmatched"].append(r["name"])
+                continue
+            execute("INSERT INTO leave_status(employee_id, year, base_date, period_from, period_to, first_days, annual_days, "
+                    "total, used, remain, mp_name, import_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(employee_id, year) DO UPDATE SET base_date=excluded.base_date, period_from=excluded.period_from, "
+                    "period_to=excluded.period_to, first_days=excluded.first_days, annual_days=excluded.annual_days, "
+                    "total=excluded.total, used=excluded.used, remain=excluded.remain, mp_name=excluded.mp_name, "
+                    "import_id=excluded.import_id, updated_at=datetime('now','localtime')",
+                    (emp_id, year, base, r["from"], r["to"], r["first"], r["annual"], r["total"], r["used"], r["remain"], r["name"], imp))
+            stats["saved"] += 1
+        execute("UPDATE leave_imports SET added=?, changed=0, removed=0, skipped=? WHERE id=?",
+                (stats["saved"], stats["resigned"] + stats["empty"] + len(stats["unmatched"]), imp))
+        audit("hr", "연차현황 엑셀 올리기", filename, f"기준일 {base} · 반영 {stats['saved']}명 · 연결 안 됨 {len(stats['unmatched'])}명")
+    return stats
+
+
+def get_status(emp_id: int, year: int) -> dict | None:
+    return query_one("SELECT * FROM leave_status WHERE employee_id=? AND year=?", (emp_id, year))
+
+
+def status_base(year: int) -> str:
+    r = query_one("SELECT MAX(base_date) d FROM leave_status WHERE year=?", (year,))
+    return (r or {}).get("d") or ""
+
+
 def import_file(path: str, filename: str) -> dict:
-    rows = read_rows(path, filename)
+    sheet = _sheet(path, filename)
+    if _is_status(sheet):
+        return import_status(sheet, filename)
+    rows = read_rows(path, filename, sheet)
     errors = [f"{r['line']}행: {r['error']}" for r in rows if r.get("error")]
     if errors:
         raise LeaveImportError("저장하지 않았습니다. " + " / ".join(errors[:5]) + (" 외" if len(errors) > 5 else ""))
@@ -236,7 +361,7 @@ def unmatched() -> list[dict]:
 def covered_months(year: int) -> list[int]:
     """그 해에 엑셀로 올린 달 (1~12)."""
     months = set()
-    for r in query("SELECT period_from, period_to FROM leave_imports WHERE period_from<=? AND period_to>=?",
+    for r in query("SELECT period_from, period_to FROM leave_imports WHERE COALESCE(kind,'')<>'status' AND period_from<=? AND period_to>=?",
                    (f"{year}-12-31", f"{year}-01-01")):
         a, b = to_date(r["period_from"]), to_date(r["period_to"])
         d = date(a.year, a.month, 1)
@@ -308,13 +433,24 @@ def summary(emp: dict, year: int) -> dict:
     recs = records(emp["id"], year)
     used = sum(r["days"] for r in recs if r["status"] == "승인") + (adj["used_before"] or 0)
     granted = ent["annual"] + ent["monthly"] + (adj["days"] or 0)
+    snap = get_status(emp["id"], year)
+    mp = None
+    if snap:        # 메일플러그 연차현황을 올린 해: 발생은 메일플러그 총 연차 그대로 (조정의 '발생 가감'은 쓰지 않음)
+        granted = snap["total"]
+        ent = dict(ent, annual=snap["annual_days"], monthly=snap["first_days"], note="메일플러그 연차현황 기준")
+        if snap["period_from"] and snap["period_from"] < f"{year}-01-01":      # 1년 미만: 산정 기간이 전년도 입사일부터
+            used += sum(r["days"] for r in query(
+                "SELECT days FROM leave_records WHERE employee_id=? AND status='승인' AND start_date>=? AND start_date<?",
+                (emp["id"], snap["period_from"], f"{year}-01-01")))
+        mp = {"base": snap["base_date"], "total": snap["total"], "used": snap["used"], "remain": snap["remain"],
+              "from": snap["period_from"], "to": snap["period_to"], "diff": round(granted - used - snap["remain"], 2)}
     pl = plans(emp["id"], year)
     used_dates = _used_dates(recs)
     t = today().isoformat()
     upcoming = sum(PARTS.get(p["part"], 1) for p in pl if p["plan_date"] >= t and p["plan_date"] not in used_dates)
     missed = [p for p in pl if p["plan_date"] < t and p["plan_date"] not in used_dates]
     remaining = round(granted - used, 2)
-    return {"emp": emp, "ent": ent, "adj": adj, "granted": round(granted, 2), "used": round(used, 2),
+    return {"emp": emp, "ent": ent, "adj": adj, "mp": mp, "granted": round(granted, 2), "used": round(used, 2),
             "remaining": remaining, "upcoming": upcoming, "missed": len(missed),
             "unplanned": max(0.0, round(remaining - upcoming, 2)),
             "rate": round(used / granted * 100) if granted else None,
