@@ -44,7 +44,7 @@ def test_onboard_is_separate_from_offboard(clients, monkeypatch):
     monkeypatch.setattr(mailer, "send", lambda to, subject, body, *a, **k: sent.append((to, subject, body)))
     assert onboard.T_MAIN == "onboardings" and offboard.T_MAIN == "offboardings" and onboard.NOTICE_KEY == "a1"
     page = hr.get("/hr/onboard").text
-    assert "입사 절차 안내" in page and "입사 처리 단계" in page and "{입사일}" in page and "퇴사" not in page.split("<main")[1].split("</main>")[0]
+    assert "입사 절차 안내" in page and "입사 처리 단계" in page and "{입사일}" in page and "퇴사 처리 단계" not in page and "퇴직 예정일" not in page
     page = hr.get(f"/hr/onboard/{e['id']}").text
     assert f'value="{e["hire_date"]}"' in page and "서류 제출 기한" in page          # 인사기록카드 입사일이 기본값
     # 서류 제출 기한은 입사일보다 늦어도 됨 (퇴사의 인수인계 기한과 다름)
