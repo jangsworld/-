@@ -513,6 +513,53 @@ CREATE TABLE IF NOT EXISTS offboard_mails (
     fmt         TEXT                       -- 'html' = 글씨 편집기로 쓴 글, 비어 있으면 글자만
 );
 
+-- ── 인사: 입사 절차 안내 (퇴사 절차 안내와 같은 모양. last_day = 입사일, handover_due = 서류 제출 기한, successor = 안내 담당) ──
+CREATE TABLE IF NOT EXISTS onboardings (
+    employee_id  INTEGER PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+    last_day     TEXT NOT NULL,            -- 입사일
+    handover_due TEXT,                     -- 서류 제출 기한
+    successor    TEXT,                     -- 안내 담당
+    note         TEXT,
+    closed_at    TEXT,                     -- 절차 완료 표시한 날
+    created_by   TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS onboard_checks (
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    key         TEXT NOT NULL,             -- 단계 항목 (a1, b1 …)
+    done_by     TEXT,
+    done_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (employee_id, key)
+);
+CREATE TABLE IF NOT EXISTS onboard_mails (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    how         TEXT NOT NULL,             -- 메일(인사기록카드) / 메일(직접입력) / 직접 전달
+    to_addr     TEXT,                      -- 암호화
+    subject     TEXT,
+    body        TEXT,                      -- 암호화 (보낸 글 그대로)
+    sent_by     TEXT,
+    sent_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    fmt         TEXT                       -- 'html' = 글씨 편집기로 쓴 글, 비어 있으면 글자만
+);
+
+-- ── 인사: 건강검진 (수검 여부만. 검진 결과는 받지 않음) ──────────────
+CREATE TABLE IF NOT EXISTS health_checks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    check_date  TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT '일반',   -- 일반/특수/배치 전/채용/종합
+    institution TEXT,
+    note        TEXT,                          -- 암호화
+    created_by  TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_health_emp ON health_checks(employee_id, check_date);
+CREATE TABLE IF NOT EXISTS health_cycles (     -- 직원별 일반 검진 주기 ('1' 매년 / '2' 2년에 1회). 없으면 기본값
+    employee_id INTEGER PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+    cycle       TEXT NOT NULL
+);
+
 -- ── 인사: 상벌 ──────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS rewards (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,

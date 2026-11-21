@@ -30,7 +30,7 @@
 {% set b = sc.basis %}
 {% set steps = ['준비', '평가중', '확정', '반영완료'] %}
 <div class="card mb-3"><div class="card-body d-flex flex-wrap align-items-center gap-3">
-  <div class="d-flex gap-1 align-items-center">{% for s in steps %}<span class="badge {{ 'text-bg-primary' if s == c.status else ('text-bg-success' if steps.index(s) < steps.index(c.status) else 'text-bg-light border') }} px-3 py-2">{{ loop.index }}. {{ status_label[s] }}</span>{% if not loop.last %}<i class="bi bi-chevron-right text-muted"></i>{% endif %}{% endfor %}</div>
+  <div class="d-flex flex-wrap gap-1 align-items-center">{% for s in steps %}<span class="badge {{ 'text-bg-primary' if s == c.status else ('text-bg-success' if steps.index(s) < steps.index(c.status) else 'text-bg-light border') }} px-3 py-2">{{ loop.index }}. {{ status_label[s] }}</span>{% if not loop.last %}<i class="bi bi-chevron-right text-muted"></i>{% endif %}{% endfor %}</div>
   <div class="small text-muted">{{ c.year }}년 성과 → {{ c.apply_year }}년 연봉 (적용일 {{ c.effective_date or '-' }})
     {% if c.decided_at %} · 확정 {{ c.decided_at[:16] }} {{ c.decided_by or '' }}{% endif %}{% if c.applied_at %} · 반영 {{ c.applied_at[:16] }}{% endif %}</div>
   <div class="ms-auto d-flex gap-1">
@@ -110,9 +110,25 @@
   {{ m.kpi('기준 연봉 없음', res.missing_salary|length ~ '명', '반영에서 빠짐', 'text-danger' if res.missing_salary else '') }}
 </div>
 <div class="card mb-4"><div class="card-header d-flex flex-wrap align-items-center gap-2">
-  <form method="get" class="d-flex gap-1"><input type="hidden" name="year" value="{{ year }}"><select class="form-select form-select-sm" name="department" data-autosubmit><option value="">전체 부서</option>{% for d in depts %}<option value="{{ d }}" {{ 'selected' if department == d }}>{{ dept_text(d) }}</option>{% endfor %}</select></form>
+  <form method="get" class="d-flex gap-1"><input type="hidden" name="year" value="{{ year }}"><select class="form-select form-select-sm" name="department" data-autosubmit><option value="">전체 부서</option>{% for d in depts %}<option value="{{ d }}" {{ 'selected' if department == d }}>{{ dept_text(d) }}</option>{% endfor %}</select>
+    <input class="form-control form-control-sm" name="q" value="{{ q }}" placeholder="성명" aria-label="성명" style="width:120px"><button class="btn btn-sm btn-outline-secondary">조회</button>
+    {% if department or q %}<a class="btn btn-sm btn-link px-1" href="?year={{ year }}#eval">전체</a>{% endif %}</form>
+  <span class="small text-muted">{{ rows|length }}명</span>
   <span class="help ms-auto">최종 % 칸을 비우면 고정인상률(+등급 가산)을 따릅니다</span>
   {% if not c.locked %}<span class="small text-success" id="liveState"><i class="bi bi-cloud-check"></i> 바꾸면 바로 저장</span>{% endif %}</div>
+  {% if not c.locked and rows %}
+  <form method="post" action="/mgmt/review/{{ year }}/bulk" class="d-flex flex-wrap gap-2 align-items-center px-3 py-2 border-bottom bg-light" data-enter-submit
+        data-confirm="지금 보이는 {{ rows|length }}명({{ dept_text(department) if department else '전체 부서' }}{{ ', 이름 ' ~ q if q }}) 모두에게 적용할까요? 이미 넣어 둔 값도 바뀝니다.">
+    <input type="hidden" name="department" value="{{ department }}"><input type="hidden" name="q" value="{{ q }}">
+    <span class="small fw-semibold"><i class="bi bi-lightning"></i> 일괄 적용 <span class="fw-normal text-muted">지금 보이는 {{ rows|length }}명</span></span>
+    <select class="form-select form-select-sm" name="grade" style="width:auto" aria-label="일괄 등급"><option value="__keep__">등급은 그대로</option>
+      {% for g, v in c.grades %}<option value="{{ g }}">등급 {{ g }} ({{ '%+g'|format(v) }})</option>{% endfor %}<option value="">등급 지우기</option></select>
+    <input class="form-control form-control-sm text-end" name="final_rate" placeholder="최종 직접(%) 그대로" aria-label="일괄 최종 직접 %" style="width:170px">
+    <label class="small text-nowrap"><input type="checkbox" class="form-check-input" name="clear_final" value="1"> 최종 직접 칸 비우기</label>
+    <button class="btn btn-sm btn-primary">일괄 적용</button>
+    <span class="help">부서나 성명으로 먼저 조회하면 그 사람들에게만 적용됩니다</span>
+  </form>
+  {% endif %}
   <form method="post" action="/mgmt/review/{{ year }}/items" id="evalForm" data-live-url="/mgmt/api/review/{{ year }}/item"><input type="hidden" name="department" value="{{ department }}">
   <div class="table-responsive" style="max-height:640px"><table class="table table-sm table-hover mb-0 align-middle"><thead class="sticky-top"><tr>
     <th>부서</th><th>성명</th><th>직급</th><th class="num">기준 연봉</th><th style="width:80px">등급(선택)</th><th class="num" style="width:110px">최종 직접(%)</th><th class="num">최종</th>

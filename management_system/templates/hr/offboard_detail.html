@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_rte.html" import rte %}
-{% block title %}{{ e.name }} - 퇴사 절차 안내{% endblock %}
-{% block page_title %}<a href="/hr/offboard" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> 퇴사 절차 안내{% endblock %}
+{% block title %}{{ e.name }} - {{ L.title }}{% endblock %}
+{% block page_title %}<a href="{{ base }}" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> {{ L.title }}{% endblock %}
 {% block content %}
 <div class="card mb-3"><div class="card-body">
   <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
@@ -11,18 +11,18 @@
     {% if e.resign_date %}<span class="badge text-bg-light border">인사기록카드 퇴사일 {{ e.resign_date }}</span>{% endif %}
     <a class="btn btn-sm btn-link ms-auto" href="/hr/employees/{{ e.id }}">인사기록카드</a>
   </div>
-  <form method="post" action="/hr/offboard/{{ e.id }}/save" class="row g-2 align-items-end">
-    <div class="col-md-2 col-6"><label class="form-label small mb-0" for="obLast">퇴직 예정일 <span class="text-danger">*</span></label><input type="date" class="form-control form-control-sm" id="obLast" name="last_day" value="{{ ob.last_day if ob else '' }}" required></div>
-    <div class="col-md-2 col-6"><label class="form-label small mb-0" for="obDue">인수인계 기한</label><input type="date" class="form-control form-control-sm" id="obDue" name="handover_due" value="{{ ob.handover_due or '' if ob else '' }}"></div>
-    <div class="col-md-2 col-6"><label class="form-label small mb-0" for="obSuc">인수자</label><input class="form-control form-control-sm" id="obSuc" name="successor" maxlength="50" value="{{ ob.successor or '' if ob else '' }}" placeholder="예: 홍길동 과장"></div>
+  <form method="post" action="{{ base }}/{{ e.id }}/save" class="row g-2 align-items-end">
+    <div class="col-md-2 col-6"><label class="form-label small mb-0" for="obLast">{{ L.day }} <span class="text-danger">*</span></label><input type="date" class="form-control form-control-sm" id="obLast" name="last_day" value="{{ day_value }}" required></div>
+    <div class="col-md-2 col-6"><label class="form-label small mb-0" for="obDue">{{ L.due }}</label><input type="date" class="form-control form-control-sm" id="obDue" name="handover_due" value="{{ ob.handover_due or '' if ob else '' }}"></div>
+    <div class="col-md-2 col-6"><label class="form-label small mb-0" for="obSuc">{{ L.person }}</label><input class="form-control form-control-sm" id="obSuc" name="successor" maxlength="50" value="{{ ob.successor or '' if ob else '' }}" placeholder="예: 홍길동 과장"></div>
     <div class="col-md-4 col-6"><label class="form-label small mb-0" for="obNote">메모</label><input class="form-control form-control-sm" id="obNote" name="note" maxlength="500" value="{{ ob.note or '' if ob else '' }}"></div>
     <div class="col-md-2"><button class="btn btn-sm btn-primary w-100"><i class="bi bi-save"></i> {{ '저장' if ob else '저장하고 시작' }}</button></div>
   </form>
-  <div class="help mt-1">퇴직 예정일은 이 화면에만 저장됩니다. 인사기록카드의 퇴사일은 실제 퇴직일에 따로 입력하세요(미리 넣으면 재직자에서 빠집니다).</div>
+  <div class="help mt-1">{{ L.day_help }}</div>
 </div></div>
 
 {% if not ob %}
-<div class="alert alert-info">먼저 위에서 <b>퇴직 예정일</b>을 저장하세요. 저장하면 안내문에 날짜가 들어가고, 단계별 진행표를 체크할 수 있습니다.</div>
+<div class="alert alert-info">먼저 위에서 <b>{{ L.day }}</b>을 저장하세요. 저장하면 안내문에 날짜가 들어가고, 단계별 진행표를 체크할 수 있습니다.</div>
 {% endif %}
 
 <div class="row g-3">
@@ -39,16 +39,16 @@
         {% endfor %}</div>
       {% endfor %}
       {% if ob %}<div class="d-flex gap-2">
-        <form method="post" action="/hr/offboard/{{ e.id }}/close">{% if ob.closed_at %}<button class="btn btn-sm btn-outline-secondary" name="reopen" value="1">다시 진행 중으로</button>
-          {% else %}<button class="btn btn-sm btn-outline-success" data-confirm="퇴사 절차를 완료로 표시할까요?"><i class="bi bi-check2-circle"></i> 절차 완료로 표시</button>{% endif %}</form>
-        <form method="post" action="/hr/offboard/{{ e.id }}/delete" class="ms-auto" data-confirm="{{ e.name }}님의 퇴사 절차 기록(체크·발송 기록)을 모두 지울까요? 퇴사를 취소한 경우에만 쓰세요. 인사기록카드는 그대로입니다.">
+        <form method="post" action="{{ base }}/{{ e.id }}/close">{% if ob.closed_at %}<button class="btn btn-sm btn-outline-secondary" name="reopen" value="1">다시 진행 중으로</button>
+          {% else %}<button class="btn btn-sm btn-outline-success" data-confirm="{{ L.name }} 절차를 완료로 표시할까요?"><i class="bi bi-check2-circle"></i> 절차 완료로 표시</button>{% endif %}</form>
+        <form method="post" action="{{ base }}/{{ e.id }}/delete" class="ms-auto" data-confirm="{{ e.name }}님의 {{ L.name }} 절차 기록(체크·발송 기록)을 모두 지울까요? {{ L.name }}가 취소된 경우에만 쓰세요. 인사기록카드는 그대로입니다.">
           <button class="btn btn-sm btn-link text-danger">기록 삭제</button></form>
       </div>{% endif %}
     </div></div></div>
 
-  <div class="col-lg-7"><div class="card mb-3"><div class="card-header d-flex align-items-center">퇴사 안내문
-    <span class="help ms-2">보내기 전에 여기서 고칠 수 있습니다 · 기본 글귀는 <a href="/hr/offboard">퇴사 절차 안내</a> 첫 화면에서 수정</span></div>
-    <form class="card-body" method="post" action="/hr/offboard/{{ e.id }}/send" id="obSend">
+  <div class="col-lg-7"><div class="card mb-3"><div class="card-header d-flex align-items-center">{{ L.name }} 안내문
+    <span class="help ms-2">보내기 전에 여기서 고칠 수 있습니다 · 기본 글귀는 <a href="{{ base }}">{{ L.title }}</a> 첫 화면에서 수정</span></div>
+    <form class="card-body" method="post" action="{{ base }}/{{ e.id }}/send" id="obSend">
       <label class="form-label small" for="obSub">제목</label><input class="form-control form-control-sm mb-2" id="obSub" name="subject" value="{{ subject }}" maxlength="200" required>
       <div class="form-label small">내용 <span class="help ms-1">글자를 고른 다음 단추(굵게, 색, 크기)를 누르면 모양이 바뀝니다</span></div>
       {{ rte('body', 'obBody', body, 560) }}
@@ -62,7 +62,7 @@
       </div>
       {% if not mail_ready %}<div class="alert alert-warning py-2 small mt-2 mb-0">메일 서버가 설정되지 않아 메일로는 보낼 수 없습니다. [내용 복사]로 전달한 뒤 '직접 전달함'으로 기록하세요.</div>{% endif %}
       <div class="d-flex flex-wrap gap-2 mt-2">
-        <button class="btn btn-sm btn-primary" {{ 'disabled' if not ob }} data-confirm="{{ e.name }}님에게 퇴사 안내문을 보낼까요? (또는 전달 기록을 남길까요?)"><i class="bi bi-send"></i> 안내문 보내기</button>
+        <button class="btn btn-sm btn-primary" {{ 'disabled' if not ob }} data-confirm="{{ e.name }}님에게 {{ L.name }} 안내문을 보낼까요? (또는 전달 기록을 남길까요?)"><i class="bi bi-send"></i> 안내문 보내기</button>
         <button type="button" class="btn btn-sm btn-outline-secondary" id="obCopy"><i class="bi bi-clipboard"></i> 내용 복사</button>
         <button type="button" class="btn btn-sm btn-outline-secondary" id="obPrint"><i class="bi bi-printer"></i> 인쇄</button>
         <span class="help align-self-center" id="obCopyMsg"></span>
@@ -81,15 +81,15 @@
 
 <div id="obPrintArea" class="d-none">
   <div class="obp-top"><span>{{ co_name }}</span><span>안내일 {{ today_iso }}</span></div>
-  <div class="obp-title">퇴직 절차 안내</div>
-  <div class="obp-lead">퇴직일까지 챙기실 사항을 순서대로 정리했습니다.</div>
+  <div class="obp-title">{{ L.print_title }}</div>
+  <div class="obp-lead">{{ L.print_lead }}</div>
   <table class="obp-info">
     <tr><th>성명</th><td>{{ e.name }}</td><th>소속 · 직급</th><td>{{ e.department or '-' }} · {{ e.rank or '-' }}</td></tr>
-    <tr><th>퇴직 예정일</th><td class="obp-strong">{{ last_day_k or '미정' }}</td><th>인수인계 기한</th><td>{{ due_k or '퇴직일 전까지' }}</td></tr>
-    <tr><th>인수자</th><td>{{ (ob.successor if ob else '') or '부서장이 지정' }}</td><th>문의</th><td>{{ sender }}</td></tr>
+    <tr><th>{{ L.day }}</th><td class="obp-strong">{{ last_day_k or '미정' }}</td><th>{{ L.due }}</th><td>{{ due_k or L.due_default }}</td></tr>
+    <tr><th>{{ L.person }}</th><td>{{ (ob.successor if ob else '') or L.person_default }}</td><th>문의</th><td>{{ sender }}</td></tr>
   </table>
   <div class="obp-body" id="obPrintBody"></div>
-  <div class="obp-foot"><span>{{ co_name }}</span><span>이 안내문은 퇴직 절차를 돕기 위해 드리는 것입니다.</span></div>
+  <div class="obp-foot"><span>{{ co_name }}</span><span>{{ L.print_foot }}</span></div>
 </div>
 <style nonce="{{ csp_nonce }}">
 #obPrintArea { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; color: #222; }
@@ -118,7 +118,7 @@
 <script nonce="{{ csp_nonce }}" src="/static/js/rte.js?v={{ asset_v }}"></script>
 <script nonce="{{ csp_nonce }}">
 (() => {
-  const base = '/hr/offboard/{{ e.id }}';
+  const base = '{{ base }}/{{ e.id }}';
   document.querySelectorAll('.ob-chk').forEach((c) => c.addEventListener('change', async () => {
     try {
       const r = await postJSON(base + '/check', { key: c.dataset.key, done: c.checked });

@@ -65,13 +65,17 @@
         <form method="post" action="/settings/fund" class="row g-2" autocomplete="off">
           <div class="col-12"><label class="form-label small">fund 주소</label>
             <input class="form-control form-control-sm" name="fund_url" value="{{ s.fund_url or '' }}" placeholder="https://(fund 서버 주소):3103"></div>
-          <div class="col-12"><label class="form-label small">fund 인증서 지문 (SHA-256) {% if s.fund_cert_sha256 %}<span class="badge text-bg-success">저장됨</span>{% endif %}</label>
-            <input class="form-control form-control-sm font-monospace" name="fund_cert_sha256" value="{{ s.fund_cert_sha256 or '' }}" placeholder="AB:CD:..."></div>
+          <div class="col-12"><label class="form-label small">fund 인증서 이름 <span class="text-muted">(권장)</span> {% if s.fund_tls_name %}<span class="badge text-bg-success">저장됨</span>{% endif %}</label>
+            <input class="form-control form-control-sm" name="fund_tls_name" value="{{ s.fund_tls_name or '' }}" placeholder="fund 접속 주소의 이름 부분 (예: fund.example.com)">
+            <div class="help">fund를 브라우저에서 열 때 쓰는 주소에서 https:// 와 :3103 을 뺀 이름입니다. 이 이름으로 발급된 믿을 수 있는 인증서일 때만 연결합니다. 인증서가 새로 발급돼도 다시 고칠 필요가 없습니다.</div></div>
+          <div class="col-12"><label class="form-label small">fund 인증서 지문 (SHA-256) <span class="text-muted">(이름을 넣었으면 비워 두세요)</span> {% if s.fund_cert_sha256 %}<span class="badge text-bg-warning">저장됨</span>{% endif %}</label>
+            <input class="form-control form-control-sm font-monospace" name="fund_cert_sha256" value="{{ s.fund_cert_sha256 or '' }}" placeholder="AB:CD:...">
+            <div class="help">지문은 인증서가 바뀔 때마다 달라집니다. 넣어 두면 인증서가 새로 발급될 때 연결이 끊깁니다.</div></div>
           <div class="col"><label class="form-label small">연결 열쇠 {% if s.fund_token %}<span class="badge text-bg-success">저장됨</span>{% endif %}</label>
             <input class="form-control form-control-sm" type="password" name="fund_token" autocomplete="off" placeholder="바꿀 때만 입력"></div>
           <div class="col-auto align-self-end"><button class="btn btn-sm btn-primary">저장</button></div>
         </form>
-        <form method="post" action="/settings/fund/test" class="mt-2"><button class="btn btn-sm btn-outline-secondary" {{ 'disabled' if not (s.fund_token and s.fund_cert_sha256) }}><i class="bi bi-plug"></i> 연결 테스트</button></form>
+        <form method="post" action="/settings/fund/test" class="mt-2"><button class="btn btn-sm btn-outline-secondary" {{ 'disabled' if not (s.fund_token and (s.fund_cert_sha256 or s.fund_tls_name)) }}><i class="bi bi-plug"></i> 연결 테스트</button></form>
         <div class="help mt-2">fund <b>설정 → 연결·갱신 → BMS 연결</b>에서 인증 앱 코드로 열쇠를 만들면 열쇠와 인증서 지문이 한 번 보입니다. 그 두 값을 여기에 직접 붙여 넣으세요 (메신저·메일로 옮기지 마세요). fund는 이 BMS 서버에서 온 요청에만, 요청한 한 해의 손익 요약만 내줍니다.</div>
       </div></div>
   </div>

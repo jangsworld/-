@@ -2,7 +2,7 @@
 import html
 import math
 import re
-from datetime import timedelta
+from datetime import date, timedelta
 from collections import Counter, defaultdict
 
 from app.common import (
@@ -118,6 +118,23 @@ def render_template(content: str, ctx: dict) -> str:
             return html.escape(str(ctx[key]))  # 입력값에 포함된 태그로 인한 XSS 방지
         return f'<span class="ph-missing">[{key}]</span>'
     return _PH.sub(rep, content)
+
+
+def cert_fields(content: str) -> dict:
+    """증명서 글에서 대장에 보이는 값을 읽습니다: 표의 '용도' 칸, 작성일(○○○○년 ○월 ○일)."""
+    text = lambda v: re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", v or ""))).strip()   # noqa: E731
+    out = {}
+    for th, td in re.findall(r"<th[^>]*>(.*?)</th>\s*<td[^>]*>(.*?)</td>", content or "", flags=re.S | re.I):
+        if text(th).replace(" ", "") == "용도":
+            out["purpose"] = text(td)[:200]
+    m = re.search(r'class="cert-date"[^>]*>(.*?)</p>', content or "", flags=re.S | re.I)
+    d = re.search(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일", text(m.group(1)) if m else "")
+    if d:
+        try:
+            out["date"] = date(int(d.group(1)), int(d.group(2)), int(d.group(3))).isoformat()
+        except ValueError:
+            pass
+    return out
 
 
 def store_document_pdf(doc_id: int) -> tuple[bool, str]:

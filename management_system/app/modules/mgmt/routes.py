@@ -205,17 +205,25 @@ def _cycle(year: int) -> dict:
     return c
 
 
+def _review_rows(rows: list[dict], department: str, q: str) -> list[dict]:
+    """직원별 조정 표에 보이는 사람: 부서(하위 부서 포함)·이름으로 거름. 일괄 적용도 같은 기준을 씁니다."""
+    q = (q or "").strip()
+    scope = dept_scope(department) if department else None
+    return [r for r in rows if (scope is None or (r["employee"].get("department") or "") in scope)
+            and (not q or q in (r["employee"].get("name") or ""))]
+
+
 @router.get("/review", response_class=HTMLResponse)
-def review_page(request: Request, year: int | None = None, department: str = ""):
+def review_page(request: Request, year: int | None = None, department: str = "", q: str = ""):
     cs = review.cycles()
     y = year or (cs[0]["year"] if cs else today().year - 1)
     c = review.get(y)
-    ctx = {"cycles": cs, "year": y, "c": c, "department": department, "depts": depts(), "fin_items": FIN_ITEMS,
+    ctx = {"cycles": cs, "year": y, "c": c, "department": department, "q": q.strip(), "depts": depts(), "fin_items": FIN_ITEMS,
            "fund_ready": fin.fund_configured()}
     if c:
         res = review.compute(c)
         ctx.update(res=res, sc=review.scenarios(c), cmp=review.compare(c), status_label=review.STATUS_LABEL,
-                   rows=[r for r in res["rows"] if not department or (r["employee"].get("department") or "") in dept_scope(department)])
+                   rows=_review_rows(res["rows"], department, q))
     else:
         ctx["fin"] = fin.summary(y)
     return _render(request, "mgmt/review.html", ctx, "mgmt.review")
@@ -253,6 +261,27 @@ async def review_items(request: Request, year: int):
     except review.ReviewError as ex:
         return _go(f"/mgmt/review?year={year}&department={quote(dept)}#eval", str(ex))
     return _go(f"/mgmt/review?year={year}&department={quote(dept)}#eval", f"{n}명 평가를 저장했습니다")
+
+
+@router.post("/review/{year}/bulk")
+async def review_bulk(request: Request, year: int):
+    """지금 조회한 사람(부서·이름) 모두에게 등급·최종 직접 %를 한꺼번에 넣습니다."""
+    c = _cycle(year)
+    f = await request.form()
+    dept, q = str(f.get("department") or ""), str(f.get("q") or "").strip()
+    back = f"/mgmt/review?year={year}&department={quote(dept)}&q={quote(q)}#eval"
+    g = str(f.get("grade") if f.get("grade") is not None else "__keep__")
+    grade = None if g == "__keep__" else g.strip()
+    final = "" if f.get("clear_final") else (str(f.get("final_rate") or "").strip().replace("%", "") or None)
+    ids = [r["employee"]["id"] for r in _review_rows(review.compute(c)["rows"], dept, q)]
+    if not ids:
+        return _go(back, "적용할 사람이 없습니다")
+    try:
+        n = review.bulk_set(c, ids, grade, final, _who(request))
+    except review.ReviewError as ex:
+        return _go(back, str(ex))
+    audit("mgmt", "인사평가 일괄 적용", str(year), f"{n}명 · 부서 {dept or '전체'} · 이름 {q or '-'} · 등급 {'그대로' if grade is None else (grade or '지움')} · 최종 {'그대로' if final is None else (final or '지움')}")
+    return _go(back, f"{n}명에게 일괄 적용했습니다")
 
 
 @router.post("/api/review/{year}/item")

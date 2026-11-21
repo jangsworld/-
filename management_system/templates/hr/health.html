@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}건강검진{% endblock %}
+{% block page_title %}<i class="bi bi-heart-pulse me-2"></i>건강검진 <span class="text-muted small">수검 여부만 관리합니다 · 검진 결과는 받지 않습니다</span>{% endblock %}
+{% block content %}
+{% set SL = {'done': ('받음', 'success'), 'todo': ('아직 안 받음', 'danger'), 'skip': ('올해 대상 아님', 'light border'), 'new': ('올해 입사', 'info')} %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">{{ year }}년 수검률</div><div class="kpi-value">{{ (ov.rate ~ '%') if ov.rate is not none else '-' }}</div><div class="kpi-sub">대상 {{ ov.count.done + ov.count.todo }}명 중 {{ ov.count.done }}명</div></div></div>
+  <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">아직 안 받음</div><div class="kpi-value {{ 'text-danger' if ov.count.todo }}">{{ ov.count.todo }}</div><div class="kpi-sub">12월 31일까지 받아야 합니다</div></div></div>
+  <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">올해 대상 아님</div><div class="kpi-value">{{ ov.count.skip }}</div><div class="kpi-sub">2년 주기 · 지난해 수검</div></div></div>
+  <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">올해 입사</div><div class="kpi-value">{{ ov.count.new }}</div><div class="kpi-sub">채용 검진을 등록하면 '받음'</div></div></div>
+</div>
+
+<form method="post" action="/hr/health/save" id="hcForm">
+<input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="department" value="{{ f.department }}"><input type="hidden" name="q" value="{{ f.q }}"><input type="hidden" name="show" value="{{ f.show }}">
+<div class="card">
+  <div class="card-header d-flex flex-wrap gap-2 align-items-center">
+    <select class="form-select form-select-sm" style="width:auto" data-nav="year" aria-label="연도">{% for y in years %}<option value="{{ y }}" {{ 'selected' if y == year }}>{{ y }}년</option>{% endfor %}</select>
+    <select class="form-select form-select-sm" style="width:auto" data-nav="department" aria-label="부서"><option value="">전체 부서</option>{% for d in depts %}<option {{ 'selected' if d == f.department }}>{{ d }}</option>{% endfor %}</select>
+    <input class="form-control form-control-sm" id="hcQ" value="{{ f.q }}" placeholder="성명" aria-label="성명" style="width:120px">
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="hcFind">조회</button>
+    <div class="btn-group btn-group-sm">{% for k, n in [('', '전체'), ('todo', '안 받은 사람만')] %}<a class="btn {{ 'btn-secondary' if f.show == k else 'btn-outline-secondary' }}" href="?year={{ year }}&department={{ f.department|urlencode }}&q={{ f.q|urlencode }}&show={{ k }}">{{ n }}</a>{% endfor %}</div>
+    <span class="small text-muted">{{ rows|length }}명</span>
+  </div>
+  <div class="d-flex flex-wrap gap-2 align-items-end px-3 py-2 border-bottom bg-light">
+    <span class="small fw-semibold align-self-center"><i class="bi bi-check2-square"></i> 고른 사람 <span id="hcCount">0</span>명에게</span>
+    <div><label class="form-label small mb-0" for="hcDate">검진일</label><input type="date" class="form-control form-control-sm" id="hcDate" name="check_date" max="{{ today_iso }}" value="{{ today_iso }}"></div>
+    <div><label class="form-label small mb-0" for="hcKind">구분</label><select class="form-select form-select-sm" id="hcKind" name="kind">{% for k in kinds %}<option>{{ k }}</option>{% endfor %}</select></div>
+    <div><label class="form-label small mb-0" for="hcPlace">검진 기관</label><input class="form-control form-control-sm" id="hcPlace" name="institution" maxlength="100" style="width:170px"></div>
+    <div><label class="form-label small mb-0" for="hcNote">메모</label><input class="form-control form-control-sm" id="hcNote" name="note" maxlength="300" placeholder="결과는 적지 마세요" style="width:170px"></div>
+    <button class="btn btn-sm btn-primary" data-need-pick><i class="bi bi-plus-lg"></i> 받았다고 등록</button>
+    <span class="vr mx-1"></span>
+    <div><label class="form-label small mb-0" for="hcCycle">검진 주기</label><select class="form-select form-select-sm" id="hcCycle" name="cycle"><option value="">기본값 따름</option>{% for k, n in cycles.items() %}<option value="{{ k }}">{{ n }}</option>{% endfor %}</select></div>
+    <button class="btn btn-sm btn-outline-secondary" formaction="/hr/health/cycle" formnovalidate data-need-pick>주기 바꾸기</button>
+  </div>
+  <div class="table-responsive" style="max-height:640px"><table class="table table-sm table-hover align-middle mb-0">
+    <thead class="sticky-top"><tr><th style="width:34px"><input type="checkbox" class="form-check-input" data-check-all="employee_ids" aria-label="모두 고르기"></th>
+      <th>부서</th><th>성명</th><th>직급</th><th>입사일</th><th>주기</th><th>{{ year }}년</th><th>올해 받은 검진</th><th>최근 검진일</th></tr></thead><tbody>
+    {% for r in rows %}{% set e = r.emp %}<tr>
+      <td><input type="checkbox" class="form-check-input hc-pick" name="employee_ids" value="{{ e.id }}" aria-label="{{ e.name }} 고르기"></td>
+      <td class="small">{{ e.department or '' }}</td><td><a href="/hr/employees/{{ e.id }}" class="fw-semibold">{{ e.name }}</a></td><td class="small">{{ e.rank or '' }}</td><td class="small">{{ e.hire_date }}</td>
+      <td class="small">{{ cycles[r.cycle] }}{% if not r.cycle_custom %} <span class="text-muted">(기본)</span>{% endif %}</td>
+      <td><span class="badge text-bg-{{ SL[r.status][1] }}">{{ SL[r.status][0] }}</span></td>
+      <td class="small">{% for h in r.records %}<span class="d-inline-flex align-items-center gap-1 me-2">{{ h.check_date }} {{ h.kind }}{% if h.institution %} · {{ h.institution }}{% endif %}{% if h.note %} · {{ h.note }}{% endif %}
+        <button type="submit" class="btn btn-sm btn-link text-danger p-0" formaction="/hr/health/{{ h.id }}/delete" formnovalidate title="이 기록 삭제" aria-label="이 기록 삭제" data-confirm="{{ e.name }}님의 {{ h.check_date }} {{ h.kind }} 검진 기록을 삭제할까요?"><i class="bi bi-x-lg"></i></button></span>{% endfor %}</td>
+      <td class="small">{{ r.last or '-' }}</td></tr>
+    {% else %}<tr><td colspan="9" class="text-muted text-center py-4">대상 직원이 없습니다</td></tr>{% endfor %}
+  </tbody></table></div>
+  <div class="card-footer help">
+    일반 건강검진은 사무직 2년에 1회, 그 밖의 직원은 1년에 1회가 원칙입니다(산업안전보건법). 직원마다 주기가 다르면 고른 뒤 [주기 바꾸기]를 누르세요.
+    2년 주기인 사람은 지난해에 받았으면 올해는 '대상 아님'으로 보입니다. 검진 결과(판정·소견)는 민감정보라 이 화면에 적지 않습니다.
+  </div>
+</div>
+</form>
+<form method="post" action="/hr/health/cycle" class="d-flex flex-wrap gap-2 align-items-center mt-3 small">
+  <input type="hidden" name="year" value="{{ year }}">
+  <span class="text-muted">주기를 따로 정하지 않은 직원의 기본 주기</span>
+  <select class="form-select form-select-sm" name="default_cycle" style="width:auto" aria-label="기본 주기">{% for k, n in cycles.items() %}<option value="{{ k }}" {{ 'selected' if k == default_cycle }}>{{ n }}</option>{% endfor %}</select>
+  <button class="btn btn-sm btn-outline-secondary">기본 주기 저장</button>
+</form>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const go = (k, v) => { const u = new URL(location.href); u.searchParams.set(k, v); u.searchParams.delete('msg'); location.href = u; };
+  document.querySelectorAll('[data-nav]').forEach((s) => s.addEventListener('change', () => go(s.dataset.nav, s.value)));
+  const q = document.getElementById('hcQ');
+  document.getElementById('hcFind').addEventListener('click', () => go('q', q.value.trim()));
+  q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); go('q', q.value.trim()); } });
+  const count = () => { document.getElementById('hcCount').textContent = document.querySelectorAll('.hc-pick:checked').length; };
+  document.getElementById('hcForm').addEventListener('change', () => setTimeout(count, 0));
+  document.getElementById('hcForm').addEventListener('submit', (e) => {
+    if (e.submitter?.dataset.needPick !== undefined && !document.querySelector('.hc-pick:checked')) { e.preventDefault(); alert('먼저 왼쪽 칸에서 직원을 고르세요.'); }
+  });
+  count();
+})();
+</script>
+{% endblock %}

@@ -18,6 +18,13 @@ from app.db import audit, batch, current_actor, execute, get_settings, query, qu
 from app.modules.hr import richtext
 from app.security.crypto import enc
 
+# 이 파일은 입사 절차 안내(onboard.py)에서도 한 벌 더 불러 씁니다. 아래 값들만 바꿔서.
+P = "offboard"                  # 설정 이름 앞머리 (offboard_stages, offboard_subject …)
+T_MAIN, T_CHECKS, T_MAILS = "offboardings", "offboard_checks", "offboard_mails"
+NAME = "퇴사"                   # 접속기록에 남는 이름
+DAY_LABEL, DUE_LABEL = "퇴직 예정일", "인수인계 기한"
+DUE_NOT_AFTER_DAY = True        # 기한이 기준 날짜보다 늦으면 안 되는지
+
 # (단계 키, 단계 이름, 언제, [(항목 키, 할 일, 참고)])
 STAGES = [
     ("a", "사직서 접수·결재", "퇴직 희망일 30일 전", [
@@ -59,7 +66,7 @@ _KEY_RE = re.compile(r"^[a-z][a-z0-9]{0,9}$")
 
 
 def stages() -> list:
-    raw = get_settings().get("offboard_stages")
+    raw = get_settings().get(P + "_stages")
     if raw:
         try:
             return [(s["k"], s["name"], s.get("when") or "", [(i["k"], i["text"], i.get("hint") or "") for i in s["items"]])
@@ -70,7 +77,7 @@ def stages() -> list:
 
 
 def stages_custom() -> bool:
-    return bool(get_settings().get("offboard_stages"))
+    return bool(get_settings().get(P + "_stages"))
 
 
 def keys() -> list:
@@ -81,8 +88,8 @@ def save_stages(data, reset: bool = False) -> str:
     """단계·항목 고치기. 이미 있던 키는 그대로 두어야 지금까지 체크한 기록이 이어진다. 새 항목은 키를 새로 만든다."""
     if reset:
         with batch():
-            set_setting("offboard_stages", "")
-            audit("hr", "퇴사 처리 단계 처음 내용으로 되돌림", "", "")
+            set_setting(P + "_stages", "")
+            audit("hr", NAME + " 처리 단계 처음 내용으로 되돌림", "", "")
         return ""
     if not isinstance(data, list) or not 1 <= len(data) <= 12:
         return "단계는 1개 이상 12개 이하로 만드세요"
@@ -112,8 +119,8 @@ def save_stages(data, reset: bool = False) -> str:
     if not any(s["items"] for s in out):
         return "항목이 하나도 없습니다"
     with batch():
-        set_setting("offboard_stages", json.dumps(out, ensure_ascii=False))
-        audit("hr", "퇴사 처리 단계 수정", "", f"{len(out)}단계 {sum(len(s['items']) for s in out)}항목")
+        set_setting(P + "_stages", json.dumps(out, ensure_ascii=False))
+        audit("hr", NAME + " 처리 단계 수정", "", f"{len(out)}단계 {sum(len(s['items']) for s in out)}항목")
     return ""
 
 
@@ -171,9 +178,9 @@ FIELDS = ("이름", "퇴직일", "인수인계기한", "인수자", "담당자",
 def templates_text() -> dict:
     """body 는 편집기용 HTML. 예전에 글자만으로 저장한 글귀(offboard_body)는 읽을 때 HTML 로 바꾼다."""
     s = get_settings()
-    body = richtext.clean(s.get("offboard_body_html") or "") or richtext.from_text(s.get("offboard_body") or DEFAULT_BODY)
-    return {"subject": s.get("offboard_subject") or DEFAULT_SUBJECT, "body": body,
-            "custom": bool(s.get("offboard_subject") or s.get("offboard_body") or s.get("offboard_body_html"))}
+    body = richtext.clean(s.get(P + "_body_html") or "") or richtext.from_text(s.get(P + "_body") or DEFAULT_BODY)
+    return {"subject": s.get(P + "_subject") or DEFAULT_SUBJECT, "body": body,
+            "custom": bool(s.get(P + "_subject") or s.get(P + "_body") or s.get(P + "_body_html"))}
 
 
 def _clean(subject: str, body: str) -> tuple[str, str]:
@@ -185,10 +192,10 @@ def save_template(subject: str, body: str, reset: bool = False) -> str:
     if not reset and (not subject or not richtext.to_text(body)):
         return "제목과 내용을 입력하세요"
     with batch():
-        set_setting("offboard_subject", "" if reset or subject == DEFAULT_SUBJECT else subject)
-        set_setting("offboard_body_html", "" if reset else body)
-        set_setting("offboard_body", "")
-        audit("hr", "퇴사 안내문 기본 글귀 " + ("처음 글귀로 되돌림" if reset else "수정"), "", "")
+        set_setting(P + "_subject", "" if reset or subject == DEFAULT_SUBJECT else subject)
+        set_setting(P + "_body_html", "" if reset else body)
+        set_setting(P + "_body", "")
+        audit("hr", NAME + " 안내문 기본 글귀 " + ("처음 글귀로 되돌림" if reset else "수정"), "", "")
     return ""
 
 
@@ -197,34 +204,38 @@ def _kdate(v) -> str:
     return f"{d.year}년 {d.month}월 {d.day}일" if d else ""
 
 
-def fill(text: str, emp: dict, ob: dict | None, sender: str, html: bool = False) -> str:
-    ob = ob or {}
-    vals = {"이름": emp.get("name") or "", "퇴직일": _kdate(ob.get("last_day")) or "(퇴직일 미정)",
+def values(emp: dict, ob: dict, sender: str) -> dict:
+    """안내문의 {이름} 같은 자리에 들어갈 값."""
+    return {"이름": emp.get("name") or "", "퇴직일": _kdate(ob.get("last_day")) or "(퇴직일 미정)",
             "인수인계기한": _kdate(ob.get("handover_due")) or "퇴직일 전까지", "인수자": ob.get("successor") or "부서장이 지정",
             "담당자": sender or "경영관리팀 인사담당자", "회사명": get_settings().get("company_name", "")}
+
+
+def fill(text: str, emp: dict, ob: dict | None, sender: str, html: bool = False) -> str:
+    vals = values(emp, ob or {}, sender)
     for k in FIELDS:
         text = text.replace("{" + k + "}", escape(vals[k], quote=False) if html else vals[k])
     return text
 
 
 def get(emp_id: int) -> dict | None:
-    return query_one("SELECT * FROM offboardings WHERE employee_id=?", (emp_id,))
+    return query_one("SELECT * FROM " + T_MAIN + " WHERE employee_id=?", (emp_id,))
 
 
 def save(emp_id: int, last_day, handover_due, successor: str, note: str) -> str:
     ld, hd = to_date(last_day), to_date(handover_due)
     if not ld:
-        return "퇴직 예정일을 입력하세요"
-    if hd and hd > ld:
-        return "인수인계 기한은 퇴직 예정일보다 늦을 수 없습니다"
+        return f"{DAY_LABEL}을 입력하세요"
+    if DUE_NOT_AFTER_DAY and hd and hd > ld:
+        return f"{DUE_LABEL}은 {DAY_LABEL}보다 늦을 수 없습니다"
     vals = (ld.isoformat(), hd.isoformat() if hd else None, (successor or "").strip()[:50] or None, (note or "").strip()[:500] or None)
     with batch():
         if get(emp_id):
-            execute("UPDATE offboardings SET last_day=?, handover_due=?, successor=?, note=? WHERE employee_id=?", vals + (emp_id,))
+            execute("UPDATE " + T_MAIN + " SET last_day=?, handover_due=?, successor=?, note=? WHERE employee_id=?", vals + (emp_id,))
         else:
-            execute("INSERT INTO offboardings(last_day, handover_due, successor, note, employee_id, created_by) VALUES (?,?,?,?,?,?)",
+            execute("INSERT INTO " + T_MAIN + "(last_day, handover_due, successor, note, employee_id, created_by) VALUES (?,?,?,?,?,?)",
                     vals + (emp_id, current_actor.get()[1]))
-            audit("hr", "퇴사 절차 시작", f"emp#{emp_id}", vals[0])
+            audit("hr", NAME + " 절차 시작", f"emp#{emp_id}", vals[0])
     return ""
 
 
@@ -232,43 +243,43 @@ def set_check(emp_id: int, key: str, done: bool) -> bool:
     if key not in keys() or not get(emp_id):
         return False
     if done:
-        execute("INSERT INTO offboard_checks(employee_id, key, done_by) VALUES (?,?,?) ON CONFLICT(employee_id, key) DO NOTHING",
+        execute("INSERT INTO " + T_CHECKS + "(employee_id, key, done_by) VALUES (?,?,?) ON CONFLICT(employee_id, key) DO NOTHING",
                 (emp_id, key, current_actor.get()[1]))
     else:
-        execute("DELETE FROM offboard_checks WHERE employee_id=? AND key=?", (emp_id, key))
+        execute("DELETE FROM " + T_CHECKS + " WHERE employee_id=? AND key=?", (emp_id, key))
     return True
 
 
 def checks(emp_id: int) -> dict:
-    return {r["key"]: r for r in query("SELECT * FROM offboard_checks WHERE employee_id=?", (emp_id,))}
+    return {r["key"]: r for r in query("SELECT * FROM " + T_CHECKS + " WHERE employee_id=?", (emp_id,))}
 
 
 def set_closed(emp_id: int, closed: bool):
     with batch():
-        execute("UPDATE offboardings SET closed_at=? WHERE employee_id=?", (today().isoformat() if closed else None, emp_id))
-        audit("hr", "퇴사 절차 완료" if closed else "퇴사 절차 다시 열기", f"emp#{emp_id}", "")
+        execute("UPDATE " + T_MAIN + " SET closed_at=? WHERE employee_id=?", (today().isoformat() if closed else None, emp_id))
+        audit("hr", NAME + " 절차 완료" if closed else NAME + " 절차 다시 열기", f"emp#{emp_id}", "")
 
 
 def remove(emp_id: int):
     with batch():
-        execute("DELETE FROM offboard_checks WHERE employee_id=?", (emp_id,))
-        execute("DELETE FROM offboard_mails WHERE employee_id=?", (emp_id,))
-        execute("DELETE FROM offboardings WHERE employee_id=?", (emp_id,))
-        audit("hr", "퇴사 절차 기록 삭제", f"emp#{emp_id}", "")
+        execute("DELETE FROM " + T_CHECKS + " WHERE employee_id=?", (emp_id,))
+        execute("DELETE FROM " + T_MAILS + " WHERE employee_id=?", (emp_id,))
+        execute("DELETE FROM " + T_MAIN + " WHERE employee_id=?", (emp_id,))
+        audit("hr", NAME + " 절차 기록 삭제", f"emp#{emp_id}", "")
 
 
 def mails(emp_id: int) -> list[dict]:
-    return query("SELECT * FROM offboard_mails WHERE employee_id=? ORDER BY id DESC", (emp_id,))
+    return query("SELECT * FROM " + T_MAILS + " WHERE employee_id=? ORDER BY id DESC", (emp_id,))
 
 
 def log_notice(emp_id: int, how: str, to_addr: str, subject: str, body: str):
     """how: 메일(인사기록카드) / 메일(직접입력) / 직접 전달"""
     subject, body = _clean(subject, body)
     with batch():
-        execute("INSERT INTO offboard_mails(employee_id, how, to_addr, subject, body, sent_by, fmt) VALUES (?,?,?,?,?,?,'html')",
+        execute("INSERT INTO " + T_MAILS + "(employee_id, how, to_addr, subject, body, sent_by, fmt) VALUES (?,?,?,?,?,?,'html')",
                 (emp_id, how, enc(to_addr) if to_addr else None, subject, enc(body), current_actor.get()[1]))
         set_check(emp_id, NOTICE_KEY, True)
-        audit("hr", "퇴사 안내문 " + ("전달 기록" if how == "직접 전달" else "메일 발송"), f"emp#{emp_id}", how)  # 주소 원문은 남기지 않음
+        audit("hr", NAME + " 안내문 " + ("전달 기록" if how == "직접 전달" else "메일 발송"), f"emp#{emp_id}", how)  # 주소 원문은 남기지 않음
 
 
 def unfilled(text: str) -> bool:
@@ -301,20 +312,20 @@ def send(emp_id: int, to: str, how: str, subject: str, body: str) -> tuple[bool,
     try:
         mailer.send(to, subject, richtext.to_text(body), html=_mail_html(body))
     except mailer.MailError as ex:
-        audit("hr", "퇴사 안내문 발송 실패", f"emp#{emp_id}", str(ex)[:120])
+        audit("hr", NAME + " 안내문 발송 실패", f"emp#{emp_id}", str(ex)[:120])
         return False, str(ex)
     log_notice(emp_id, how, to, subject, body)
     return True, "안내문을 보냈습니다"
 
 
 def rows() -> list[dict]:
-    out = query("SELECT o.*, e.name, e.emp_no, e.department, e.rank, e.resign_date FROM offboardings o "
+    out = query("SELECT o.*, e.name, e.emp_no, e.department, e.rank, e.resign_date FROM " + T_MAIN + " o "
                 "JOIN employees e ON e.id=o.employee_id ORDER BY (o.closed_at IS NOT NULL), o.last_day")
     done, ks = {}, keys()
-    for r in query("SELECT employee_id, key FROM offboard_checks"):
+    for r in query("SELECT employee_id, key FROM " + T_CHECKS + ""):
         if r["key"] in ks:
             done[r["employee_id"]] = done.get(r["employee_id"], 0) + 1
-    sent = {r["employee_id"]: r["at"] for r in query("SELECT employee_id, MAX(sent_at) AS at FROM offboard_mails GROUP BY employee_id")}
+    sent = {r["employee_id"]: r["at"] for r in query("SELECT employee_id, MAX(sent_at) AS at FROM " + T_MAILS + " GROUP BY employee_id")}
     t = today()
     for r in out:
         r["done"], r["total"] = done.get(r["employee_id"], 0), len(ks)

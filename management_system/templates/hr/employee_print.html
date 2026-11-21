@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>인사기록카드 - {{ e.name }}</title>
+<style nonce="{{ csp_nonce }}">
+  body { font-family: 'Malgun Gothic', '맑은 고딕', 'Noto Sans CJK KR', sans-serif; color: #222; margin: 0; background: #eef0f3; font-size: 10pt; }
+  .sheet { background: #fff; max-width: 190mm; margin: 12px auto; padding: 14mm 14mm 12mm; box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+  .bar { display: flex; gap: 8px; justify-content: center; padding: 10px; }
+  .bar button { font: inherit; padding: 6px 16px; border: 1px solid #1f4e79; background: #1f4e79; color: #fff; border-radius: 4px; cursor: pointer; }
+  .bar button.light { background: #fff; color: #1f4e79; }
+  .top { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #1f4e79; padding-bottom: 5px; color: #5b6570; font-size: 9pt; }
+  h1 { font-size: 19pt; letter-spacing: .35em; color: #1f4e79; margin: 12px 0 10px; text-align: center; }
+  h2 { font-size: 10.5pt; color: #1f4e79; margin: 13px 0 4px; padding-left: 7px; border-left: 4px solid #1f4e79; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #c9d3de; padding: 4px 7px; text-align: left; vertical-align: top; }
+  th { background: #eef3f8; color: #1f4e79; font-weight: 600; white-space: nowrap; }
+  .info th { width: 13%; } .info td { width: 20.3%; }
+  .list th { text-align: center; } .none { color: #8a939c; text-align: center; }
+  .foot { margin-top: 12px; padding-top: 5px; border-top: 1px solid #1f4e79; display: flex; justify-content: space-between; font-size: 8pt; color: #5b6570; }
+  @media print { @page { size: A4; margin: 12mm; } body { background: #fff; } .bar { display: none; } .sheet { box-shadow: none; margin: 0; padding: 0; max-width: none; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } tr, h2 { break-inside: avoid; } h2 { break-after: avoid; } }
+</style></head>
+<body>
+<div class="bar"><button id="doPrint">인쇄</button><button class="light" id="doClose">닫기</button></div>
+<div class="sheet">
+  <div class="top"><span>{{ company() }}</span><span>출력일 {{ today().isoformat() }} · 출력자 {{ printed_by }}</span></div>
+  <h1>인사기록카드</h1>
+  <h2>기본 정보</h2>
+  <table class="info">
+    <tr><th>성명</th><td>{{ e.name }}</td><th>사번</th><td>{{ e.emp_no or '' }}</td><th>생년월일</th><td>{{ e.birth_date or '' }}</td></tr>
+    <tr><th>부서</th><td>{{ e.department or '' }}</td><th>직급</th><td>{{ e.rank or '' }}</td><th>직책</th><td>{{ e.title or '' }}</td></tr>
+    <tr><th>입사일</th><td>{{ e.hire_date or '' }}</td><th>고용형태</th><td>{{ e.employment_type or '' }}</td><th>재직 상태</th><td>{{ ('퇴사 ' ~ e.resign_date) if e.resign_date else '재직' }}</td></tr>
+    <tr><th>근무지</th><td>{{ e.work_location or '' }}</td><th>담당 업무</th><td colspan="3">{{ e.job_duty or '' }}</td></tr>
+    <tr><th>연락처</th><td>{{ e.phone or '' }}</td><th>이메일</th><td colspan="3">{{ e.email or '' }}</td></tr>
+    <tr><th>주소</th><td colspan="5">{{ e.address or '' }}</td></tr>
+    <tr><th>최종 학력</th><td colspan="3">{{ e.education or ((e.edu_school or '') ~ ' ' ~ (e.edu_major or '') ~ ' ' ~ (e.edu_level or ''))|trim }}</td><th>수습 종료일</th><td>{{ e.probation_end or '' }}</td></tr>
+  </table>
+
+  <h2>자격·면허</h2>
+  <table class="list"><tr><th>구분</th><th>등급</th><th>주요 자격</th><th>만료일</th><th>기타 보유 자격</th></tr>
+  {% for k, q in quals.items() %}<tr><td>{{ k }}</td><td>{{ q.grade or '' }}</td><td>{{ q.main_cert or '' }}</td><td>{{ q.expires_on or '' }}</td>{% if loop.first %}<td rowspan="{{ quals|length }}">{{ e.certificates or '' }}</td>{% endif %}</tr>
+  {% else %}<tr><td colspan="4" class="none">등록된 자격 없음</td><td>{{ e.certificates or '' }}</td></tr>{% endfor %}</table>
+
+  <h2>인사발령</h2>
+  <table class="list"><tr><th>발령일</th><th>구분</th><th>변경 전</th><th>변경 후</th><th>비고</th></tr>
+  {% for a in appointments %}<tr><td>{{ a.appt_date }}</td><td>{{ a.appt_type }}{{ ' (예정)' if a.status == '예정' }}</td><td>{{ a.from_value or '' }}</td><td>{{ a.to_value or '' }}</td><td>{{ a.note or '' }}</td></tr>
+  {% else %}<tr><td colspan="5" class="none">발령 이력 없음</td></tr>{% endfor %}</table>
+
+  <h2>상벌</h2>
+  <table class="list"><tr><th>일자</th><th>구분</th><th>종류</th><th>사유</th><th>시행권자</th></tr>
+  {% for r in rewards %}<tr><td>{{ r.action_date }}</td><td>{{ r.kind }}</td><td>{{ r.category }}</td><td>{{ r.reason or '' }}</td><td>{{ r.issuer or '' }}</td></tr>
+  {% else %}<tr><td colspan="5" class="none">상벌 이력 없음</td></tr>{% endfor %}</table>
+
+  <h2>근로특이사항 (휴직·단축근무 등)</h2>
+  <table class="list"><tr><th>구분</th><th>기간</th><th>상태</th></tr>
+  {% for s in specials %}<tr><td>{{ s.category }}</td><td>{{ s.start_date }} ~ {{ s.actual_end or s.end_date or '' }}</td><td>{{ s.status }}</td></tr>
+  {% else %}<tr><td colspan="3" class="none">등록된 사항 없음</td></tr>{% endfor %}</table>
+
+  <h2>교육 이수 ({{ tr_year }}년 과정별 · 최근 이수 기록)</h2>
+  <table class="list"><tr><th>교육 과정</th><th>{{ tr_year }}년 상태</th><th>마지막 이수일</th></tr>
+  {% set tr_label = {'done': '이수', 'partial': '일부 이수', 'missing': '미이수', 'upcoming': '기한 전'} %}
+  {% for x in tr_status %}<tr><td>{{ x.course.name }}</td><td>{{ tr_label[x.cell.status] }}</td><td>{{ x.cell.last or '-' }}</td></tr>
+  {% else %}<tr><td colspan="3" class="none">대상 과정 없음</td></tr>{% endfor %}</table>
+
+  <div class="foot"><span>{{ company() }} 경영관리팀</span><span>개인정보가 담긴 문서입니다. 업무 목적 외 사용·복사·반출을 금합니다. 주민등록번호·연봉·건강 정보는 싣지 않았습니다.</span></div>
+</div>
+<script nonce="{{ csp_nonce }}">
+document.getElementById('doPrint').addEventListener('click', () => window.print());
+document.getElementById('doClose').addEventListener('click', () => window.close());
+</script>
+</body></html>

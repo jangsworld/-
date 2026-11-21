@@ -453,6 +453,7 @@ def employee_detail(request: Request, emp_id: int, tab: str = "info"):
         "rrn_masked": repo.rrn_masked(emp_id) if request.state.user["role"] in ("admin", "hr") else "",
         "assets": __import__("app.modules.ga.repo", fromlist=["x"]).list_assets(holder_id=emp_id),
         **(_training_ctx(emp_id) if tab == "training" else {}),
+        "recent_hire": bool(e.get("hire_date")) and not e.get("resign_date") and e["hire_date"] >= add_months(today(), -3).isoformat(),
     }, "hr.employees")
 
 
@@ -844,6 +845,19 @@ def _contract_bulk(ids: list[int]) -> int:
     return n
 
 
+@router.get("/employees/{emp_id}/print", response_class=HTMLResponse)
+def employee_print(request: Request, emp_id: int):
+    """인사기록카드 한 장 인쇄. 주민등록번호·연봉·건강 정보는 싣지 않습니다. 인사 담당 이상만 (middleware RULES)."""
+    e = _emp_or_404(emp_id)
+    audit("hr", "인사기록카드 인쇄 화면", f"{e['emp_no']} {e['name']}", "")
+    u = request.state.user
+    return _render(request, "hr/employee_print.html", {
+        "e": e, "appointments": repo.list_appointments(emp_id), "rewards": repo.list_rewards(employee_id=emp_id),
+        "specials": repo.list_specials(employee_id=emp_id), "quals": repo.get_qualifications(emp_id),
+        "printed_by": u.get("name") or u.get("username") or "", **_training_ctx(emp_id),
+    })
+
+
 def _training_ctx(emp_id: int) -> dict:
     """인사기록카드 교육이수 탭 (보기만). 올해 과정별 이수 상태 + 지금까지 이수 기록."""
     from app.modules.mgmt import training
@@ -891,6 +905,12 @@ async def document_save(doc_id: int, request: Request):
         kw.pop("status", None)                      # 증명서 상태는 [발급취소]로만 바꿈 (사유를 남기도록)
         if cur["status"] == "발급취소":
             kw.pop("content", None)                 # 발급취소한 증명서는 내용을 고치지 않음
+        if "content" in kw:                         # 증명서 글에서 고친 용도·발급일을 대장에도 똑같이
+            got = services.cert_fields(kw["content"])
+            if got.get("purpose") is not None:
+                kw["purpose"] = got["purpose"]
+            if got.get("date") and (kw.get("signed_date") or cur.get("signed_date")) == cur.get("signed_date"):
+                kw["signed_date"] = got["date"]     # 옆 칸의 발급일을 직접 바꾼 경우에는 그 값을 따름
     if kw.get("status") == "체결완료" and not kw.get("signed_date"):
         kw["signed_date"] = today().isoformat()
     repo.update_document(doc_id, **kw)

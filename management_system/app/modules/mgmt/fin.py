@@ -1,11 +1,17 @@
 """연도별 손익 요약: fund에서 읽기 전용으로 가져오거나 직접 입력.
 
 fund는 BMS 서버에서, 열쇠를 가진 요청에만, 요청한 한 해의 손익 요약(매출액~당기순손익)만 내줍니다.
-fund 인증서는 자체 서명이므로 설정에 넣은 SHA-256 지문과 맞을 때만 자료를 받습니다.
+fund 인증서를 확인하는 방법은 둘 중 하나입니다(둘 다 넣으면 둘 다 맞아야 함).
+- 인증서 이름: fund가 공인 인증서를 쓸 때. 인증서가 믿을 수 있는 기관 것이고 그 이름으로 발급됐는지 확인합니다.
+  인증서가 주기적으로 새로 발급돼도 설정을 고칠 필요가 없습니다. 주소 칸에는 사내 주소(숫자)를 써도 됩니다.
+- 인증서 지문(SHA-256): 자체 서명 인증서일 때. 설정에 넣은 지문과 같을 때만 받습니다.
+어느 쪽이든 확인이 끝나기 전에는 열쇠를 보내지 않습니다.
 """
 import hashlib
 import http.client
 import json
+import re
+import socket
 import ssl
 from urllib.parse import urlparse
 
@@ -24,9 +30,12 @@ def _norm_fp(v: str) -> str:
     return "".join(ch for ch in (v or "").upper() if ch in "0123456789ABCDEF")
 
 
+NAME_RE = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,62})(\.[A-Za-z0-9]([A-Za-z0-9-]{0,62}))+$")
+
+
 def fund_configured() -> bool:
     s = get_settings()
-    return bool(s.get("fund_token") and s.get("fund_cert_sha256"))
+    return bool(s.get("fund_token") and (s.get("fund_cert_sha256") or s.get("fund_tls_name")))
 
 
 def fetch_fund(year: int, timeout: int = 15) -> dict:
@@ -34,23 +43,39 @@ def fetch_fund(year: int, timeout: int = 15) -> dict:
     s = get_settings()
     token = dec(s.get("fund_token") or "")
     pin = _norm_fp(s.get("fund_cert_sha256", ""))
-    if not token or len(pin) != 64:
-        raise FundError("fund 연결 설정(열쇠·인증서 지문)이 없습니다. 회사정보·환경설정 → fund 연결에서 넣어 주세요.")
+    name = (s.get("fund_tls_name") or "").strip()
+    if name and not NAME_RE.match(name):
+        raise FundError("fund 인증서 이름이 올바르지 않습니다. 회사정보·환경설정 → fund 연결에서 확인하세요.")
+    if not token or (len(pin) != 64 and not name):
+        raise FundError("fund 연결 설정(열쇠와 인증서 이름 또는 지문)이 없습니다. 회사정보·환경설정 → fund 연결에서 넣어 주세요.")
     u = urlparse(s.get("fund_url") or DEFAULT_FUND_URL)
     if not u.scheme:
         raise FundError("fund 주소가 없습니다. 회사정보·환경설정 → fund 연결에서 넣어 주세요.")
     if u.scheme != "https" or not u.hostname:
         raise FundError("fund 주소는 https:// 로 시작해야 합니다")
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE          # 자체 서명 인증서 → 아래에서 지문으로 직접 확인
-    conn = http.client.HTTPSConnection(u.hostname, u.port or 443, timeout=timeout, context=ctx)
+    ctx = ssl.create_default_context()        # 인증서 이름이 있으면: 믿을 수 있는 기관 + 그 이름으로 확인
+    if not name:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE      # 자체 서명 인증서 → 아래에서 지문으로 직접 확인
+    port = u.port or 443
+    conn = http.client.HTTPSConnection(u.hostname, port, timeout=timeout, context=ctx)
     try:
-        conn.connect()
+        raw = socket.create_connection((u.hostname, port), timeout=timeout)
+        try:
+            conn.sock = ctx.wrap_socket(raw, server_hostname=name or u.hostname)   # 주소가 숫자여도 인증서는 이름으로 확인
+        except ssl.SSLCertVerificationError as ex:
+            raw.close()
+            raise FundError("fund 인증서를 확인하지 못했습니다(이름이 다르거나 믿을 수 없는 인증서). 연결하지 않았습니다.") from ex
+        except BaseException:
+            raw.close()
+            raise
         der = conn.sock.getpeercert(binary_form=True)
-        if hashlib.sha256(der).hexdigest().upper() != pin:
+        if len(pin) == 64 and hashlib.sha256(der).hexdigest().upper() != pin:
             raise FundError("fund 인증서 지문이 설정과 다릅니다. 연결하지 않았습니다.")
-        conn.request("GET", f"/api/bms/annual?year={int(year)}", headers={"Authorization": f"Bearer {token}"})
+        headers = {"Authorization": f"Bearer {token}"}
+        if name:
+            headers["Host"] = name if port == 443 else f"{name}:{port}"
+        conn.request("GET", f"/api/bms/annual?year={int(year)}", headers=headers)
         r = conn.getresponse()
         body = r.read(200_000)
     except FundError:

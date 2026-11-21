@@ -392,6 +392,21 @@ def save_items(c: dict, rows: list[dict], by: str = "") -> int:
     return n
 
 
+def bulk_set(c: dict, emp_ids: list[int], grade: str | None = None, final: str | None = None, by: str = "") -> int:
+    """여러 명에게 한꺼번에. grade·final 이 None 이면 그 칸은 그대로 두고, "" 이면 비웁니다. 메모 등 다른 칸은 건드리지 않습니다."""
+    if grade is None and final is None:
+        raise ReviewError("바꿀 내용을 고르세요 (등급 또는 최종 직접 %)")
+    cur = items(c)
+    keep = lambda v: "" if v is None else str(v)       # noqa: E731
+    rows = []
+    for eid in emp_ids:
+        it = cur.get(eid) or {}
+        rows.append({"employee_id": eid, "grade": keep(it.get("grade")) if grade is None else grade,
+                     "final_rate": keep(it.get("final_rate")) if final is None else final,
+                     "add_rate": keep(it.get("add_rate")), "comment": it.get("comment") or "", "evaluator": it.get("evaluator") or ""})
+    return save_items(c, rows, by) if rows else 0
+
+
 def apply(c: dict, by: str = "") -> int:
     c = _fresh(c)
     if c["status"] != "확정":

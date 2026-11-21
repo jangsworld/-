@@ -28,7 +28,8 @@ from app.modules.hr.ecount_routes import router as ecount_router
 from app.modules.hr.dual_routes import router as dual_router
 from app.modules.hr.salary_routes import router as salary_router
 from app.modules.hr.appoint_routes import router as appoint_router
-from app.modules.hr.offboard_routes import router as offboard_router
+from app.modules.hr.offboard_routes import onboard_router, router as offboard_router
+from app.modules.hr.health_routes import router as health_router
 from app.modules.ga.routes import router as ga_router, public_router as ga_public_router
 from app.modules.ga.fleet_routes import router as fleet_router, public_router as fleet_public_router
 from app.modules.ga import repo as ga_repo
@@ -120,6 +121,8 @@ app.include_router(dual_router)
 app.include_router(salary_router)
 app.include_router(appoint_router)
 app.include_router(offboard_router)
+app.include_router(onboard_router)
+app.include_router(health_router)
 app.include_router(leave_public_router)
 app.include_router(hr_router)
 app.include_router(sign_router)
@@ -284,13 +287,19 @@ async def settings_fund(request: Request):
     url = str(form.get("fund_url", "")).strip()
     fp = str(form.get("fund_cert_sha256", "")).strip().upper()
     key = str(form.get("fund_token", "")).strip()
+    name = str(form.get("fund_tls_name", "")).strip()
+    if name and not mgmt_fin.NAME_RE.match(name):
+        return _settings_redirect("인증서 이름은 fund 접속 주소의 이름 부분만 넣어 주세요 (https:// 와 :3103 은 빼고)", "fund")
     if url and not url.startswith("https://"):
         return _settings_redirect("fund 주소는 https:// 로 시작해야 합니다", "fund")
     if fp and len("".join(c for c in fp if c in "0123456789ABCDEF")) != 64:
         return _settings_redirect("인증서 지문은 SHA-256 (64자리, 콜론 포함 가능)이어야 합니다", "fund")
     if url:
         set_setting("fund_url", url)
-    if fp:
+    if "fund_tls_name" in form:
+        set_setting("fund_tls_name", name)
+        set_setting("fund_cert_sha256", fp)          # 이름 칸이 있는 새 화면: 지문을 비우면 지워짐
+    elif fp:
         set_setting("fund_cert_sha256", fp)
     if key:
         set_setting("fund_token", enc(key))
