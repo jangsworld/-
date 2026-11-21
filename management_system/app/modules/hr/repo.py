@@ -491,7 +491,7 @@ def delete_template(tid: int):
 def list_documents(doc_group="contract", employee_id=None, status="", category="", q="") -> list[dict]:
     sql = ("SELECT d.id, d.doc_group, d.employee_id, d.template_id, d.category, d.title, d.doc_no, "
            "d.purpose, d.start_date, d.end_date, d.annual_salary, d.weekly_hours, d.status, "
-           "d.signed_date, d.created_at, d.updated_at, d.emailed_at, e.name, e.emp_no, e.department, e.rank, "
+           "d.signed_date, d.created_at, d.updated_at, d.emailed_at, d.cancel_reason, d.canceled_at, d.pdf_saved_at, e.name, e.emp_no, e.department, e.rank, "
            "e.employment_type, e.resign_date FROM hr_documents d JOIN employees e ON e.id=d.employee_id "
            "WHERE d.doc_group=?")
     params = [doc_group]
@@ -549,7 +549,42 @@ def list_doc_mails(doc_id: int) -> list[dict]:
 
 
 def delete_document(doc_id: int):
+    execute("DELETE FROM hr_doc_mails WHERE doc_id=?", (doc_id,))
     execute("DELETE FROM hr_documents WHERE id=?", (doc_id,))
+
+
+def cert_delete_block(d: dict) -> str:
+    """증명서를 지울 수 없는 이유 (지울 수 있으면 빈 글).
+    밖으로 나간(메일) 증명서와 폴더에 저장한 증명서는 대장에 남겨야 하므로 지우지 않고 발급취소로 처리합니다."""
+    if d.get("emailed_at") or list_doc_mails(d["id"]):
+        return "메일로 보낸 증명서는 삭제할 수 없습니다. [발급취소]로 처리하세요 (대장에 기록이 남습니다)"
+    if d.get("pdf_path"):
+        return "임직원 폴더에 저장한 증명서는 삭제할 수 없습니다. [발급취소]로 처리하세요 (대장에 기록이 남습니다)"
+    return ""
+
+
+def release_cert_no(doc_no: str) -> bool:
+    """지운 증명서가 그 해의 마지막 번호였으면 번호를 되돌려 다음 발급에 다시 씁니다(중간 번호는 비워 둠)."""
+    from app.db import batch, get_settings, set_setting
+    m = re.match(r"제(\d{4})-(\d+)호", str(doc_no or ""))
+    if not m:
+        return False
+    y, n, key = m.group(1), int(m.group(2)), f"cert_seq_{m.group(1)}"
+    with batch():
+        try:
+            last = int(get_settings().get(key) or 0)
+        except ValueError:
+            last = 0
+        if last != n:
+            return False
+        used = 0
+        for r in query("SELECT doc_no FROM hr_documents WHERE doc_group='certificate' AND doc_no LIKE ?", (f"제{y}-%",)):
+            k = re.match(rf"제{y}-(\d+)호", str(r["doc_no"] or ""))
+            used = max(used, int(k.group(1)) if k else 0)
+        if used >= n:
+            return False
+        set_setting(key, str(used))
+    return True
 
 
 def valid_contract_ids(ref=None) -> set[int]:
@@ -565,7 +600,8 @@ def valid_contract_ids(ref=None) -> set[int]:
 
 
 def next_cert_no() -> str:
-    """증명서 발급번호. 한 번 쓴 번호는 그 증명서를 지워도 다시 쓰지 않음(연도별 마지막 번호를 따로 기억)."""
+    """증명서 발급번호. 한 번 쓴 번호는 다시 쓰지 않음(연도별 마지막 번호를 따로 기억).
+    예외: 밖으로 나가지 않은 마지막 번호 증명서를 지운 경우만 release_cert_no 가 번호를 되돌립니다."""
     from app.db import batch, get_settings, set_setting
     y = today().year
     key = f"cert_seq_{y}"

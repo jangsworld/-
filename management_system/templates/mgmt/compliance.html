@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% import "mgmt/_m.html" as m %}
-{% block title %}법정의무 일정{% endblock %}
-{% block page_title %}<i class="bi bi-calendar2-check me-2"></i>법정의무 일정{% endblock %}
+{% block title %}신고·납부 일정{% endblock %}
+{% block page_title %}<i class="bi bi-calendar2-check me-2"></i>신고·납부 일정 <span class="text-muted small">신고·납부·점검, 회사 관리 만기, 계약 만료 · 교육은 [교육 이수] 메뉴에서 봅니다</span>{% endblock %}
 {% block content %}
 {% set SB = {'의무': 'text-bg-primary', '교육': 'text-bg-info', '회사관리': 'text-bg-secondary', '계약': 'text-bg-dark'} %}
 {% set STB = {'overdue': ('text-bg-danger', '지남'), 'soon': ('text-bg-warning', '2주 안'), 'upcoming': ('text-bg-light border', '예정'), 'done': ('text-bg-success', '완료'), 'before': ('text-bg-light border text-muted', '기록 전')} %}
@@ -9,7 +9,7 @@
 <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
   {{ m.year_tabs(range(year - 1, year + 2)|list, year, '&show=' ~ show ~ '&src=' ~ srcq) }}
   <div class="btn-group btn-group-sm ms-2">{% for k, n in [('todo', '할 일만'), ('all', '전체')] %}<a class="btn {{ 'btn-secondary' if show == k else 'btn-outline-secondary' }}" href="?year={{ year }}&show={{ k }}&src={{ srcq }}">{{ n }}</a>{% endfor %}</div>
-  <div class="d-flex gap-1 ms-2">{% for s in ['의무', '교육', '회사관리', '계약'] %}{% set on = s in src %}
+  <div class="d-flex gap-1 ms-2">{% for s in ['의무', '회사관리', '계약'] %}{% set on = s in src %}
     {% set nxt = (src|reject('equalto', s)|list) if on else (src|list + [s]) %}
     <a class="badge {{ SB[s] if on else 'text-bg-light border text-muted' }} text-decoration-none py-2" href="?year={{ year }}&show={{ show }}&src={{ nxt|join(',') }}">{{ '✓ ' if on }}{{ s }}</a>{% endfor %}</div>
   <button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#taskModal" data-fill='{}'><i class="bi bi-plus-lg"></i> 일정 추가</button>

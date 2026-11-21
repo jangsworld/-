@@ -24,19 +24,22 @@
   <div class="col-12" id="brand">
     <div class="card"><div class="card-header">증명서 도장 · 로고 <span class="help">재직증명서·경력증명서의 대표이사 이름 옆(도장)과 왼쪽 위(로고)에 들어갑니다</span></div>
       <div class="card-body row g-3">
+        {% if brand_msg %}<div class="col-12"><div class="alert {{ 'alert-success' if brand_ok else 'alert-danger' }} py-2 mb-0" role="alert">
+          <i class="bi {{ 'bi-check-circle' if brand_ok else 'bi-exclamation-triangle' }}"></i> {{ brand_msg }}</div></div>{% endif %}
         {% for k, b in brand.items() %}
         <div class="col-md-6"><div class="border rounded p-2 h-100">
           <div class="fw-semibold small mb-2">{{ b.label }}
             {% if b.has %}<span class="badge text-bg-success">올림</span>{% else %}<span class="badge text-bg-light border">아직 없음</span>{% endif %}</div>
           {% if b.has %}<div class="mb-2 p-2 bg-light rounded text-center"><img src="/hr/api/doc-asset/{{ k }}" alt="{{ b.label }}" style="max-height:90px;max-width:100%"></div>{% endif %}
           <form method="post" action="/settings/brand/{{ k }}" enctype="multipart/form-data" class="d-flex gap-2">
-            <input class="form-control form-control-sm" type="file" name="file" accept=".png,.jpg,.jpeg" required>
-            <button class="btn btn-sm btn-primary text-nowrap"><i class="bi bi-upload"></i> 올리기</button></form>
+            <input class="form-control form-control-sm" type="file" name="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/gif" required>
+            <button class="btn btn-sm btn-primary text-nowrap"><i class="bi bi-save"></i> 올려서 저장</button></form>
+          <div class="help mt-1">① [파일 선택]으로 그림을 고르고 ② [올려서 저장]을 누르면 바로 저장됩니다. 저장되면 이 칸에 미리보기가 나옵니다.</div>
           {% if b.has %}<form method="post" action="/settings/brand/{{ k }}" class="mt-1" data-confirm="{{ b.label }} 그림을 지울까요?">
             <button class="btn btn-sm btn-link text-danger px-0" name="remove" value="1">그림 지우기</button></form>{% endif %}
         </div></div>
         {% endfor %}
-        <div class="col-12 help">PNG·JPG, 500KB 이하. 도장은 <b>배경이 투명한 PNG</b>가 가장 깔끔합니다(정사각형 권장). 그림은 서버 DB에 암호화해 보관하고,
+        <div class="col-12 help">PNG·JPG 등 그림 파일, 4MB 이하(큰 그림은 자동으로 줄여 저장). 도장은 흰 종이에 찍어 스캔한 그림도 됩니다. 흰 바탕은 자동으로 투명하게 바꿉니다. 그림은 서버 DB에 암호화해 보관하고,
           인사 담당 이상만 볼 수 있습니다. 올린 뒤 새로 만드는 PDF부터 들어가며, 이미 폴더에 저장한 PDF는 바뀌지 않습니다.
           도장이 없으면 그 자리에 "(직인)" 글자가 나옵니다.</div>
       </div></div>
@@ -101,7 +104,7 @@
 
   <div class="col-12">
     <div class="card"><div class="card-header">서버 구동 설정 <span class="help">config/bms.toml 에서 변경 (변경 후 서비스 재시작)</span></div>
-      <table class="table table-sm mb-0">{% for k, v in cfg.items() %}<tr><th style="width:200px">{{ k }}</th><td style="word-break:break-all"><code>{{ v }}</code></td></tr>{% endfor %}</table></div>
+      <div class="table-responsive"><table class="table table-sm mb-0">{% for k, v in cfg.items() %}<tr><th style="width:200px">{{ k }}</th><td style="word-break:break-all"><code>{{ v }}</code></td></tr>{% endfor %}</table></div></div>
   </div>
 </div>
 {% endblock %}

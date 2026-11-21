@@ -417,7 +417,7 @@ def training_export(year: int):
 @router.get("/compliance", response_class=HTMLResponse)
 def compliance_page(request: Request, year: int | None = None, src: str = "", show: str = "todo"):
     y = year if (year and 2000 <= year <= 2100) else today().year
-    srcs = tuple(s for s in src.split(",") if s) or ("의무", "교육", "회사관리", "계약")
+    srcs = tuple(s for s in src.split(",") if s in ("의무", "회사관리", "계약")) or ("의무", "회사관리", "계약")   # 교육 기한은 [교육 이수] 메뉴에서
     ev = compliance.calendar_year(y, srcs)
     if show == "todo":
         shown = [e for e in ev if e["status"] not in ("done", "before")]

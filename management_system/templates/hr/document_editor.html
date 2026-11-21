@@ -24,7 +24,12 @@
       </div>
       <hr>
       <label class="form-label small">상태</label>
+      {% if d.doc_group == 'certificate' and not draft %}
+      <div class="mb-2"><span class="st st-{{ d.status }}">{{ d.status }}</span><input type="hidden" id="status" value="{{ d.status }}">
+        {% if d.status == '발급취소' %}<div class="small text-muted mt-1">{{ (d.canceled_at or '')[:16] }} {{ d.canceled_by or '' }}<br>사유: {{ d.cancel_reason or '-' }}</div>{% endif %}</div>
+      {% else %}
       <select class="form-select form-select-sm mb-2" id="status">{% for s in statuses %}<option {% if d.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      {% endif %}
       <label class="form-label small">{{ '체결일' if d.doc_group == 'contract' else '발급일' }}</label>
       <input type="date" class="form-control form-control-sm mb-3" id="signed" value="{{ d.signed_date or '' }}">
       <div class="d-grid gap-2">
@@ -33,7 +38,7 @@
         {% if draft %}<a class="btn btn-outline-secondary btn-sm" href="/hr/employees/{{ d.employee_id }}?tab=contract"><i class="bi bi-x-lg"></i> 저장하지 않고 나가기</a>
         {% else %}
         <form method="post" action="/hr/documents/{{ d.id }}/pdf" class="d-grid">
-          <button class="btn btn-outline-success btn-sm"><i class="bi bi-folder-check"></i> 임직원 폴더에 PDF 저장</button></form>
+          <button class="btn btn-outline-success btn-sm" {{ 'disabled' if d.doc_group == 'certificate' and d.status == '발급취소' }}><i class="bi bi-folder-check"></i> 임직원 폴더에 PDF 저장</button></form>
         {% if d.pdf_path %}<a class="btn btn-success btn-sm" href="/hr/documents/{{ d.id }}/pdf" target="_blank"><i class="bi bi-file-earmark-pdf"></i> 폴더에 저장한 PDF 열기 <span class="small opacity-75">({{ d.pdf_saved_at[:16] }})</span></a>
         <div class="help text-break"><i class="bi bi-folder2-open"></i> 저장 위치: 임직원 서류 폴더 \ {{ pdf_where }}
           {% if pdf_stale %}<div class="text-danger">폴더에 저장한 뒤 내용을 고쳤습니다. 폴더에도 반영하려면 [임직원 폴더에 PDF 저장]을 다시 누르세요.</div>{% endif %}</div>{% endif %}
@@ -42,14 +47,30 @@
           <button class="btn btn-warning btn-sm"><i class="bi bi-send"></i> {{ '서명 다시 요청' if sign and sign.status == '대기' else '직원에게 전자서명 요청' }}</button></form>
         {% endif %}
         {% if d.doc_group == 'certificate' or d.status == '체결완료' %}
-        <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#mailModal" {{ 'disabled' if not mail_ready }}>
+        <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#mailModal" {{ 'disabled' if not mail_ready or d.status == '발급취소' }}>
           <i class="bi bi-envelope"></i> 메일로 보내기{% if d.emailed_at %} <span class="small opacity-75">({{ d.emailed_at[5:10] }} 보냄)</span>{% endif %}</button>
         {% if not mail_ready %}<div class="help">메일 서버가 설정되지 않아 보낼 수 없습니다 (회사정보·환경설정)</div>{% endif %}
         {% endif %}
         <form method="post" action="/hr/documents/{{ d.id }}/regenerate" class="d-grid" data-confirm="편집한 내용이 사라지고 템플릿+최신 임직원 정보로 다시 작성됩니다. 계속할까요?">
           <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-repeat"></i> 최신 정보로 다시 작성</button></form>
+        {% if d.doc_group == 'certificate' %}
+        {% if d.status == '발급취소' %}
+        <form method="post" action="/hr/documents/{{ d.id }}/cancel" class="d-grid" data-confirm="발급취소를 되돌려 다시 '발급완료'로 바꿀까요?">
+          <button class="btn btn-outline-secondary btn-sm" name="restore" value="1"><i class="bi bi-arrow-counterclockwise"></i> 발급취소 되돌리기</button></form>
+        {% else %}
+        <form method="post" action="/hr/documents/{{ d.id }}/cancel" class="d-grid gap-1 border rounded p-2" data-enter-submit data-confirm="{{ d.doc_no }} 증명서를 발급취소로 표시할까요? 대장에서 지워지지 않고, 번호와 발송 기록이 그대로 남습니다.">
+          <input class="form-control form-control-sm" name="reason" required maxlength="200" placeholder="발급취소 사유 (예: 용도 변경으로 재발급)" aria-label="발급취소 사유">
+          <button class="btn btn-outline-danger btn-sm"><i class="bi bi-slash-circle"></i> 발급취소</button></form>
+        {% endif %}
+        {% if delete_block %}<div class="help"><i class="bi bi-lock"></i> 삭제할 수 없습니다: {{ delete_block }}</div>
+        {% else %}
+        <form method="post" action="/hr/documents/{{ d.id }}/delete" class="d-grid" data-confirm="잘못 만든 증명서를 대장에서 완전히 지울까요? 아직 보내지도 폴더에 저장하지도 않은 증명서만 지울 수 있습니다. 마지막 번호였다면 그 번호를 다음 발급에 다시 씁니다.">
+          <button class="btn btn-link btn-sm text-danger"><i class="bi bi-trash"></i> 잘못 만든 증명서 삭제</button></form>
+        {% endif %}
+        {% else %}
         <form method="post" action="/hr/documents/{{ d.id }}/delete" class="d-grid" data-confirm="BMS 대장에서 이 문서를 삭제할까요?{{ ' 임직원 폴더에 저장한 PDF 파일은 지워지지 않고 그대로 남습니다.' if d.pdf_path }}">
           <button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> 삭제</button></form>
+        {% endif %}
         {% endif %}
       </div>
       {% if d.doc_group == 'certificate' and not draft %}
@@ -57,7 +78,8 @@
         <b>BMS에 저장</b>: 고친 내용·상태를 BMS 대장에만 저장합니다.<br>
         <b>임직원 폴더에 PDF 저장</b>: 이 버튼을 눌렀을 때만 그 직원 폴더에 PDF 파일이 만들어집니다.<br>
         <b>메일로 보내기</b>: PDF를 첨부해 보내기만 하고 폴더에는 저장하지 않습니다.<br>
-        <b>발급취소·삭제</b>: BMS 대장만 바뀝니다. 폴더에 이미 저장한 PDF 파일은 지워지지 않습니다.</div>
+        <b>발급취소</b>: 대장에 '발급취소'와 사유를 남깁니다. 번호는 다시 쓰지 않고, 보낸 기록도 그대로 남습니다. 폴더의 PDF 파일은 지워지지 않습니다.<br>
+        <b>삭제</b>: 아직 보내지도 폴더에 저장하지도 않은, 잘못 만든 증명서만 지울 수 있습니다.</div>
       {% endif %}
       <div class="help mt-2" id="saveState">{{ '아직 저장되지 않음 (미리보기)' if draft else '마지막 저장 ' ~ d.updated_at }}</div>
       {% if d.doc_group == 'contract' and not draft %}
@@ -120,7 +142,7 @@
 const paper = document.getElementById('paper');
 let dirty = false;
 const markDirty = () => { dirty = true; document.getElementById('saveState').textContent = '변경사항 있음 (저장 필요)'; };
-{% if not locked %}initEditor(paper, markDirty);{% endif %}
+{% if not locked and not (d.doc_group == 'certificate' and d.status == '발급취소') %}initEditor(paper, markDirty);{% endif %}
 const DRAFT = {{ draft|tojson if draft else 'null' }};
 let saving = false;
 async function save() {

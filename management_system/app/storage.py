@@ -66,7 +66,7 @@ def _paper_css() -> str:
     from app import brand
     from app.common import doc_font_css
     return css + brand.css(embed=True) + "\nbody{background:#fff;margin:0}.paper{box-shadow:none;margin:0;padding:0;width:auto;min-height:auto}" \
-                 ".ph-missing{background:none;color:#111}.sign-table{page-break-inside:avoid}" + doc_font_css()
+                 ".ph-missing{background:none;color:#111}.sign-table{page-break-inside:avoid}"                  "@page{size:A4;margin:20mm}html,body{height:auto;min-height:0}" + doc_font_css()    # app.css 의 인쇄용 @page 여백 0 이 PDF 여백을 지우지 않게 맨 뒤에서 다시 정함
 
 
 def render_pdf(content_html: str, title: str) -> bytes:

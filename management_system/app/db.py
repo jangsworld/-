@@ -1111,7 +1111,7 @@ def _all_default_codes() -> dict:
 # v3→v4: 기존 DB 에 없는 컬럼 추가 (CREATE TABLE IF NOT EXISTS 는 기존 테이블을 바꾸지 않음)
 ADDED_COLUMNS = {
     "employees": ["emergency_relation", "emergency_name", "hire_route", "edu_level", "edu_school", "edu_major", "edu_grad_year", "folder_name"],
-    "hr_documents": ["emailed_at"],
+    "hr_documents": ["emailed_at", "cancel_reason", "canceled_at", "canceled_by"],   # 증명서 발급취소 사유·일시·처리자
     "codes": ["behavior"],
     "employee_qualifications": ["expires_on"],
     "ga_assets": ["cost_vat", "photo", "qr_token"],

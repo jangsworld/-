@@ -28,13 +28,22 @@
   <div class="card-footer bg-white p-0">
     <ul class="nav nav-tabs border-0 px-2">
       {% for key, label, cnt in [('info','기본정보',None), ('history','인사발령',appointments|length), ('contract','근로계약·증명서',contracts|length + certs|length),
-        ('salary','연봉',salaries|length), ('reward','상벌',rewards|length), ('special','근로특이사항',specials|length), ('insurance','상해공제',insurances|length), ('payroll','급여·연말정산',None), ('files','입사서류',None), ('check','체크리스트',None)] if perms.salary or key in ('info', 'history') %}
+        ('salary','연봉',salaries|length), ('reward','상벌',rewards|length), ('special','근로특이사항',specials|length), ('training','교육이수',None), ('insurance','상해공제',insurances|length), ('payroll','급여·연말정산',None), ('files','입사서류',None), ('check','체크리스트',None)] if perms.salary or key in ('info', 'history') %}
       <li class="nav-item"><a class="nav-link {% if tab == key %}active{% endif %}" href="?tab={{ key }}">{{ label }}{% if cnt %} <span class="badge text-bg-light border">{{ cnt }}</span>{% endif %}</a></li>
       {% endfor %}
     </ul>
   </div>
 </div>
 
+{% if perms.salary %}
+{% set related = {'info': [], 'history': [('인사발령', '/hr/appointments')], 'contract': [('근로계약서', '/hr/contracts'), ('증명서 발급', '/hr/certificates?q=' ~ e.name|urlencode)],
+  'salary': [('인건비·연봉', '/hr/salaries')], 'reward': [('상벌현황', '/hr/rewards?q=' ~ e.name|urlencode)], 'special': [('근로특이사항', '/hr/specials?q=' ~ e.name|urlencode)],
+  'training': [('교육 이수', '/mgmt/training')]} %}
+<div class="d-flex flex-wrap gap-2 align-items-center small mb-2 no-print"><span class="text-muted">관련 메뉴</span>
+  {% for label, url in related.get(tab, []) %}<a class="btn btn-sm btn-outline-secondary py-0" href="{{ url }}"><i class="bi bi-box-arrow-up-right"></i> {{ label }}</a>{% endfor %}
+  <a class="btn btn-sm btn-outline-secondary py-0" href="/hr/leave/{{ e.id }}"><i class="bi bi-calendar-check"></i> 연차 현황</a>
+</div>
+{% endif %}
 {% if tab == 'info' %}
 {% if duals is defined and duals %}
 <div class="card mb-3"><div class="card-header d-flex align-items-center"><i class="bi bi-building-add me-2"></i>프로젝트 이중가입
@@ -130,7 +139,7 @@
   <table class="table table-sm mb-0"><thead><tr><th>구분</th><th>종류</th><th>일자</th><th>사유</th><th class="num">금액</th><th>징계기간</th><th>말소예정일</th><th></th></tr></thead><tbody>
   {% for r in rewards %}<tr><td><span class="st kind-{{ r.kind }}">{{ r.kind }}</span></td><td>{{ r.category }}</td><td>{{ r.action_date }}</td><td>{{ r.reason or '' }}</td><td class="num">{{ r.amount|won if r.amount else '' }}</td>
     <td class="small">{% if r.period_start %}{{ r.period_start }} ~ {{ r.period_end or '' }}{% endif %}</td><td class="small">{{ r.expunge_date or '' }}</td>
-    <td><form method="post" action="/hr/rewards/{{ r.id }}/delete" data-confirm="삭제할까요?"><input type="hidden" name="next" value="{{ back }}?tab=reward"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
+    <td class="text-nowrap text-end"><button type="button" class="btn btn-sm btn-link p-0 me-2" title="수정" aria-label="수정" data-reward-edit='{{ {"id": r.id, "employee_id": r.employee_id, "kind": r.kind, "category": r.category, "action_date": r.action_date, "reason": r.reason, "amount": r.amount, "period_start": r.period_start, "period_end": r.period_end, "expunge_date": r.expunge_date, "issuer": r.issuer, "note": r.note}|tojson }}'><i class="bi bi-pencil"></i></button><form class="d-inline" method="post" action="/hr/rewards/{{ r.id }}/delete" data-confirm="삭제할까요?"><input type="hidden" name="next" value="{{ back }}?tab=reward"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
   {% else %}<tr><td colspan="8" class="text-muted text-center p-3">상벌 이력 없음</td></tr>{% endfor %}</tbody></table></div>
 
 {% elif tab == 'special' %}
@@ -140,8 +149,22 @@
     <td>{{ s.start_date }} ~ {{ s.end_date or '' }}{% if s.actual_end %}<div class="small text-muted">실제종료 {{ s.actual_end }}</div>{% endif %}</td><td class="num">{{ s.days or '' }}</td>
     <td>{{ (s.reduced_hours|string ~ '시간') if s.reduced_hours else '' }}</td><td>{{ s.child_name or '' }} {{ s.child_birth or '' }}</td>
     <td class="small">{{ s.replacement or '' }}{% if s.subsidy %}<br>{{ s.subsidy }}{% endif %}</td>
-    <td><form method="post" action="/hr/specials/{{ s.id }}/delete" data-confirm="삭제할까요?"><input type="hidden" name="next" value="{{ back }}?tab=special"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
+    <td class="text-nowrap text-end"><button type="button" class="btn btn-sm btn-link p-0 me-2" title="수정" aria-label="수정" data-special-edit='{{ {"id": s.id, "employee_id": s.employee_id, "category": s.category, "reduced_hours": s.reduced_hours, "start_date": s.start_date, "end_date": s.end_date, "actual_end": s.actual_end, "child_name": s.child_name, "child_birth": s.child_birth, "replacement": s.replacement, "subsidy": s.subsidy, "note": s.note}|tojson }}'><i class="bi bi-pencil"></i></button><form class="d-inline" method="post" action="/hr/specials/{{ s.id }}/delete" data-confirm="삭제할까요?"><input type="hidden" name="next" value="{{ back }}?tab=special"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
   {% else %}<tr><td colspan="8" class="text-muted text-center p-3">등록된 사항 없음</td></tr>{% endfor %}</tbody></table></div>
+
+{% elif tab == 'training' %}
+<div class="card mb-3"><div class="card-header d-flex align-items-center">{{ tr_year }}년 교육 이수 현황 <span class="help ms-2">보기 전용 · 이수 등록은 [교육 이수] 메뉴에서 합니다</span></div>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>교육 과정</th><th>주기</th><th>상태</th><th>기간별</th><th>마지막 이수일</th></tr></thead><tbody>
+  {% set tr_label = {'done': ('이수', 'success'), 'partial': ('일부 이수', 'warning'), 'missing': ('미이수', 'danger'), 'upcoming': ('기한 전', 'light border')} %}
+  {% for x in tr_status %}<tr><td class="fw-semibold">{{ x.course.name }}</td><td class="small">{{ x.course.cycle }}{% if x.course.hours %} · {{ '%g'|format(x.course.hours) }}시간{% endif %}</td>
+    <td><span class="badge text-bg-{{ tr_label[x.cell.status][1] }}">{{ tr_label[x.cell.status][0] }}</span></td>
+    <td class="small">{% for p in x.cell.periods if p.applies %}<span class="me-2 {{ 'text-success' if p.ok else 'text-danger' if p.due else 'text-muted' }}">{{ p.label }} {{ '이수' if p.ok else '미이수' if p.due else '예정' }}</span>{% endfor %}</td>
+    <td class="small">{{ x.cell.last or '-' }}</td></tr>
+  {% else %}<tr><td colspan="5" class="text-muted text-center p-3">올해 대상인 교육 과정이 없습니다</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card"><div class="card-header">이수 기록 <span class="badge text-bg-secondary ms-1">{{ tr_records|length }}건</span></div>
+  <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>교육일</th><th>과정</th><th class="num">시간</th><th>방법</th><th>교육기관</th><th>비고</th></tr></thead><tbody>
+  {% for r in tr_records %}<tr><td>{{ r.edu_date }}</td><td>{{ r.course }}</td><td class="num">{{ '%g'|format(r.hours) if r.hours else '' }}</td><td class="small">{{ r.method or '' }}</td><td class="small">{{ r.provider or '' }}</td><td class="small">{{ r.note or '' }}</td></tr>
+  {% else %}<tr><td colspan="6" class="text-muted text-center p-3">이수 기록이 없습니다</td></tr>{% endfor %}</tbody></table></div></div>
 
 {% elif tab == 'insurance' %}
 <div class="card"><div class="card-header d-flex align-items-center">상해공제 가입 이력

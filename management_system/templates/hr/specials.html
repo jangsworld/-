@@ -22,7 +22,10 @@
   <div class="card-header"><form class="row g-2 align-items-center" method="get">
     <div class="col-auto"><select class="form-select form-select-sm" name="category"><option value="">구분 전체</option>{% for k in work_specials %}<option {% if f.category == k %}selected{% endif %}>{{ k }}</option>{% endfor %}</select></div>
     <div class="col-auto"><select class="form-select form-select-sm" name="status"><option value="">상태 전체</option>{% for s in ['진행중', '예정', '종료'] %}<option {% if f.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+    <div class="col-auto"><select class="form-select form-select-sm" name="department" aria-label="부서"><option value="">부서 전체</option>{% for d in depts %}<option {% if f.department == d %}selected{% endif %}>{{ d }}</option>{% endfor %}</select></div>
+    <div class="col-auto"><input class="form-control form-control-sm" name="q" value="{{ f.q }}" placeholder="이름" aria-label="이름" style="width:130px"></div>
     <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">조회</button></div>
+    {% if f.department or f.q or f.kind or f.year or f.category or f.status %}<div class="col-auto"><a class="btn btn-sm btn-link px-0" href="?">전체 보기</a></div>{% endif %}
     <div class="col text-end"><button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#specialModal"><i class="bi bi-plus"></i> 등록</button></div>
   </form></div>
   <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel>
@@ -36,7 +39,7 @@
         <td>{{ (s.reduced_hours ~ 'h/주') if s.reduced_hours else '' }}</td><td class="small">{{ s.child_name or '' }} {{ s.child_birth or '' }}</td>
         <td class="small">{{ s.replacement or '' }}</td><td class="small">{{ s.subsidy or '' }}</td>
         <td class="small text-muted">{{ work_specials[s.category].law if s.category in work_specials else '' }}</td>
-        <td><form method="post" action="/hr/specials/{{ s.id }}/delete" data-confirm="삭제할까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
+        <td class="text-nowrap"><button type="button" class="btn btn-sm btn-link p-0 me-2" title="수정" aria-label="수정" data-special-edit='{{ {"id": s.id, "employee_id": s.employee_id, "category": s.category, "reduced_hours": s.reduced_hours, "start_date": s.start_date, "end_date": s.end_date, "actual_end": s.actual_end, "child_name": s.child_name, "child_birth": s.child_birth, "replacement": s.replacement, "subsidy": s.subsidy, "note": s.note}|tojson }}'><i class="bi bi-pencil"></i></button><form class="d-inline" method="post" action="/hr/specials/{{ s.id }}/delete" data-confirm="{{ s.name }}님의 {{ s.category }} 기록을 삭제할까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
     {% else %}<tr><td colspan="13" class="text-center text-muted p-4">등록된 사항이 없습니다</td></tr>{% endfor %}</tbody>
   </table></div>
   <div class="card-footer help">

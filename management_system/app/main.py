@@ -8,6 +8,7 @@ from urllib.parse import quote, urlencode
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -217,6 +218,7 @@ def settings_page(request: Request):
     return templates.TemplateResponse(request, "settings.html", {
         "s": get_settings(), "labels": SETTING_LABELS,
         "brand": {k: {"label": v, "has": bool(brand.get(k))} for k, v in brand.KINDS.items()},
+        "brand_msg": request.query_params.get("bmsg", ""), "brand_ok": request.query_params.get("bok") == "1",
         "active_menu": "settings", "msg": request.query_params.get("msg", ""),
         "cfg": {"포트": settings.port, "HTTPS": "사용" if settings.https else "미사용(내부 테스트용)",
                 "2단계 인증": "필수" if settings.require_2fa else "선택",
@@ -327,11 +329,14 @@ async def settings_brand(kind: str, request: Request):
     label = brand.KINDS[kind]
     if form.get("remove"):
         brand.remove(kind)
-        return _settings_redirect(f"{label} 그림을 지웠습니다", "brand")
-    f = form.get("file")
-    raw = await f.read(brand.MAX_BYTES + 1) if hasattr(f, "read") else b""
-    err = brand.save(kind, raw)
-    return _settings_redirect(err or f"{label} 그림을 저장했습니다. 새로 만드는 증명서 PDF 부터 들어갑니다", "brand")
+        err, msg = "", f"{label} 그림을 지웠습니다"
+    else:
+        f = form.get("file")
+        raw = await f.read(brand.MAX_BYTES + 1) if hasattr(f, "read") else b""
+        err = await run_in_threadpool(brand.save, kind, raw)
+        msg = f"{label}: {err}" if err else f"{label} 그림을 저장했습니다. 아래 미리보기를 확인하세요. 새로 만드는 증명서 PDF부터 들어갑니다"
+    # 결과를 잠깐 뜨는 알림이 아니라 이 칸 안에 계속 보이게
+    return RedirectResponse("/settings?" + urlencode({"bmsg": msg, "bok": "" if err else "1"}) + "#brand", status_code=303)
 
 
 @app.get("/settings/codes", response_class=HTMLResponse)

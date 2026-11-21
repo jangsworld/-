@@ -25,7 +25,10 @@
   <div class="card-header"><form class="row g-2 align-items-center" method="get">
     <div class="col-auto"><select class="form-select form-select-sm" name="kind"><option value="">구분 전체</option>{% for k in ['포상', '징계'] %}<option {% if f.kind == k %}selected{% endif %}>{{ k }}</option>{% endfor %}</select></div>
     <div class="col-auto"><select class="form-select form-select-sm" name="year"><option value="">전체 연도</option>{% for y in years %}<option {% if f.year == y %}selected{% endif %}>{{ y }}</option>{% endfor %}</select></div>
+    <div class="col-auto"><select class="form-select form-select-sm" name="department" aria-label="부서"><option value="">부서 전체</option>{% for d in depts %}<option {% if f.department == d %}selected{% endif %}>{{ d }}</option>{% endfor %}</select></div>
+    <div class="col-auto"><input class="form-control form-control-sm" name="q" value="{{ f.q }}" placeholder="이름" aria-label="이름" style="width:130px"></div>
     <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">조회</button></div>
+    {% if f.department or f.q or f.kind or f.year or f.category or f.status %}<div class="col-auto"><a class="btn btn-sm btn-link px-0" href="?">전체 보기</a></div>{% endif %}
     <div class="col text-end"><button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#rewardModal"><i class="bi bi-plus"></i> 상벌 등록</button></div>
   </form></div>
   <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel>
@@ -37,7 +40,7 @@
         <td class="small">{% if r.period_start %}{{ r.period_start }} ~ {{ r.period_end or '' }}{% endif %}</td>
         <td class="small">{% if r.expunge_date %}{{ r.expunge_date }}{% if r.expunge_date < today().isoformat() %} <span class="badge text-bg-light border">말소</span>{% endif %}{% endif %}</td>
         <td class="small">{{ r.issuer or '' }}</td>
-        <td><form method="post" action="/hr/rewards/{{ r.id }}/delete" data-confirm="삭제할까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
+        <td class="text-nowrap"><button type="button" class="btn btn-sm btn-link p-0 me-2" title="수정" aria-label="수정" data-reward-edit='{{ {"id": r.id, "employee_id": r.employee_id, "kind": r.kind, "category": r.category, "action_date": r.action_date, "reason": r.reason, "amount": r.amount, "period_start": r.period_start, "period_end": r.period_end, "expunge_date": r.expunge_date, "issuer": r.issuer, "note": r.note}|tojson }}'><i class="bi bi-pencil"></i></button><form class="d-inline" method="post" action="/hr/rewards/{{ r.id }}/delete" data-confirm="{{ r.name }}님의 {{ r.kind }}({{ r.category }}) 기록을 삭제할까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
     {% else %}<tr><td colspan="12" class="text-center text-muted p-4">상벌 내역이 없습니다</td></tr>{% endfor %}</tbody>
   </table></div>
 </div>

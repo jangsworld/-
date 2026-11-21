@@ -474,6 +474,7 @@ def test_email_sends_latest_pdf_and_blocks_incomplete(client, mail, fake_pdf, ro
     n = len(mail.sent)
     client.post(f"/hr/api/documents/{doc_id}", json={"content": '<p><span class="ph-missing">[용도]</span></p>'})
     client.post(f"/hr/documents/{doc_id}/email", data={"target": "employee"})
-    client.post(f"/hr/api/documents/{doc_id}", json={"content": "<p>ok</p>", "status": "발급취소"})
+    client.post(f"/hr/api/documents/{doc_id}", json={"content": "<p>ok</p>"})
+    client.post(f"/hr/documents/{doc_id}/cancel", data={"reason": "시험"})
     client.post(f"/hr/documents/{doc_id}/email", data={"target": "employee"})
     assert len(mail.sent) == n

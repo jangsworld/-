@@ -425,7 +425,7 @@ def draft_delete(draft_id: int):
 def employee_detail(request: Request, emp_id: int, tab: str = "info"):
     e = _emp_or_404(emp_id)
     e["has_contract"] = emp_id in repo.valid_contract_ids()
-    if request.state.user["role"] not in ("admin", "hr") and tab in ("salary", "contract", "reward", "special", "insurance", "payroll", "files", "check"):
+    if request.state.user["role"] not in ("admin", "hr") and tab in ("salary", "contract", "reward", "special", "training", "insurance", "payroll", "files", "check"):
         tab = "info"
     audit("hr", "인사기록 열람", f"{e['emp_no']} {e['name']}", tab)  # 개인정보 접속기록
     files = intake.list_files(e) if tab == "files" else []
@@ -452,6 +452,7 @@ def employee_detail(request: Request, emp_id: int, tab: str = "info"):
         "qualifications": repo.get_qualifications(emp_id), "qualification_kinds": QUALIFICATION_KINDS,
         "rrn_masked": repo.rrn_masked(emp_id) if request.state.user["role"] in ("admin", "hr") else "",
         "assets": __import__("app.modules.ga.repo", fromlist=["x"]).list_assets(holder_id=emp_id),
+        **(_training_ctx(emp_id) if tab == "training" else {}),
     }, "hr.employees")
 
 
@@ -843,6 +844,16 @@ def _contract_bulk(ids: list[int]) -> int:
     return n
 
 
+def _training_ctx(emp_id: int) -> dict:
+    """인사기록카드 교육이수 탭 (보기만). 올해 과정별 이수 상태 + 지금까지 이수 기록."""
+    from app.modules.mgmt import training
+    year = today().year
+    m = training.matrix(year)
+    row = next((r for r in m["rows"] if r["employee"]["id"] == emp_id), None)
+    status = [{"course": c, "cell": cell} for c, cell in zip(m["courses"], row["cells"] if row else []) if cell]
+    return {"tr_year": year, "tr_status": status, "tr_records": training.records(employee_id=emp_id)}
+
+
 @router.get("/documents/{doc_id}", response_class=HTMLResponse)
 def document_editor(request: Request, doc_id: int):
     d = repo.get_document(doc_id)
@@ -861,6 +872,7 @@ def document_editor(request: Request, doc_id: int):
         "mails": [{**m, "to_masked": _mask_email(m["to_addr"])} for m in repo.list_doc_mails(doc_id)],
         "history": repo.list_documents(d["doc_group"], employee_id=d["employee_id"]),
         "pdf_where": " \\ ".join(re.split(r"[\\/]+", d["pdf_path"])[-2:]) if d.get("pdf_path") else "",
+        "delete_block": repo.cert_delete_block(d) if d["doc_group"] == "certificate" else "",
         "pdf_stale": bool(d.get("pdf_path")) and (d.get("pdf_saved_at") or "") < (d.get("updated_at") or ""),
     }, {"contract": "hr.contracts", "leave": "hr.leave"}.get(d["doc_group"], "hr.certificates"))
 
@@ -874,6 +886,11 @@ async def document_save(doc_id: int, request: Request):
     for k in ("status", "signed_date", "title", "start_date", "end_date"):
         if k in body:
             kw[k] = body[k] or None
+    cur = repo.get_document(doc_id)
+    if cur and cur["doc_group"] == "certificate":
+        kw.pop("status", None)                      # 증명서 상태는 [발급취소]로만 바꿈 (사유를 남기도록)
+        if cur["status"] == "발급취소":
+            kw.pop("content", None)                 # 발급취소한 증명서는 내용을 고치지 않음
     if kw.get("status") == "체결완료" and not kw.get("signed_date"):
         kw["signed_date"] = today().isoformat()
     repo.update_document(doc_id, **kw)
@@ -888,8 +905,38 @@ async def document_save(doc_id: int, request: Request):
     return {"ok": True, "message": msg}
 
 
+@router.post("/documents/{doc_id}/cancel")
+async def document_cancel(doc_id: int, request: Request):
+    """증명서 발급취소: 대장에서 지우지 않고 취소로 표시합니다(번호·발송 기록 보존). 사유 필수."""
+    from app.db import current_actor
+    d = repo.get_document(doc_id)
+    if not d or d["doc_group"] != "certificate":
+        raise HTTPException(404, "증명서를 찾을 수 없습니다")
+    f = await request.form()
+    back = f"/hr/documents/{doc_id}"
+    if f.get("restore"):
+        if d["status"] != "발급취소":
+            return _redirect(back, "발급취소 상태가 아닙니다")
+        execute("UPDATE hr_documents SET status='발급완료', cancel_reason=NULL, canceled_at=NULL, canceled_by=NULL WHERE id=?", (doc_id,))
+        audit("hr", "증명서 발급취소 되돌림", f"doc#{doc_id}", d.get("doc_no") or "")
+        return _redirect(back, "발급취소를 되돌렸습니다 (발급완료)")
+    reason = (f.get("reason") or "").strip()[:200]
+    if not reason:
+        return _redirect(back, "발급취소 사유를 적어 주세요")
+    if d["status"] == "발급취소":
+        return _redirect(back, "이미 발급취소된 증명서입니다")
+    with batch():
+        execute("UPDATE hr_documents SET status='발급취소', cancel_reason=?, canceled_at=datetime('now','localtime'), canceled_by=? WHERE id=?",
+                (reason, current_actor.get()[1], doc_id))          # 수정일은 그대로 (폴더 PDF 가 낡았다는 표시가 뜨지 않게)
+        audit("hr", "증명서 발급취소", f"doc#{doc_id}", f"{d.get('doc_no') or ''} · {reason}")
+    return _redirect(back, f"{d.get('doc_no') or '증명서'} 발급취소로 표시했습니다. 번호와 발송 기록은 대장에 남습니다")
+
+
 @router.post("/documents/{doc_id}/pdf")
 def document_pdf_store(doc_id: int):
+    d = repo.get_document(doc_id)
+    if d and d["doc_group"] == "certificate" and d["status"] == "발급취소":
+        return _redirect(f"/hr/documents/{doc_id}", "발급취소한 증명서는 폴더에 저장하지 않습니다")
     ok, m = services.store_document_pdf(doc_id)
     return _redirect(f"/hr/documents/{doc_id}", m)
 
@@ -1021,6 +1068,16 @@ def document_regenerate(doc_id: int):
 @router.post("/documents/{doc_id}/delete")
 def document_delete(doc_id: int):
     d = repo.get_document(doc_id)
+    if d and d["doc_group"] == "certificate":
+        block = repo.cert_delete_block(d)
+        if block:                                   # 밖으로 나갔거나 폴더에 저장한 증명서는 대장에 남김
+            return _redirect(f"/hr/documents/{doc_id}", block)
+        with batch():
+            repo.delete_document(doc_id)
+            reused = repo.release_cert_no(d.get("doc_no"))
+            audit("hr", "증명서 삭제", f"doc#{doc_id}", f"{d.get('doc_no') or ''} {d['title']}" + (" · 번호 되돌림" if reused else ""))
+        return _redirect("/hr/certificates", f"{d.get('doc_no') or ''} 삭제했습니다" +
+                         (" (마지막 번호라서 다음 발급에 이 번호를 다시 씁니다)" if reused else " (이 번호는 비워 둡니다)"))
     repo.delete_document(doc_id)
     back = "/hr/certificates" if d and d["doc_group"] == "certificate" else "/hr/contracts"
     kept = " (임직원 폴더에 저장한 PDF 파일은 지우지 않았습니다)" if d and d.get("pdf_path") else ""
@@ -1254,10 +1311,22 @@ def salary_export(year: int):
 # ════════════════════════════════════════════════════════════════════════
 # 4. 상벌현황
 # ════════════════════════════════════════════════════════════════════════
+def _by_dept_name(rows: list[dict], department: str, q: str) -> list[dict]:
+    """부서(하위 부서 포함)·이름으로 거르기."""
+    q = (q or "").strip()
+    if department:
+        from app.db import dept_scope
+        scope = set(dept_scope(department)) | {department}
+        rows = [r for r in rows if (r.get("department") or "") in scope]
+    if q:
+        rows = [r for r in rows if q in (r.get("name") or "")]
+    return rows
+
+
 @router.get("/rewards", response_class=HTMLResponse)
-def rewards(request: Request, kind: str = "", year: str = ""):
-    rows = repo.list_rewards(kind, year or None)
+def rewards(request: Request, kind: str = "", year: str = "", department: str = "", q: str = ""):
     allr = repo.list_rewards()
+    rows = _by_dept_name(repo.list_rewards(kind, year or None), department, q)
     years = sorted({r["action_date"][:4] for r in allr}, reverse=True)
     by_year = {}
     for r in allr:
@@ -1273,7 +1342,8 @@ def rewards(request: Request, kind: str = "", year: str = ""):
         by_dept[r["department"] or "미지정"][r["kind"]] += 1
     effective = [r for r in allr if r["kind"] == "징계" and (not r["expunge_date"] or r["expunge_date"] >= today().isoformat())]
     return _render(request, "hr/rewards.html", {
-        "rows": rows, "years": years, "f": {"kind": kind, "year": year},
+        "rows": rows, "years": years, "f": {"kind": kind, "year": year, "department": department, "q": q.strip()},
+        "depts": sorted({r["department"] for r in allr if r["department"]}),
         "by_year": dict(sorted(by_year.items())), "by_cat": by_cat, "by_dept": by_dept,
         "effective": effective,
         "total_amount": sum(r["amount"] or 0 for r in rows if r["kind"] == "포상"),
@@ -1306,9 +1376,9 @@ async def reward_delete(request: Request, rid: int):
 # 5. 근로특이사항 (단축근무·육아휴직 등)
 # ════════════════════════════════════════════════════════════════════════
 @router.get("/specials", response_class=HTMLResponse)
-def specials(request: Request, category: str = "", status: str = ""):
-    rows = repo.list_specials(category, status)
+def specials(request: Request, category: str = "", status: str = "", department: str = "", q: str = ""):
     allr = repo.list_specials()
+    rows = _by_dept_name(repo.list_specials(category, status), department, q)
     summary = {}
     for r in allr:
         s = summary.setdefault(r["category"], {"진행중": 0, "예정": 0, "종료": 0})
@@ -1317,7 +1387,8 @@ def specials(request: Request, category: str = "", status: str = ""):
     timeline = [r for r in allr if r["status"] in ("진행중", "예정") or
                 (to_date(r["actual_end"] or r["end_date"]) and to_date(r["actual_end"] or r["end_date"]) >= add_months(t, -3))]
     return _render(request, "hr/specials.html", {
-        "rows": rows, "summary": summary, "f": {"category": category, "status": status},
+        "rows": rows, "summary": summary, "f": {"category": category, "status": status, "department": department, "q": q.strip()},
+        "depts": sorted({r["department"] for r in allr if r["department"]}),
         "work_specials": WORK_SPECIALS, "emps": repo.list_employees(status="재직(전체)"),
         "timeline": sorted(timeline, key=lambda r: r["start_date"]),
         "timeline_start": add_months(t.replace(day=1), -3).isoformat(),

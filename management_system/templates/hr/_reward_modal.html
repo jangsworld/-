@@ -41,5 +41,21 @@
     document.getElementById('rwEtc').required = etc;
   };
   kind.addEventListener('change', sync); cat.addEventListener('change', hint); sync();
+  // 수정: 연필 단추를 누르면 그 기록을 채워서 연다. 닫으면 다시 빈 등록 화면으로
+  const modal = document.getElementById('rewardModal'), form = modal.querySelector('form');
+  const setv = (n, v) => { const el = form.elements[n]; if (el) el.value = (v === null || v === undefined) ? '' : v; };
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-reward-edit]');
+    if (!b) return;
+    const r = JSON.parse(b.dataset.rewardEdit);
+    setv('id', r.id); setv('employee_id', r.employee_id);
+    kind.value = r.kind; sync();
+    if (![...cat.options].some((o) => o.value === r.category)) cat.add(new Option(r.category, r.category));
+    cat.value = r.category; hint();
+    ['action_date', 'reason', 'amount', 'period_start', 'period_end', 'expunge_date', 'issuer', 'note'].forEach((n) => setv(n, r[n]));
+    modal.querySelector('.modal-title').textContent = '상벌 수정';
+    bootstrap.Modal.getOrCreateInstance(modal).show();
+  });
+  modal.addEventListener('hidden.bs.modal', () => { form.reset(); setv('id', ''); modal.querySelector('.modal-title').textContent = '상벌 등록'; sync(); });
 })();
 </script>
