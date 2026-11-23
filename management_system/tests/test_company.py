@@ -259,8 +259,19 @@ def test_vehicle_folder_name_and_rehome(client, two):
         assert archive.rehome() == 1
         att2 = archive.get(aid)
         assert "/법인차량/44라4444 시험차종B/" in att2["rel_path"] and archive.read(att2) == PDF
-        assert not os.path.exists(os.path.join(archive.root(), os.path.dirname(att["rel_path"])))    # 빈 예전 폴더는 지움
+        old_dir = os.path.dirname(att["rel_path"])
+        assert not os.path.exists(os.path.join(archive.root(), old_dir))                        # 폴더째 새 이름으로 바뀜 (두 벌이 되지 않음)
         assert archive.rehome() == 0
+        # 새 이름의 폴더가 이미 있으면 파일만 옮기고, 비게 된 예전 폴더는 지우지 않고 '_빈폴더' 로 옮겨 둠
+        ga.save("ga_vehicles", vid, {"model": "시험차종C"})
+        new_dir = os.path.dirname(att2["rel_path"]).replace("시험차종B", "시험차종C")
+        os.makedirs(os.path.join(archive.root(), new_dir))
+        assert archive.rehome() == 1
+        b_dir = os.path.dirname(att2["rel_path"])
+        assert archive.read(archive.get(aid)) == PDF and "시험차종C" in archive.get(aid)["rel_path"]
+        assert not os.path.exists(os.path.join(archive.root(), b_dir))
+        assert os.path.isdir(os.path.join(archive.root(), archive.EMPTY, b_dir))                  # 원래 경로 그대로 보관
+        assert os.path.isdir(os.path.join(archive.root(), os.path.dirname(b_dir)))                # 메뉴 폴더는 그대로
     finally:
         execute("DELETE FROM attachments WHERE menu='ga.vehicles' AND ref_id=?", (vid,))
         execute("DELETE FROM ga_vehicles WHERE id=?", (vid,))
@@ -379,6 +390,9 @@ def test_subfolders_are_recognized(client, two):
         assert archive.rehome() == 3
         moved = archive.get(rows["기타서류/2024/영수증.pdf"]["id"])
         assert moved["rel_path"].endswith("/하위폴더 계약 새이름/기타서류/2024/영수증.pdf") and archive.read(moved) == PDF
+        assert not os.path.exists(base)                                                         # 폴더째 새 이름으로: 대장에 없는 파일도 함께 따라감
+        assert os.path.exists(os.path.join(base + " 새이름", "기타서류", "메모.txt"))
+        assert not os.path.exists(os.path.join(archive.root(), archive.EMPTY, company.short("1"), "총무관리", "계약·만기 관리", "하위폴더 계약"))
         # 차량 서류 화면은 과태료·사고·점검사진 폴더(다른 메뉴 것)를 건너뜀
         vbase = os.path.join(archive.root(), archive.ensure_folder("ga.vehicles", vid))
         for d in ("과태료", "보험"):

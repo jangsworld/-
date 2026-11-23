@@ -8,6 +8,7 @@
 - 파일은 화면에서 올리는 순간 위 폴더에 저장되고, 대장(attachments 표)에 위치·크기·지문(sha256)·올린 사람을 남깁니다.
 - 받을 때는 대장의 지문과 견주어 바뀌지 않은 파일만 내줍니다. 폴더 밖 경로는 읽지도 쓰지도 않습니다.
 - 지우면 파일을 없애지 않고 같은 보관함의 '_삭제함' 으로 옮깁니다 (실수로 지운 서류를 되찾을 수 있게).
+- 이 프로그램은 보관함의 파일·폴더를 지우지 않습니다. 서류를 옮긴 뒤 비게 된 폴더도 '_빈폴더' 로 옮겨 둡니다.
 - 올릴 수 있는 종류는 정해 둔 것뿐이고(PDF·사진·한글·오피스), 내용의 첫머리가 그 종류와 맞는지도 확인합니다.
 - 차량 점검 사진은 서버 안에 작게 보관한 것과 별도로, 관리부가 확정한 점검을 JPG 로 같은 구조의 폴더에 내보냅니다.
 """
@@ -26,6 +27,7 @@ from app.db import audit, current_actor, execute, query, query_one
 log = logging.getLogger("bms.archive")
 MAX_MB = 30
 TRASH = "_삭제함"
+EMPTY = "_빈폴더"             # 서류를 옮긴 뒤 비게 된 폴더를 모아 두는 곳 (지우지 않음)
 GA_STAFF = {"admin", "hr", "ga"}
 WRITERS = {"admin", "hr"}
 
@@ -498,15 +500,35 @@ _stop = threading.Event()
 _thread: threading.Thread | None = None
 
 
+def _has_files(path: str) -> bool:
+    for _d, _subs, files in os.walk(path):
+        if files:
+            return True
+    return False
+
+
 def _tidy_dirs(path: str):
-    """비어 버린 폴더를 위로 올라가며 지움 (보관함 맨 위 폴더는 남김)."""
+    """서류를 옮긴 뒤 비게 된 예전 폴더를 지우지 않고 보관함의 '_빈폴더' 로 옮김 (원래 경로 그대로, 같은 이름이 있으면 시각을 붙임).
+    파일이 하나라도 남아 있으면 건드리지 않습니다. 회사·모듈·메뉴 폴더(위 3단계)는 비어도 그대로 둡니다. 이 프로그램은 폴더를 지우지 않습니다."""
     r = root()
-    while _inside(r, path) and os.path.normpath(path) != r:
-        try:
-            os.rmdir(path)
-        except OSError:
-            return
+    path = os.path.normpath(path)
+    if not _inside(r, path) or not os.path.isdir(path) or _has_files(path):
+        return
+    depth = lambda d: len(os.path.relpath(d, r).replace("\\", "/").split("/"))
+    if depth(path) < 4 or os.path.relpath(path, r).replace("\\", "/").split("/")[0] in (TRASH, EMPTY):
+        return
+    while depth(os.path.dirname(path)) >= 4 and not _has_files(os.path.dirname(path)):    # 대상 폴더 전체가 비었으면 그 폴더째로
         path = os.path.dirname(path)
+    rel = os.path.relpath(path, r)
+    dst = os.path.normpath(os.path.join(r, EMPTY, rel))
+    if os.path.exists(dst):
+        dst += "_" + datetime.now().strftime("%Y%m%d_%H%M%S")
+    try:
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        os.replace(path, dst)
+        audit("files", "빈 폴더 옮김", rel.replace("\\", "/")[:150], "→ " + EMPTY)
+    except OSError:
+        log.exception("빈 폴더 옮기기 실패: %s", rel)
 
 
 def rehome() -> int:
@@ -522,6 +544,22 @@ def rehome() -> int:
         cur_dir, name = os.path.split(att["rel_path"])
         if cur_dir == want:
             continue
+        # 대상 폴더를 통째로 새 이름으로 바꿀 수 있으면 그렇게 함 (대장에 없는 파일·하위 폴더도 함께 따라가 폴더가 두 벌이 되지 않게)
+        sd = att.get("subdir") or ""
+        old_base = cur_dir[:-len(sd) - 1] if sd and cur_dir.endswith("/" + sd) else cur_dir
+        ob, nb = os.path.normpath(os.path.join(r, old_base)), os.path.normpath(os.path.join(r, base))
+        if old_base != base and _inside(r, ob) and _inside(r, nb) and os.path.isdir(ob) and not os.path.exists(nb)                 and len(old_base.split("/")) >= 4 and old_base.split("/")[0] not in (TRASH, EMPTY):
+            try:
+                os.makedirs(os.path.dirname(nb), exist_ok=True)
+                os.replace(ob, nb)
+            except OSError:
+                log.exception("폴더 이름 바꾸기 실패: %s", old_base)
+            else:
+                for a2 in query("SELECT id, rel_path FROM attachments WHERE rel_path LIKE ?", (old_base + "/%",)):
+                    execute("UPDATE attachments SET rel_path=? WHERE id=?", (base + a2["rel_path"][len(old_base):], a2["id"]))
+                    n += 1
+                audit("files", "폴더 이름 정리", old_base.split("/")[-1], "→ " + base.split("/")[-1])
+                continue
         src = os.path.normpath(os.path.join(r, att["rel_path"]))
         dst = os.path.normpath(os.path.join(r, want, name))
         if not (_inside(r, src) and _inside(r, dst)) or not os.path.exists(src) or os.path.exists(dst):
