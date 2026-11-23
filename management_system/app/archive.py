@@ -57,13 +57,18 @@ def _emp(ref_id):
 
 def vehicle_name(plate, model) -> str:
     """차량 폴더 이름: '차량번호 차종' (폴더만 보고 어느 차인지 알 수 있게).
-    차종 칸에 '차종_사용자' 처럼 밑줄 뒤에 사용자 이름이 붙어 있으면 차종까지만 씁니다."""
-    return f"{plate or ''} {str(model or '').split('_')[0].strip()}".strip()
+    차량번호·차종 칸에 '…_사용자' 처럼 밑줄 뒤에 사용자 이름이 붙어 있으면 밑줄 앞까지만 씁니다."""
+    return f"{plate_key(plate)} {str(model or '').split('_')[0].strip()}".strip()
+
+
+def plate_key(plate) -> str:
+    """차량번호 칸에 '번호_사용자' 로 적혀 있어도 번호만."""
+    return str(plate or "").split("_")[0].strip()
 
 
 def _vehicle(ref_id):
     r = query_one("SELECT id, plate_no, model, company FROM ga_vehicles WHERE id=?", (ref_id,))
-    return r and {"company": r["company"], "target": vehicle_name(r["plate_no"], r["model"]), "key": r["plate_no"],
+    return r and {"company": r["company"], "target": vehicle_name(r["plate_no"], r["model"]), "key": plate_key(r["plate_no"]),
                   "title": f"{r['plate_no']} {r['model'] or ''}".strip(),
                   "back": f"/ga/vehicles/{r['id']}"}
 
@@ -71,7 +76,7 @@ def _vehicle(ref_id):
 def _fine(ref_id):
     r = query_one("SELECT f.id, f.violation_at, f.kind, v.id vid, v.plate_no, v.model, v.company FROM ga_vehicle_fines f "
                   "JOIN ga_vehicles v ON v.id=f.vehicle_id WHERE f.id=?", (ref_id,))
-    return r and {"company": r["company"], "target": vehicle_name(r["plate_no"], r["model"]), "key": r["plate_no"], "sub": "과태료",
+    return r and {"company": r["company"], "target": vehicle_name(r["plate_no"], r["model"]), "key": plate_key(r["plate_no"]), "sub": "과태료",
                   "title": f"{r['plate_no']} 과태료 {(r['violation_at'] or '')[:10]} {r['kind'] or ''}".strip(),
                   "prefix": (r["violation_at"] or "")[:10], "back": f"/ga/vehicles/{r['vid']}?tab=fines"}
 
@@ -79,7 +84,7 @@ def _fine(ref_id):
 def _damage(ref_id):
     r = query_one("SELECT d.id, d.occur_date, d.kind, d.part, v.id vid, v.plate_no, v.model, v.company FROM ga_vehicle_damages d "
                   "JOIN ga_vehicles v ON v.id=d.vehicle_id WHERE d.id=?", (ref_id,))
-    return r and {"company": r["company"], "target": vehicle_name(r["plate_no"], r["model"]), "key": r["plate_no"], "sub": "사고·파손",
+    return r and {"company": r["company"], "target": vehicle_name(r["plate_no"], r["model"]), "key": plate_key(r["plate_no"]), "sub": "사고·파손",
                   "title": f"{r['plate_no']} {r['kind']} {r['occur_date']} {r['part'] or ''}".strip(),
                   "prefix": r["occur_date"] or "", "back": f"/ga/vehicles/{r['vid']}?tab=damages"}
 

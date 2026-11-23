@@ -320,6 +320,7 @@ def test_register_with_files_search_and_codes(client, two):
     from app.db import get_codes
     from app.modules.ga import company as items
     assert archive.vehicle_name("12가3456", "샘플차종_홍길동") == "12가3456 샘플차종" and archive.vehicle_name("12가3456", "") == "12가3456"
+    assert archive.vehicle_name("12가3456_홍길동", "샘플 차종") == "12가3456 샘플 차종" and archive._same_thing("12가3456_홍길동 샘플 차종", "12가3456")
     page = client.get("/ga/contracts?co=all").text
     assert 'name="manager_id"' in page and "data-search" in page.split('name="manager_id"')[1][:200]
     assert page.count('name="files" multiple') == 2 and page.count('enctype="multipart/form-data"') >= 2
