@@ -244,6 +244,9 @@ def test_fund_settings_form_saves_name_and_clears_fingerprint(clients):
         admin.post("/settings/fund", data={"fund_url": "https://10.0.0.5:3103", "fund_tls_name": "fund.example.com", "fund_cert_sha256": "", "fund_token": ""})
         s = {r["key"]: r["value"] for r in query("SELECT key, value FROM settings WHERE key LIKE 'fund_%'")}
         assert s["fund_tls_name"] == "fund.example.com" and s["fund_cert_sha256"] == "" and s["fund_url"] == "https://10.0.0.5:3103"
+        admin.post("/settings/fund", data={"fund_url": "", "fund_tls_name": " https://fund2.example.com:3103/login ", "fund_cert_sha256": "", "fund_token": ""})
+        assert query_one("SELECT value FROM settings WHERE key='fund_tls_name'")["value"] == "fund2.example.com"      # 주소를 통째로 넣어도 이름만
+        admin.post("/settings/fund", data={"fund_url": "", "fund_tls_name": "fund.example.com", "fund_cert_sha256": "", "fund_token": ""})
         admin.post("/settings/fund", data={"fund_url": "", "fund_tls_name": "https://bad name", "fund_cert_sha256": "", "fund_token": ""})
         assert query_one("SELECT value FROM settings WHERE key='fund_tls_name'")["value"] == "fund.example.com"
         assert "fund 인증서 이름" in admin.get("/settings").text

@@ -288,6 +288,7 @@ async def settings_fund(request: Request):
     fp = str(form.get("fund_cert_sha256", "")).strip().upper()
     key = str(form.get("fund_token", "")).strip()
     name = str(form.get("fund_tls_name", "")).strip()
+    name = name.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0].strip()      # 주소를 통째로 붙여 넣어도 이름 부분만 남김
     if name and not mgmt_fin.NAME_RE.match(name):
         return _settings_redirect("인증서 이름은 fund 접속 주소의 이름 부분만 넣어 주세요 (https:// 와 :3103 은 빼고)", "fund")
     if url and not url.startswith("https://"):
