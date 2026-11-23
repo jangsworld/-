@@ -1197,7 +1197,7 @@ ADDED_COLUMNS = {
     "ga_assets": ["cost_vat", "photo", "qr_token"],
     "ga_asset_history": ["cost_vat"],
     "ga_vehicle_maint": ["cost_vat"],
-    "ga_contracts": ["amount_vat", "folder_name"],
+    "ga_contracts": ["amount_vat", "folder_name", "alert_email", "alert_sent"],   # 만기 알림 메일 (회사 관리 만기와 같은 방식)
     "ga_vehicle_logs": ["external_id", "external_updated", "external_purpose"],
     "ga_vehicles": ["qr_token", "oil_interval_km"],
     "ga_company_items": ["emp_insurance", "alert_email", "alert_sent"],

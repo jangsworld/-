@@ -14,9 +14,22 @@
       <div class="col-md-2"><button class="btn btn-sm btn-primary w-100"><i class="bi bi-cloud-arrow-up"></i> 올려서 저장</button></div>
     </form>
     <div class="help mt-2"><i class="bi bi-folder2-open"></i> 저장되는 폴더: <b>BMS시스템 \ {{ folder }}</b><br>
-      PDF·사진(JPG·PNG)·한글·워드·엑셀·파워포인트, 한 개에 {{ max_mb }}MB 이하. 올리는 즉시 위 폴더에 날짜가 붙은 이름으로 저장됩니다.</div>
+      PDF·사진(JPG·PNG)·한글·워드·엑셀·파워포인트, 한 개에 {{ max_mb }}MB 이하. 올리는 즉시 위 폴더에 날짜가 붙은 이름으로 저장됩니다.<br>
+      NAS에서 위 폴더에 파일을 직접 넣어 두어도 됩니다. 이 화면을 열면 "대장에 없는 파일"로 보이고, 버튼 한 번으로 대장에 올라갑니다.</div>
   </div>
 </div>
+{% if waiting %}
+<form class="card mb-3 border-warning" method="post" action="/files/{{ menu }}/{{ ref_id }}/adopt">
+  <div class="card-header bg-warning-subtle d-flex align-items-center gap-2"><span><i class="bi bi-folder-symlink"></i> 폴더에 있는데 대장에 없는 파일 <b>{{ waiting|length }}개</b></span>
+    <span class="help">NAS 폴더에 직접 넣어 둔 파일입니다. 다시 올릴 필요 없이 그 자리 그대로 대장에 올립니다 (폴더가 두 벌 생기지 않습니다)</span>
+    <button class="btn btn-sm btn-primary ms-auto text-nowrap"><i class="bi bi-check2-square"></i> 고른 파일 대장에 올리기</button></div>
+  <ul class="list-group list-group-flush small">
+    {% for w in waiting %}<li class="list-group-item py-1"><label class="d-flex gap-2 align-items-center mb-0">
+      <input type="checkbox" class="form-check-input" name="names" value="{{ w.name }}" checked> <span class="fw-semibold">{{ w.name }}</span>
+      <span class="text-muted ms-auto">{{ '%.1f'|format(w.size / 1024 / 1024) ~ 'MB' if w.size >= 1048576 else (w.size // 1024) ~ 'KB' }}</span></label></li>{% endfor %}
+  </ul>
+</form>
+{% endif %}
 <div class="card">
   <div class="card-header">붙인 서류 <span class="badge text-bg-secondary ms-1">{{ rows|length }}개</span></div>
   <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">

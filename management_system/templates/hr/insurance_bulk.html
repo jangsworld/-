@@ -2,7 +2,7 @@
 {% block title %}상해공제 반영 대상{% endblock %}
 {% block page_title %}<i class="bi bi-shield-plus me-2"></i>임직원 상해공제 반영 대상{% endblock %}
 {% block content %}
-<div class="alert alert-info py-2 small">상해공제의 이름·기관·증권번호·기간은 <a href="/ga/company">총무관리 → 회사 관리 만기</a>에서 한 번만 넣고 「임직원 상해공제」에 체크하면 여기와 직원별 인사기록카드에 반영됩니다{% if linked %} (지금 연결된 항목: <b>{{ linked.name }}</b>){% else %} (아직 연결된 항목이 없습니다){% endif %}.
+<div class="alert alert-info py-2 small">상해공제의 이름·기관·증권번호·기간은 <a href="/ga/contracts?kind=item">총무관리 → 계약·만기 관리</a>에서 한 번만 넣고 「임직원 상해공제」에 체크하면 여기와 직원별 인사기록카드에 반영됩니다{% if linked %} (지금 연결된 항목: <b>{{ linked.name }}</b>){% else %} (아직 연결된 항목이 없습니다){% endif %}.
   이 화면에서는 <b>누구에게 반영할지</b>와 가입일·공제료만 정합니다. 체크를 푼 직원은 '따로 관리'로 기억되어 자동 반영에서 빠집니다.</div>
 <form method="post" action="/hr/insurances/bulk" data-confirm="체크한 직원의 인사기록카드에 이 상해공제를 등록할까요?">
 <div class="card mb-3">

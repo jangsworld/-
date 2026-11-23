@@ -39,6 +39,14 @@ def get(iid: int) -> dict | None:
     return query_one("SELECT * FROM ga_company_items WHERE id=?", (iid,))
 
 
+def clean_mails(text) -> list[str]:
+    """알림 받을 메일 주소들 (쉼표·빈칸으로 구분, 5명까지). 틀리면 CompanyError."""
+    mails = [m.strip() for m in re.split(r"[,;\s]+", str(text or "")) if m.strip()]
+    if len(mails) > 5 or any(not re.fullmatch(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", m) or len(m) > 120 for m in mails):
+        raise CompanyError("알림 받을 메일 주소를 확인해 주세요 (쉼표로 5명까지)")
+    return mails
+
+
 def save(f: dict, by: str = "") -> int:
     name = (f.get("name") or "").strip()
     if not name:
@@ -55,9 +63,7 @@ def save(f: dict, by: str = "") -> int:
         alert = int(f.get("alert_days") or 60)
     except ValueError as ex:
         raise CompanyError("알림 일수는 숫자로 넣어 주세요") from ex
-    mails = [m.strip() for m in re.split(r"[,;\s]+", f.get("alert_email") or "") if m.strip()]
-    if len(mails) > 5 or any(not re.fullmatch(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", m) or len(m) > 120 for m in mails):
-        raise CompanyError("알림 받을 메일 주소를 확인해 주세요 (쉼표로 5명까지)")
+    mails = clean_mails(f.get("alert_email"))
     emp_ins = "1" if f.get("emp_insurance") else None
     if emp_ins and not (sd and ed):
         raise CompanyError("임직원 상해공제는 시작일과 만기일을 넣어 주세요")
@@ -163,7 +169,7 @@ def alerts() -> list[dict]:
         if r["status"] == "갱신중":
             msg += " · 갱신 진행 중"
         out.append({"level": lvl, "category": "회사관리", "name": f"{r['name']}", "message": msg,
-                    "dday": r["dday"], "link": "/ga/company", "emp_id": None})
+                    "dday": r["dday"], "link": "/ga/contracts?kind=item", "emp_id": None})
     return out
 
 
@@ -215,9 +221,9 @@ def send_due_mails() -> int:
                  f"만기·기한: {r['expire_date']} ({when})"]
         if r.get("owner"):
             lines.append(f"담당: {r['owner']}")
-        lines += ["", "갱신을 마치면 BMS시스템 「총무관리 → 회사 관리 만기」에서 [갱신]을 눌러 주세요."]
+        lines += ["", "갱신을 마치면 BMS시스템 「총무관리 → 계약·만기 관리」에서 [갱신]을 눌러 주세요."]
         if base:
-            lines.append(base + "/ga/company")
+            lines.append(base + "/ga/contracts")
         ok = False
         for to in [m.strip() for m in r["alert_email"].split(",") if m.strip()]:
             try:
@@ -228,6 +234,61 @@ def send_due_mails() -> int:
         if ok:
             execute("UPDATE ga_company_items SET alert_sent=? WHERE id=?", (f"{r['expire_date']}:{r['stage']}", r["id"]))
             audit("ga", "만기 알림 메일", r["name"], f"D-{r['dday']}")
+            n += 1
+    return n + _send_contract_mails(base)
+
+
+CONTRACT_ALERT_DAYS = 30
+
+
+def contract_due_mails() -> list[dict]:
+    """알림 메일을 넣은 유효 계약 중 지금 보낼 것. 기준일은 해지·갱신 통보기한(없으면 만료일):
+    그 30일 전, 7일 전, 당일에 한 번씩."""
+    from app.modules.ga import repo, services
+    out = []
+    for c in repo.list_contracts(status="유효"):
+        if not c.get("alert_email") or not c.get("end_date"):
+            continue
+        c = services.contract_view(c)
+        target, dday = c["notice_date"] or c["end_date"], c["notice_dday"]
+        if dday is None:
+            continue
+        st = _stage(dday, CONTRACT_ALERT_DAYS)
+        if not st:
+            continue
+        sent = (c.get("alert_sent") or "").split(":")
+        if len(sent) == 2 and sent[0] == target and sent[1] in STAGES and STAGES.index(sent[1]) >= STAGES.index(st):
+            continue
+        out.append({**c, "stage": st, "target": target, "target_dday": dday})
+    return out
+
+
+def _send_contract_mails(base: str) -> int:
+    from app import mailer
+    n = 0
+    for c in contract_due_mails():
+        notice = bool(c.get("notice_days"))
+        what = "해지·갱신 통보기한" if notice else "만료일"
+        when = f"오늘이 {what}입니다" if c["target_dday"] == 0 else f"{what}까지 {c['target_dday']}일 남았습니다"
+        subject = f"[BMS시스템] 계약 만기 알림: {c['title']} ({c['target']})"
+        lines = ["계약 만기 알림입니다.", "", f"계약: {c['title']}", f"구분: {c['category']}", f"상대방: {c.get('counterparty') or ''}",
+                 f"계약기간: {c.get('start_date') or ''} ~ {c['end_date']}"]
+        if notice:
+            lines.append(f"해지·갱신 통보기한: {c['target']} (만료 {c['notice_days']}일 전)")
+        lines.append(when + ("  ※ 자동갱신 계약: 통보기한을 넘기면 같은 조건으로 연장됩니다" if c.get("auto_renew") else ""))
+        lines += ["", "BMS시스템 「총무관리 → 계약·만기 관리」에서 확인해 주세요."]
+        if base:
+            lines.append(base + "/ga/contracts")
+        ok = False
+        for to in [m.strip() for m in c["alert_email"].split(",") if m.strip()]:
+            try:
+                mailer.send(to, subject, "\n".join(lines), plain=True)
+                ok = True
+            except Exception:  # noqa: BLE001
+                log.exception("계약 만기 알림 메일 실패: 계약 #%s", c["id"])
+        if ok:
+            execute("UPDATE ga_contracts SET alert_sent=? WHERE id=?", (f"{c['target']}:{c['stage']}", c["id"]))
+            audit("ga", "계약 만기 알림 메일", c["title"], f"D-{c['target_dday']}")
             n += 1
     return n
 

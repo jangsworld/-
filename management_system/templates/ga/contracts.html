@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% from "ga/_macros.html" import field, modal, del_btn, dday, cofield, cobadge, att %}
-{% block title %}계약·임대차{% endblock %}
-{% block page_title %}<i class="bi bi-file-earmark-check me-2"></i>계약 · 임대차 관리{% endblock %}
+{% block title %}계약·만기 관리{% endblock %}
+{% block page_title %}<i class="bi bi-file-earmark-check me-2"></i>계약 · 만기 관리 <span class="text-muted small">계약·임대차 + 면허·보험·인증 등 기한이 있는 것 모두</span>{% endblock %}
 {% block content %}
-{% set _ac_ga_contracts = att_counts('ga.contracts') %}
+{% set _ac_c = att_counts('ga.contracts') %}{% set _ac_i = att_counts('ga.company') %}
 <div class="row g-3 mb-3">
-  <div class="col-6 col-md"><div class="card kpi h-100"><div class="kpi-label">유효 계약</div><div class="kpi-value">{{ sum.count }}건</div><div class="kpi-sub">만료·통보 임박 {{ sum.soon }}건</div></div></div>
+  <div class="col-6 col-md"><a class="card kpi h-100 text-decoration-none" href="?kind=contract"><div class="kpi-label">유효 계약</div><div class="kpi-value">{{ sum.count }}건</div><div class="kpi-sub">만료·통보 임박 {{ sum.soon }}건</div></a></div>
+  <div class="col-6 col-md"><a class="card kpi h-100 text-decoration-none" href="?kind=item"><div class="kpi-label">면허·보험·인증 등</div><div class="kpi-value">{{ sum['items'] }}건</div><div class="kpi-sub {{ 'text-danger' if sum.item_alerts }}">만기 알림 {{ sum.item_alerts }}건</div></a></div>
   <div class="col-6 col-md"><div class="card kpi h-100"><div class="kpi-label">월 고정비(환산)</div><div class="kpi-value">{{ sum.monthly|man_won }}원</div><div class="kpi-sub">연 {{ sum.yearly|man_won }}원</div></div></div>
   <div class="col-6 col-md"><div class="card kpi h-100"><div class="kpi-label">예치 보증금</div><div class="kpi-value">{{ sum.deposit|man_won }}원</div><div class="kpi-sub">반환 예정 자산</div></div></div>
 </div>
@@ -37,30 +38,57 @@
   {% else %}<div class="card-body py-2 small text-muted">확인할 초안이 없습니다. NAS <b>04. 총무 › bms › 계약서</b> 폴더 안에 계약마다 폴더(예: 2026 본사 임대차)를 만들고 계약서 PDF·스캔본을 넣으면 1분 안에 초안이 생깁니다. 폴더 이름이 계약명이 됩니다.</div>{% endif %}
 </div>
 {% endif %}
-<div class="card">
+<div class="card mb-3">
   <div class="card-header"><form class="row g-2 align-items-center" method="get">
-    <div class="col-auto"><select class="form-select form-select-sm" name="category" data-autosubmit><option value="">구분 전체</option>{% for c in categories %}<option {% if f.category == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
-    <div class="col-auto"><select class="form-select form-select-sm" name="status" data-autosubmit><option value="">상태 전체</option>{% for s in statuses %}<option {% if f.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
-    <div class="col text-end">{% if can_write %}<a class="btn btn-sm btn-outline-secondary" href="/ga/contracts/export.csv"><i class="bi bi-download"></i> CSV</a>
-      <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#contractModal" data-fill='{"status":"유효","pay_cycle":"월","notice_days":30}'><i class="bi bi-plus"></i> 계약 등록</button>{% endif %}</div>
+    <div class="col-auto"><select class="form-select form-select-sm" name="kind" data-autosubmit>
+      <option value="">종류 전체</option><option value="contract" {{ 'selected' if f.kind == 'contract' }}>계약·임대차</option><option value="item" {{ 'selected' if f.kind == 'item' }}>면허·보험·인증 등</option></select></div>
+    <div class="col-auto"><select class="form-select form-select-sm" name="category" data-autosubmit><option value="">구분 전체</option>
+      <optgroup label="계약·임대차">{% for c in categories %}<option {% if f.category == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</optgroup>
+      <optgroup label="면허·보험·인증 등">{% for c in item_categories %}<option {% if f.category == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</optgroup></select></div>
+    <div class="col-auto"><select class="form-select form-select-sm" name="status" data-autosubmit>
+      {% for s in status_opts %}<option value="{{ s }}" {% if f.status == s %}selected{% endif %}>{{ '유효 (관리 중)' if s == '유효' else (s or '상태 전체') }}</option>{% endfor %}</select></div>
+    <div class="col text-end">{% if can_write %}<a class="btn btn-sm btn-outline-secondary" href="/ga/contracts/export.csv"><i class="bi bi-download"></i> 계약 CSV</a>
+      <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#contractModal" data-fill='{"status":"유효","pay_cycle":"월","notice_days":30}'><i class="bi bi-plus"></i> 계약 등록</button>
+      <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#itemModal" data-fill='{}'><i class="bi bi-plus"></i> 면허·보험·인증 등 등록</button>{% endif %}</div>
   </form></div>
   <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel>
-    <thead><tr><th>구분</th><th>계약명</th><th>상대방</th><th>계약기간</th><th>만료</th><th class="num">금액</th><th class="num text-nowrap">월 환산</th><th class="num">보증금</th><th>갱신</th><th>해지·갱신 통보기한</th><th>상태</th><th>담당</th><th data-nofilter></th></tr></thead>
-    <tbody>{% for c in rows %}<tr>
-      <td><span class="badge text-bg-light border">{{ c.category }}</span></td><td class="fw-semibold">{{ c.title }}<div class="small text-muted">{{ c.contract_no or '' }}</div>
+    <thead><tr><th>종류</th><th>구분</th>{% if co.enabled() %}<th>회사</th>{% endif %}<th>이름</th><th>상대방·기관</th><th>기간</th><th>만기</th><th class="num">금액</th><th class="num text-nowrap">월 환산</th><th class="num">보증금</th><th>갱신</th><th>통보·알림 기한</th><th>상태</th><th>담당</th><th data-nofilter></th></tr></thead>
+    <tbody>{% for x in rows %}
+    {% if x.kind == 'contract' %}{% set c = x.c %}<tr>
+      <td class="small text-muted">계약</td><td><span class="badge text-bg-light border">{{ c.category }}</span></td>{% if co.enabled() %}<td>{{ cobadge(c.company) }}</td>{% endif %}
+      <td class="fw-semibold">{{ c.title }}{% if c.alert_email %} <i class="bi bi-envelope text-muted" title="만기 알림 메일: {{ c.alert_email }}"></i>{% endif %}<div class="small text-muted">{{ c.contract_no or '' }}</div>
         {% if c.files and can_write %}<div class="dropdown d-inline"><button class="btn btn-sm btn-link p-0 small" data-bs-toggle="dropdown" type="button"><i class="bi bi-folder2-open"></i> 서류 {{ c.files|length }}</button>
           <ul class="dropdown-menu">{% for n in c.files %}<li><a class="dropdown-item small" href="/ga/contracts/{{ c.id }}/file?name={{ n|urlencode }}" target="_blank" rel="noopener">{{ n }}</a></li>{% endfor %}</ul></div>{% endif %}</td>
-      <td>{{ c.counterparty }}</td><td class="small text-nowrap">{{ c.start_date or '' }} ~ {{ c.end_date or '' }}</td><td>{{ dday(c.dday, 60) }}</td>
+      <td>{{ c.counterparty }}</td><td class="small text-nowrap">{{ c.start_date or '' }} ~ {{ c.end_date or '' }}</td><td data-v="{{ c.dday if c.dday is not none else '' }}">{{ dday(c.dday, 60) }}</td>
       <td class="num" title="{{ c.amount|vatinfo(c.amount_vat) }}">{{ c.amount|won }}<div class="small text-muted">/{{ c.pay_cycle }}{% if c.amount_vat %} · {{ c.amount_vat }}{% endif %}</div></td><td class="num">{{ c.monthly|won }}</td><td class="num">{{ c.deposit|won if c.deposit else '' }}</td>
       <td class="small text-nowrap">{{ '자동' if c.auto_renew else '수동' }}</td>
       <td class="small text-nowrap">{{ c.notice_date or '' }} {% if c.status == '유효' %}{{ dday(c.notice_dday) }}{% endif %}</td>
       <td class="text-nowrap"><span class="badge {{ {'유효':'text-bg-success','만료임박':'text-bg-warning','통보임박':'text-bg-danger','통보경과':'text-bg-warning','만료':'text-bg-danger','자동갱신':'text-bg-info','갱신확정':'text-bg-info'}.get(c.phase, 'text-bg-secondary') }}">{{ c.phase }}</span></td>
       <td class="small text-nowrap">{{ c.manager_name or '' }}</td>
-      <td class="text-nowrap">{{ att('ga.contracts', c.id, _ac_ga_contracts) }}{% if can_write %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#contractModal" data-fill='{{ c|tojson }}'><i class="bi bi-pencil"></i></button>{{ del_btn('contracts', c.id, '/ga/contracts') }}{% endif %}</td></tr>
-    {% else %}<tr><td colspan="13" class="text-center text-muted p-4">계약이 없습니다</td></tr>{% endfor %}</tbody>
+      <td class="text-nowrap">{% if can_write %}{{ att('ga.contracts', c.id, _ac_c) }}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#contractModal" data-fill='{{ c|tojson }}'><i class="bi bi-pencil"></i></button>{{ del_btn('contracts', c.id, '/ga/contracts') }}{% endif %}</td></tr>
+    {% else %}{% set r = x.r %}<tr class="{{ 'table-warning' if r.alert }}">
+      <td class="small text-muted">만기</td><td><span class="badge text-bg-light border">{{ r.category }}</span></td>{% if co.enabled() %}<td>{{ cobadge(r.company) }}</td>{% endif %}
+      <td class="fw-semibold">{{ r.name }}{% if r.emp_insurance %} <a class="badge text-bg-primary text-decoration-none" href="/hr/insurances" title="재직 직원 인사기록카드에 반영됩니다. 눌러서 반영 대상을 봅니다">임직원 상해공제</a>{% endif %}{% if r.alert_email %} <i class="bi bi-envelope text-muted" title="만기 알림 메일: {{ r.alert_email }}"></i>{% endif %}
+        <div class="small text-muted">{{ r.number or '' }}{% if r.note %}{{ ' · ' if r.number }}{{ r.note }}{% endif %}</div></td>
+      <td>{{ r.agency or '' }}</td><td class="small text-nowrap">{{ r.start_date or '' }} ~ {{ r.expire_date or '' }}</td>
+      <td data-v="{{ r.dday if r.dday is not none else '' }}">{{ dday(r.dday, r.alert_days or 60) if r.status in ('유효', '갱신중') }}</td>
+      <td></td><td></td><td></td>
+      <td class="small text-nowrap">{{ r.cycle if r.cycle != '없음' else '' }}</td>
+      <td class="small text-nowrap">{% if r.expire_date %}만기 {{ r.alert_days or 60 }}일 전부터{% endif %}</td>
+      <td><span class="badge {{ 'text-bg-success' if r.status == '유효' else ('text-bg-info' if r.status == '갱신중' else 'text-bg-secondary') }}">{{ r.status }}</span></td>
+      <td class="small text-nowrap">{{ r.owner or '' }}</td>
+      <td class="text-nowrap">{% if can_write %}{{ att('ga.company', r.id, _ac_i) }}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#itemModal" data-fill='{{ r|tojson }}' title="수정"><i class="bi bi-pencil"></i></button>
+        {% if r.expire_date %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#renewModal" data-renew="{{ r.id }}" data-name="{{ r.name }}" data-old="{{ r.expire_date }}" data-next="{{ x.next }}">갱신</button>{% endif %}
+        <form method="post" action="/ga/company/{{ r.id }}/delete" class="d-inline" data-confirm="'{{ r.name }}'을(를) 삭제할까요? 갱신 이력도 지워집니다."><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
+    {% endif %}
+    {% else %}<tr><td colspan="15" class="text-center text-muted p-4">해당하는 계약·만기 항목이 없습니다</td></tr>{% endfor %}</tbody>
   </table></div>
-  <div class="card-footer help"><b>관리 포인트</b> · 자동갱신 계약은 <b>통보기한(만료 N일 전)</b>을 놓치면 원치 않게 1년 연장됩니다 · 임대차는 계약갱신요구·차임 증감 협의 시점을 미리 확인 · 보증금은 반환 시점까지 자산으로 관리합니다. 자동갱신 계약은 만료일이 지나면 같은 기간으로 자동 연장 표시됩니다.</div>
+  <div class="card-footer help"><b>관리 포인트</b> · 만기가 가까운 순서로 보입니다 · <i class="bi bi-envelope"></i> 표시는 만기 알림 메일을 받는 항목입니다 · 자동갱신 계약은 <b>통보기한(만료 N일 전)</b>을 놓치면 원치 않게 연장됩니다 · 보증금은 반환 시점까지 자산으로 관리합니다 · 전체 달력은 <a href="/mgmt/compliance">신고·납부 일정</a>에서 함께 보입니다.</div>
 </div>
+
+{% if history %}<div class="card"><div class="card-header">갱신 이력 <span class="help">면허·보험·인증 등</span></div><div class="table-responsive" style="max-height:260px"><table class="table table-sm mb-0"><thead><tr><th>처리일</th><th>항목</th><th>이전 만기</th><th>새 만기</th><th>처리자</th><th>메모</th></tr></thead><tbody>
+  {% for h in history %}<tr><td>{{ h.done_date }}</td><td>{{ h.name }}</td><td>{{ h.old_expire or '-' }}</td><td>{{ h.new_expire }}</td><td class="small">{{ h.done_by or '' }}</td><td class="small">{{ h.note or '' }}</td></tr>{% endfor %}
+</tbody></table></div></div>{% endif %}
 {% if can_write %}
 {% call modal('contractModal', '계약', '/ga/contracts/save') %}
   {{ cofield() }}
@@ -69,6 +97,8 @@
   {{ field('start_date', '시작일', 'date') }}{{ field('end_date', '종료일', 'date') }}{{ field('status', '상태', opts=statuses, blank=False) }}
   {{ field('amount', '금액(원)', 'number') }}{{ field('amount_vat', '부가세 구분', opts=vat_types, blank=False) }}{{ field('pay_cycle', '지급주기', opts=cycles.keys()|list, blank=False) }}{{ field('deposit', '보증금(원)', 'number') }}
   {{ field('auto_renew', '자동갱신', 'checkbox', ph='만료 시 자동 연장') }}{{ field('notice_days', '통보기한(만료 N일 전)', 'number', value=30) }}
+  <div class="col-md-8"><label class="form-label small">만기 알림 받을 메일 <span class="text-muted fw-normal">(담당자 · 쉼표로 여러 명)</span></label><input class="form-control form-control-sm" name="alert_email" placeholder="예: name@company.com">
+    <div class="help">넣어 두면 통보기한(없으면 만료일) 30일 전, 7일 전, 당일에 메일을 보냅니다. 비워 두면 대시보드에만 표시됩니다.</div></div>
   {{ field('memo', '비고', 'textarea', col='col-12') }}
 {% endcall %}
 {% call modal('draftModal', '계약서 초안 확인 ·', '/ga/contract-drafts/confirm') %}
@@ -82,5 +112,53 @@
   {{ field('auto_renew', '자동갱신', 'checkbox', ph='만료 시 자동 연장') }}{{ field('notice_days', '통보기한(만료 N일 전)', 'number', value=30) }}
   {{ field('memo', '비고', 'textarea', col='col-12') }}
 {% endcall %}
+
+<datalist id="exNames">{% for x in examples %}<option value="{{ x }}">{% endfor %}</datalist>
+<div class="modal fade" id="itemModal" tabindex="-1"><div class="modal-dialog modal-lg"><form class="modal-content" method="post" action="/ga/company/save">
+  <input type="hidden" name="id" value="">
+  <div class="modal-header"><h6 class="modal-title">면허·보험·인증 등 <span data-mode-title>등록</span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body row g-2">
+    {{ cofield() }}
+    <div class="col-md-4"><label class="form-label small">구분</label><select class="form-select form-select-sm" name="category">{% for x in item_categories %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-md-8"><label class="form-label small">이름 <span class="text-danger">*</span></label><input class="form-control form-control-sm" name="name" list="exNames" required></div>
+    <div class="col-md-4"><label class="form-label small">번호 (등록·증권·인증 번호)</label><input class="form-control form-control-sm" name="number"></div>
+    <div class="col-md-4"><label class="form-label small">발급·관리 기관</label><input class="form-control form-control-sm" name="agency"></div>
+    <div class="col-md-4"><label class="form-label small">담당</label><input class="form-control form-control-sm" name="owner"></div>
+    <div class="col-md-3"><label class="form-label small">시작일</label><input class="form-control form-control-sm" type="date" name="start_date"></div>
+    <div class="col-md-3"><label class="form-label small">만기·기한</label><input class="form-control form-control-sm" type="date" name="expire_date"></div>
+    <div class="col-md-2"><label class="form-label small">갱신 주기</label><select class="form-select form-select-sm" name="cycle">{% for x in item_cycles %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label small">미리 알림(일)</label><input class="form-control form-control-sm" name="alert_days" value="60" inputmode="numeric"></div>
+    <div class="col-md-2"><label class="form-label small">상태</label><select class="form-select form-select-sm" name="status">{% for x in item_statuses %}<option>{{ x }}</option>{% endfor %}</select></div>
+    <div class="col-md-8"><label class="form-label small">만기 알림 받을 메일 <span class="text-muted fw-normal">(담당자 · 쉼표로 여러 명)</span></label><input class="form-control form-control-sm" name="alert_email" placeholder="예: name@company.com">
+      <div class="help">넣어 두면 '미리 알림(일)' 전, 7일 전, 만기 당일에 메일을 보냅니다. 비워 두면 대시보드에만 표시됩니다.</div></div>
+    <div class="col-md-4"><label class="form-label small">임직원 상해공제</label>
+      <div><label class="small"><input type="checkbox" class="form-check-input me-1" name="emp_insurance" value="1">재직 직원 인사기록카드에 반영</label></div>
+      <div class="help">체크하면 이름·기관·번호·기간이 직원별 「상해공제」에 들어갑니다.</div></div>
+    <div class="col-12"><label class="form-label small">메모 (준비 서류, 갱신 방법 등)</label><textarea class="form-control form-control-sm" name="note" rows="2"></textarea></div>
+  </div>
+  <div class="modal-footer"><button type="button" class="btn btn-sm btn-outline-secondary me-auto" data-bs-dismiss="modal">취소</button><button class="btn btn-sm btn-primary"><i class="bi bi-save"></i> 저장</button></div>
+</form></div></div>
+
+<div class="modal fade" id="renewModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" id="renewForm">
+  <div class="modal-header"><h6 class="modal-title">갱신 완료 · <span id="rnName"></span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body row g-2">
+    <div class="col-12 small">지금 만기 <b id="rnOld"></b></div>
+    <div class="col-md-6"><label class="form-label small">새 만기·기한</label><input class="form-control form-control-sm" type="date" name="new_expire" id="rnNew" required></div>
+    <div class="col-md-6"><label class="form-label small">처리일</label><input class="form-control form-control-sm" type="date" name="done_date"></div>
+    <div class="col-12"><label class="form-label small">메모</label><input class="form-control form-control-sm" name="note"></div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-sm btn-primary">갱신</button></div>
+</form></div></div>
 {% endif %}
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-renew]'); if (!b) return;
+  document.getElementById('renewForm').action = `/ga/company/${b.dataset.renew}/renew`;
+  document.getElementById('rnName').textContent = b.dataset.name;
+  document.getElementById('rnOld').textContent = b.dataset.old;
+  document.getElementById('rnNew').value = b.dataset.next || '';
+});
+</script>
 {% endblock %}

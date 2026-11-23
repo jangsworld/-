@@ -86,7 +86,7 @@ def calendar_year(year: int, sources=("의무", "교육", "회사관리", "계�
             if d:
                 ev.append({"date": d, "title": f"{r['name']} 만기·갱신", "category": r["category"], "source": "회사관리",
                            "status": _status(d, False, int(r.get("alert_days") or 60)), "detail": r.get("agency") or "",
-                           "link": "/ga/company"})
+                           "link": "/ga/contracts?kind=item"})
     if "계약" in sources:
         for r in query("SELECT * FROM ga_contracts WHERE status='유효' AND end_date LIKE ?" + company.sql(""), (f"{y}-%",)):
             d = to_date(r["end_date"])

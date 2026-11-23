@@ -29,7 +29,7 @@ TABLES = {
     "ga_seal_logs": (["company", "use_date", "seal_type", "purpose", "submit_to", "copies", "requester_id", "status",
                       "approver", "approved_at", "note"], {"copies", "requester_id"}, set()),
     "ga_contracts": (["company", "category", "title", "counterparty", "contract_no", "start_date", "end_date", "amount", "amount_vat",
-                      "pay_cycle", "deposit", "auto_renew", "notice_days", "manager_id", "status", "memo", "folder_name"],
+                      "pay_cycle", "deposit", "auto_renew", "notice_days", "manager_id", "status", "memo", "folder_name", "alert_email"],
                      {"amount", "deposit", "auto_renew", "notice_days", "manager_id"}, set()),
     "ga_events": (["employee_id", "category", "relation", "event_date", "amount", "leave_days", "flower",
                    "paid_date", "status", "detail"],

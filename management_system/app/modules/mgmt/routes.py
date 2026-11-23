@@ -518,14 +518,11 @@ def compliance_task_delete(tid: int):
 
 # ── 회사 관리 만기 (/ga/company) ────────────────────────────────────────
 @company_router.get("", response_class=HTMLResponse)
-def company_page(request: Request, category: str = "", status: str = "관리중"):
-    rows = company.items(category, status)
-    return _render(request, "ga/company.html", {
-        "rows": rows, "category": category, "status": status, "history": company.history(),
-        "categories": COMPANY_CATEGORIES, "cycles": COMPANY_CYCLES, "statuses": COMPANY_STATUSES, "examples": COMPANY_EXAMPLES,
-        "alerts": [r for r in rows if r["alert"]], "can_write": request.state.user["role"] in ("admin", "hr", "ga"),
-        "next_expire": {r["id"]: (company.next_expire(r).isoformat() if company.next_expire(r) else "") for r in rows},
-    }, "ga.company")
+def company_page(request: Request, category: str = "", status: str = ""):
+    """예전 주소: 계약·만기 관리 화면으로 넘깁니다 (두 메뉴를 하나로 합침)."""
+    from urllib.parse import urlencode
+    q = {"kind": "item", **({"category": category} if category else {}), **({"status": status} if status and status != "관리중" else {})}
+    return RedirectResponse("/ga/contracts?" + urlencode(q), status_code=303)
 
 
 async def _reflect_msg(iid: int) -> str:
@@ -544,14 +541,16 @@ async def company_save(request: Request):
     try:
         iid = company.save(dict(f), _who(request))
     except company.CompanyError as ex:
-        return _go("/ga/company", str(ex))
-    return _go("/ga/company", "저장했습니다" + await _reflect_msg(iid))
+        return _go("/ga/contracts", str(ex))
+    from app import archive
+    await run_in_threadpool(archive.ensure_quiet, "ga.company", iid)
+    return _go("/ga/contracts", "저장했습니다" + await _reflect_msg(iid))
 
 
 @company_router.post("/{iid}/delete")
 def company_delete(iid: int):
     company.delete(iid)
-    return _go("/ga/company", "삭제했습니다")
+    return _go("/ga/contracts", "삭제했습니다")
 
 
 @company_router.post("/{iid}/renew")
@@ -561,5 +560,5 @@ async def company_renew(request: Request, iid: int):
         company.renew(iid, str(f.get("new_expire") or ""), str(f.get("done_date") or ""), str(f.get("note") or "").strip(),
                       _who(request))
     except company.CompanyError as ex:
-        return _go("/ga/company", str(ex))
-    return _go("/ga/company", "갱신했습니다" + await _reflect_msg(iid))
+        return _go("/ga/contracts", str(ex))
+    return _go("/ga/contracts", "갱신했습니다" + await _reflect_msg(iid))

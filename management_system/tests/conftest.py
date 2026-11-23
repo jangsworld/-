@@ -10,7 +10,8 @@ os.environ.update({
     "BMS_LOG_DIR": os.path.join(_tmp, "logs"),
     "BMS_NAS_ROOT": os.path.join(_tmp, "nas"),
     "BMS_SEED_SAMPLE": "true",
-    "BMS_EMPLOYEE_DRAFTS": "true",          # 꺼 둔 기능(입사서류 초안)의 코드도 계속 시험
+    "BMS_EMPLOYEE_DRAFTS": "true",
+    "BMS_CONTRACT_DRAFTS": "true",          # 꺼 둔 기능(입사서류 초안)의 코드도 계속 시험
     "BMS_REQUIRE_2FA": "false",
     "BMS_INITIAL_ADMIN_PASSWORD": "Init-Admin-Pw1!",
     "BMS_CONFIG": os.path.join(_tmp, "none.toml"),

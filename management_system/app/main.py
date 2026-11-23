@@ -103,7 +103,8 @@ async def lifespan(_app):
     if settings.employee_drafts:
         intake.start_worker()
     cartax.start_worker()
-    contract_intake.start_worker()
+    if settings.contract_drafts:
+        contract_intake.start_worker()
     company_alerts.start_worker()          # 회사 관리 만기 알림 메일
     archive.start_worker()                 # 차량 점검 사진을 보관함으로 (놓친 것 다시)
     from app.modules.hr import appoint

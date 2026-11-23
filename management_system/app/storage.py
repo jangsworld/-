@@ -47,7 +47,27 @@ def employee_path(doc: dict) -> str:
     return path
 
 
+def archive_path(doc: dict) -> str | None:
+    """문서 보관함(archive_root)을 정해 두었으면 그 직원의 '임직원 서류' 폴더 경로. 아니면 None."""
+    if not settings.archive_root or not doc.get("employee_id"):
+        return None
+    from app import archive
+    t = archive.target("hr.employees", doc["employee_id"])
+    if not t:
+        return None
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    group = GROUP_FOLDER.get(doc["doc_group"], "기타")
+    fname = f"BMS_{group}_{_safe(doc['category'])}_{_safe(doc['name'])}_{stamp}_d{int(doc['id'])}.pdf"
+    path = os.path.normpath(os.path.join(archive.root(), archive.folder("hr.employees", t), fname))
+    if not _inside(archive.root(), path):
+        raise StorageError("저장 경로가 올바르지 않습니다")
+    return path
+
+
 def target_path(doc: dict) -> str:
+    p = archive_path(doc)
+    if p:
+        return p
     if settings.employee_root:
         return employee_path(doc)
     year = (doc.get("start_date") or doc.get("created_at") or datetime.now().isoformat())[:4]
@@ -116,7 +136,7 @@ def save_document_pdf(doc: dict) -> tuple[str, str]:
 
 def read_verified(path: str, sha256: str) -> bytes:
     path = os.path.normpath(path)
-    if not (_inside(settings.employee_root, path) or _inside(settings.output_root, path)):
+    if not (_inside(settings.employee_root, path) or _inside(settings.output_root, path) or _inside(settings.archive_root, path)):
         raise StorageError("허용되지 않은 경로")
     try:
         with open(path, "rb") as f:

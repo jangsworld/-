@@ -398,16 +398,35 @@ async def seal_decide(request: Request, sid: int):
 
 
 # ── 4. 계약·임대차 ──────────────────────────────────────────────────────
+ITEM_STATUS = {"유효": "관리중", "": ""}          # 화면의 상태 고르기 → 만기 항목 쪽 조건 ('유효' = 유효 + 갱신중)
+
+
 @router.get("/contracts", response_class=HTMLResponse)
-def contracts(request: Request, category: str = "", status: str = "유효"):
+def contracts(request: Request, category: str = "", status: str = "유효", kind: str = ""):
+    """계약·만기 관리: 계약·임대차와 면허·보험·인증 등 회사 관리 만기를 한 표로 (만기 가까운 순)."""
+    from app.modules.ga import company as items_mod
+    from app.modules.mgmt.constants import COMPANY_CATEGORIES, COMPANY_CYCLES, COMPANY_EXAMPLES, COMPANY_STATUSES
     services.roll_auto_renew()
-    rows = [services.contract_view(c) for c in repo.list_contracts(category, status)]
-    for c in rows:
-        c["files"] = contract_intake.list_files(c.get("folder_name")) if c.get("folder_name") else []
+    contract_cats = get_codes("GA_CONTRACT")
+    show_c = kind in ("", "contract") and (not category or category in contract_cats) and (status in CONTRACT_STATUSES or status == "")
+    show_i = kind in ("", "item") and (not category or category in COMPANY_CATEGORIES) and (status in COMPANY_STATUSES or status == "")
+    rows = []
+    if show_c:
+        for c in repo.list_contracts(category, status):
+            c = services.contract_view(c)
+            c["files"] = contract_intake.list_files(c.get("folder_name")) if c.get("folder_name") else []
+            rows.append({"kind": "contract", "dday": c["dday"], "c": c})
+    item_rows = items_mod.items(category, ITEM_STATUS.get(status, status)) if show_i else []
+    for r in item_rows:
+        nx = items_mod.next_expire(r)
+        rows.append({"kind": "item", "dday": r["dday"], "r": r, "next": nx.isoformat() if nx else ""})
+    rows.sort(key=lambda x: (x["dday"] is None, x["dday"] if x["dday"] is not None else 0))
     active = [services.contract_view(c) for c in repo.list_contracts(status="유효")]
+    managed = items_mod.items(status="관리중")
     can_write = request.state.user["role"] in ("admin", "hr", "ga")
     drafts = []
-    if can_write and cfg.contract_root:
+    drafts_on = bool(cfg.contract_root) and cfg.contract_drafts
+    if can_write and drafts_on:
         for d in contract_intake.list_drafts("확인필요"):
             data = d["data"] or {}
             fill = {"status": "유효", "pay_cycle": "월", "notice_days": 30, "amount_vat": "부가세별도",
@@ -415,12 +434,16 @@ def contracts(request: Request, category: str = "", status: str = "유효"):
             drafts.append({**d, "fields": data.get("fields", {}), "checks": data.get("checks", []),
                            "files": data.get("files", []), "fill": fill})
     return _render(request, "ga/contracts.html", {
-        "drafts": drafts, "intake": {**contract_intake.state, "enabled": bool(cfg.contract_root)},
-        "rows": rows, "f": {"category": category, "status": status}, "categories": get_codes("GA_CONTRACT"),
+        "drafts": drafts, "intake": {**contract_intake.state, "enabled": drafts_on},
+        "rows": rows, "f": {"category": category, "status": status, "kind": kind}, "categories": contract_cats,
+        "item_categories": COMPANY_CATEGORIES, "item_cycles": COMPANY_CYCLES, "item_statuses": COMPANY_STATUSES,
+        "examples": COMPANY_EXAMPLES, "history": items_mod.history() if show_i else [],
         "cycles": PAY_CYCLES, "statuses": CONTRACT_STATUSES,
+        "status_opts": ["유효", "갱신중", "만료", "해지", "종료", ""],
         "sum": {"count": len(active), "monthly": sum(c["monthly"] for c in active),
                 "yearly": sum(c["monthly"] for c in active) * 12, "deposit": sum(c["deposit"] or 0 for c in active),
-                "soon": sum(1 for c in active if c["phase"] in ("만료임박", "통보임박", "통보경과"))},
+                "soon": sum(1 for c in active if c["phase"] in ("만료임박", "통보임박", "통보경과")),
+                "items": len(managed), "item_alerts": sum(1 for r in managed if r["alert"])},
     }, "ga.contracts")
 
 
@@ -570,7 +593,16 @@ async def generic_save(request: Request, kind: str):
                 return _redirect("/ga/docs?tab=seal", "이미 처리된 관인 신청은 고칠 수 없습니다")
         else:
             f["status"] = "신청"
+    if table == "ga_contracts":                              # 만기 알림 받을 메일: 주소 모양 확인 후 쉼표로 정리
+        from app.modules.ga import company as items_mod
+        try:
+            f["alert_email"] = ", ".join(items_mod.clean_mails(f.get("alert_email"))) or ""
+        except items_mod.CompanyError as ex:
+            return _redirect("/ga/contracts", str(ex))
     rid = repo.save(table, int(f.get("id") or 0) or None, f)
+    if kind in ("vehicles", "contracts"):                    # 문서 보관함에 그 대상의 폴더를 먼저 만들어 둠 (실패해도 저장은 그대로)
+        from app import archive
+        await run_in_threadpool(archive.ensure_quiet, "ga." + kind, rid)
     nxt = f.get("next") or {"vehicles": f"/ga/vehicles/{rid}", "maint": f"/ga/vehicles/{f.get('vehicle_id')}",
                             "seals": "/ga/docs?tab=seal", "contracts": "/ga/contracts", "rules": "/ga/events"}.get(kind, "/ga/dashboard")
     return _redirect(nxt if nxt.startswith("/ga/") else "/ga/dashboard", "저장되었습니다")

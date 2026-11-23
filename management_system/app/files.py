@@ -58,12 +58,30 @@ def remove(request: Request, att_id: int):
 @router.get("/{menu}/{ref_id}", response_class=HTMLResponse)
 def page(request: Request, menu: str, ref_id: int):
     t = _guard(request, menu, ref_id)
+    archive.ensure_quiet(menu, ref_id)                      # 폴더를 먼저 준비 (손으로 만든 비슷한 폴더가 있으면 그 폴더를 씀)
     return templates.TemplateResponse(request, "files.html", {
         "menu": menu, "ref_id": ref_id, "t": t, "rows": archive.items(menu, ref_id), "info": archive.MENUS[menu],
+        "waiting": archive.unregistered(menu, ref_id),
         "folder": " \\ ".join(archive.folder(menu, t).replace("/", "\\").split("\\")), "max_mb": archive.MAX_MB,
         "active_menu": {"ga.fines": "ga.vehicles", "ga.damages": "ga.vehicles"}.get(menu, menu),
         "msg": request.query_params.get("msg", ""),
     })
+
+
+@router.post("/{menu}/{ref_id}/adopt")
+async def adopt(request: Request, menu: str, ref_id: int):
+    """폴더에 미리 넣어 둔 파일을 복사 없이 대장에 올림."""
+    _guard(request, menu, ref_id)
+    form = await request.form()
+    names = [str(x) for x in form.getlist("names")][:200]
+    if not names:
+        return _back(menu, ref_id, "대장에 올릴 파일을 고르세요")
+    try:
+        ok, errs = await run_in_threadpool(archive.adopt, menu, ref_id, names, str(form.get("note") or ""))
+    except archive.ArchiveError as ex:
+        return _back(menu, ref_id, str(ex))
+    msg = (f"{ok}개를 대장에 올렸습니다 (파일은 폴더에 그대로 있습니다)" if ok else "") + ((" · 올리지 못한 파일 — " + " / ".join(errs)) if errs else "")
+    return _back(menu, ref_id, msg.strip(" ·") or "올릴 파일이 없습니다")
 
 
 @router.post("/{menu}/{ref_id}/upload")

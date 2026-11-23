@@ -366,7 +366,7 @@ def test_mgmt_permissions(env):
     assert ga.post("/mgmt/fin/pull", data={"year": "2025"}, follow_redirects=False).status_code == 403
     assert ga.post("/settings/fund", data={"fund_token": "x"}, follow_redirects=False).status_code == 403
     menu = adm.get("/hr/dashboard").text
-    assert "인건비·연봉" in menu and "인건비 총괄" not in menu and "회사 관리 만기" in menu
+    assert "인건비·연봉" in menu and "인건비 총괄" not in menu and "계약·만기 관리" in menu and "회사 관리 만기" not in menu
     gmenu = ga.get("/ga/dashboard").text
     assert "교육 이수" in gmenu and "인건비·연봉" not in gmenu
 

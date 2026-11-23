@@ -178,7 +178,7 @@ def test_archive_flow(client, two):
         att = archive.items("ga.fines", fid)[0]
         assert att["orig_name"] == "고지서 원본.pdf" and att["company"] == "2"
         path = os.path.join(archive.root(), att["rel_path"])
-        assert os.path.exists(path) and "둘째/총무관리/법인차량/33다3333/과태료/2026-11-01_" in att["rel_path"]
+        assert os.path.exists(path) and "둘째/총무관리/법인차량/33다3333 보관함차/과태료/2026-11-01_" in att["rel_path"]
         got = client.get(f"/files/get/{att['id']}")
         assert got.status_code == 200 and got.content == PDF and got.headers["x-content-type-options"] == "nosniff"
         # 이름만 바꾼 파일·허용하지 않는 종류는 거절
@@ -202,4 +202,114 @@ def test_archive_flow(client, two):
         assert client.get("/files/nope/1").status_code == 403
     finally:
         execute("DELETE FROM attachments WHERE menu='ga.fines' AND ref_id=?", (fid,))
+        execute("DELETE FROM ga_vehicles WHERE id=?", (vid,))
+
+
+def test_contracts_and_items_merged(client, two, monkeypatch):
+    """계약·임대차와 회사 관리 만기를 한 화면으로, 계약에도 만기 알림 메일."""
+    from datetime import timedelta
+    from app.common import today
+    from app.modules.ga import company as items, repo as ga
+    t = today()
+    cid = ga.save("ga_contracts", None, {"category": "임대차", "title": "합친화면 임대차", "counterparty": "건물주", "status": "유효",
+                                         "start_date": (t - timedelta(days=300)).isoformat(), "end_date": (t + timedelta(days=50)).isoformat(),
+                                         "amount": 1000000, "pay_cycle": "월", "notice_days": 30, "company": "1"})
+    iid = items.save({"category": "인증·확인서", "name": "합친화면 인증서", "expire_date": (t + timedelta(days=10)).isoformat(), "company": "2"})
+    try:
+        page = client.get("/ga/contracts?co=all").text
+        assert "합친화면 임대차" in page and "합친화면 인증서" in page and "계약·만기 관리" in page
+        assert page.index("합친화면 인증서") < page.index("합친화면 임대차")            # 만기 가까운 순
+        assert page.count('name="alert_email"') >= 2                                  # 두 등록 창 모두 알림 메일 칸
+        assert "합친화면 임대차" not in client.get("/ga/contracts?kind=item").text
+        assert "합친화면 인증서" not in client.get("/ga/contracts?kind=contract").text
+        r = client.get("/ga/company", follow_redirects=False)                          # 예전 주소는 합친 화면으로
+        assert r.status_code == 303 and r.headers["location"].startswith("/ga/contracts")
+        assert "회사 관리 만기" not in client.get("/ga/dashboard").text.split("side-nav")[1].split("</nav>")[0]
+        # 계약에 알림 메일: 잘못된 주소는 거절, 맞으면 저장
+        client.post("/ga/contracts/save", data={"id": str(cid), "title": "합친화면 임대차", "counterparty": "건물주", "alert_email": "bad"})
+        assert not query_one("SELECT alert_email FROM ga_contracts WHERE id=?", (cid,))["alert_email"]
+        client.post("/ga/contracts/save", data={"id": str(cid), "title": "합친화면 임대차", "counterparty": "건물주", "alert_email": "a@example.com, b@example.com"})
+        assert query_one("SELECT alert_email FROM ga_contracts WHERE id=?", (cid,))["alert_email"] == "a@example.com, b@example.com"
+        # 통보기한(만료 30일 전)까지 20일 → 지금 보낼 대상, 보낸 뒤에는 같은 단계 다시 안 보냄
+        due = [c for c in items.contract_due_mails() if c["id"] == cid]
+        assert len(due) == 1 and due[0]["stage"] == "first" and due[0]["target_dday"] == 20
+        sent = []
+        from app import mailer
+        monkeypatch.setattr(mailer, "configured", lambda: True)
+        monkeypatch.setattr(mailer, "send", lambda to, subject, body, *a, **k: sent.append((to, subject, body)))
+        assert items.send_due_mails() >= 1
+        mine = [x for x in sent if "합친화면 임대차" in x[1]]
+        assert {x[0] for x in mine} == {"a@example.com", "b@example.com"} and "통보기한" in mine[0][2]
+        assert not [c for c in items.contract_due_mails() if c["id"] == cid]
+    finally:
+        execute("DELETE FROM ga_contracts WHERE id=?", (cid,))
+        items.delete(iid)
+        client.get("/ga/contracts?co=all")
+
+
+def test_vehicle_folder_name_and_rehome(client, two):
+    """차량 폴더는 '차량번호 차종'. 차종을 고치면 붙인 서류가 새 폴더로 옮겨짐."""
+    from app.modules.ga import repo as ga
+    vid = ga.save("ga_vehicles", None, {"plate_no": "44라4444", "model": "시험차종A", "status": "운행", "company": "1"})
+    try:
+        aid = archive.save("ga.vehicles", vid, "등록증.pdf", PDF)
+        att = archive.get(aid)
+        assert "/법인차량/44라4444 시험차종A/" in att["rel_path"]
+        ga.save("ga_vehicles", vid, {"model": "시험차종B"})
+        assert archive.rehome() == 1
+        att2 = archive.get(aid)
+        assert "/법인차량/44라4444 시험차종B/" in att2["rel_path"] and archive.read(att2) == PDF
+        assert not os.path.exists(os.path.join(archive.root(), os.path.dirname(att["rel_path"])))    # 빈 예전 폴더는 지움
+        assert archive.rehome() == 0
+    finally:
+        execute("DELETE FROM attachments WHERE menu='ga.vehicles' AND ref_id=?", (vid,))
+        execute("DELETE FROM ga_vehicles WHERE id=?", (vid,))
+
+
+def test_generated_pdf_goes_to_archive(two, monkeypatch, tmp_path):
+    """문서 보관함을 정해 두면 계약서·증명서 PDF 도 그 직원의 '임직원 서류' 폴더로."""
+    from app import storage
+    from app.config import settings
+    a = _emp(two, "보관함문서사", "2")
+    emp = repo.get_employee(a)
+    doc = {"id": 7, "employee_id": a, "doc_group": "certificate", "category": "재직증명", "name": emp["name"], "emp_no": emp["emp_no"]}
+    assert storage.archive_path(doc) is None                                  # 정하지 않았으면 예전 위치 그대로
+    monkeypatch.setattr(settings, "archive_root", str(tmp_path))
+    p = storage.target_path(doc)
+    rel = os.path.relpath(p, str(tmp_path)).replace("\\", "/")
+    assert rel.startswith(f"둘째/인사관리/임직원 서류/{emp['emp_no']}_보관함문서사/BMS_증명서_재직증명_보관함문서사_") and rel.endswith("_d7.pdf")
+    os.makedirs(os.path.dirname(p))
+    open(p, "wb").write(PDF)
+    import hashlib
+    assert storage.read_verified(p, hashlib.sha256(PDF).hexdigest()) == PDF
+
+
+def test_no_duplicate_folders(client, two):
+    """손으로 만든 폴더·미리 넣어 둔 파일이 있어도 폴더가 두 벌 생기지 않는다."""
+    from app.modules.ga import repo as ga
+    car_parent = os.path.join(archive.root(), company.short("1"), "총무관리", "법인차량")
+    os.makedirs(os.path.join(car_parent, "55마5555"), exist_ok=True)                 # 담당자가 차량번호만으로 먼저 만든 폴더
+    with open(os.path.join(car_parent, "55마5555", "미리 넣은 등록증.pdf"), "wb") as f:
+        f.write(PDF)
+    with open(os.path.join(car_parent, "55마5555", "가짜.pdf"), "wb") as f:
+        f.write(b"not a pdf")
+    r = client.post("/ga/vehicles/save", data={"plate_no": "55마5555", "model": "미리차", "status": "운행", "company": "1"}, follow_redirects=False)
+    vid = int(r.headers["location"].split("/ga/vehicles/")[1].split("?")[0])
+    try:
+        dirs = [d for d in os.listdir(car_parent) if d.startswith("55마5555")]
+        assert dirs == ["55마5555 미리차"]                                           # 새로 만들지 않고 이름을 바꿔 씀
+        page = client.get(f"/files/ga.vehicles/{vid}").text
+        assert "대장에 없는 파일" in page and "미리 넣은 등록증.pdf" in page
+        assert [x["name"] for x in archive.unregistered("ga.vehicles", vid)] == ["가짜.pdf", "미리 넣은 등록증.pdf"]
+        r = client.post(f"/files/ga.vehicles/{vid}/adopt", data={"names": ["미리 넣은 등록증.pdf", "가짜.pdf", "../밖.pdf"]}, follow_redirects=False)
+        assert r.status_code == 303
+        rows = archive.items("ga.vehicles", vid)
+        assert len(rows) == 1 and rows[0]["rel_path"].endswith("/법인차량/55마5555 미리차/미리 넣은 등록증.pdf")   # 복사 없이 그 자리 그대로
+        assert client.get(f"/files/get/{rows[0]['id']}").content == PDF
+        assert [x["name"] for x in archive.unregistered("ga.vehicles", vid)] == ["가짜.pdf"]      # 내용이 PDF 가 아닌 것은 올리지 않음
+        archive.save("ga.vehicles", vid, "새 서류.pdf", PDF)
+        assert [d for d in os.listdir(car_parent) if d.startswith("55마5555")] == ["55마5555 미리차"]
+        assert archive.ensure_all() >= 1 and archive.rehome() == 0
+    finally:
+        execute("DELETE FROM attachments WHERE menu='ga.vehicles' AND ref_id=?", (vid,))
         execute("DELETE FROM ga_vehicles WHERE id=?", (vid,))

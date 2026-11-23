@@ -52,34 +52,40 @@ class ArchiveError(Exception):
 
 def _emp(ref_id):
     r = query_one("SELECT id, emp_no, name, company FROM employees WHERE id=?", (ref_id,))
-    return r and {"company": r["company"], "target": f"{r['emp_no']}_{r['name']}", "title": r["name"], "back": f"/hr/employees/{r['id']}"}
+    return r and {"company": r["company"], "target": f"{r['emp_no']}_{r['name']}", "key": r["emp_no"], "title": r["name"], "back": f"/hr/employees/{r['id']}"}
+
+
+def vehicle_name(plate, model) -> str:
+    """차량 폴더 이름: '차량번호 차종' (폴더만 보고 어느 차인지 알 수 있게)."""
+    return f"{plate or ''} {model or ''}".strip()
 
 
 def _vehicle(ref_id):
     r = query_one("SELECT id, plate_no, model, company FROM ga_vehicles WHERE id=?", (ref_id,))
-    return r and {"company": r["company"], "target": r["plate_no"], "title": f"{r['plate_no']} {r['model'] or ''}".strip(),
+    return r and {"company": r["company"], "target": vehicle_name(r["plate_no"], r["model"]), "key": r["plate_no"],
+                  "title": f"{r['plate_no']} {r['model'] or ''}".strip(),
                   "back": f"/ga/vehicles/{r['id']}"}
 
 
 def _fine(ref_id):
-    r = query_one("SELECT f.id, f.violation_at, f.kind, v.id vid, v.plate_no, v.company FROM ga_vehicle_fines f "
+    r = query_one("SELECT f.id, f.violation_at, f.kind, v.id vid, v.plate_no, v.model, v.company FROM ga_vehicle_fines f "
                   "JOIN ga_vehicles v ON v.id=f.vehicle_id WHERE f.id=?", (ref_id,))
-    return r and {"company": r["company"], "target": r["plate_no"], "sub": "과태료",
+    return r and {"company": r["company"], "target": vehicle_name(r["plate_no"], r["model"]), "key": r["plate_no"], "sub": "과태료",
                   "title": f"{r['plate_no']} 과태료 {(r['violation_at'] or '')[:10]} {r['kind'] or ''}".strip(),
                   "prefix": (r["violation_at"] or "")[:10], "back": f"/ga/vehicles/{r['vid']}?tab=fines"}
 
 
 def _damage(ref_id):
-    r = query_one("SELECT d.id, d.occur_date, d.kind, d.part, v.id vid, v.plate_no, v.company FROM ga_vehicle_damages d "
+    r = query_one("SELECT d.id, d.occur_date, d.kind, d.part, v.id vid, v.plate_no, v.model, v.company FROM ga_vehicle_damages d "
                   "JOIN ga_vehicles v ON v.id=d.vehicle_id WHERE d.id=?", (ref_id,))
-    return r and {"company": r["company"], "target": r["plate_no"], "sub": "사고·파손",
+    return r and {"company": r["company"], "target": vehicle_name(r["plate_no"], r["model"]), "key": r["plate_no"], "sub": "사고·파손",
                   "title": f"{r['plate_no']} {r['kind']} {r['occur_date']} {r['part'] or ''}".strip(),
                   "prefix": r["occur_date"] or "", "back": f"/ga/vehicles/{r['vid']}?tab=damages"}
 
 
 def _asset(ref_id):
     r = query_one("SELECT id, asset_no, name, company FROM ga_assets WHERE id=?", (ref_id,))
-    return r and {"company": r["company"], "target": f"{r['asset_no']}_{r['name']}", "title": f"{r['asset_no']} {r['name']}",
+    return r and {"company": r["company"], "target": f"{r['asset_no']}_{r['name']}", "key": r["asset_no"], "title": f"{r['asset_no']} {r['name']}",
                   "back": f"/ga/assets/{r['id']}"}
 
 
@@ -97,7 +103,7 @@ def _doc(ref_id):
 
 def _item(ref_id):
     r = query_one("SELECT id, name, category, company FROM ga_company_items WHERE id=?", (ref_id,))
-    return r and {"company": r["company"], "target": f"{r['category']}_{r['name']}", "title": r["name"], "back": "/ga/company"}
+    return r and {"company": r["company"], "target": f"{r['category']}_{r['name']}", "title": r["name"], "back": "/ga/contracts?kind=item"}
 
 
 def _reward(ref_id):
@@ -122,9 +128,9 @@ MENUS = {
     "ga.fines": ("총무관리", "법인차량", GA_STAFF, _fine, "과태료·범칙금 고지서, 납부 영수증"),
     "ga.damages": ("총무관리", "법인차량", GA_STAFF, _damage, "사고·파손 사진, 견적서, 수리 영수증, 보험 서류"),
     "ga.assets": ("총무관리", "자산·비품", GA_STAFF, _asset, "구매 영수증·보증서·설명서"),
-    "ga.contracts": ("총무관리", "계약·임대차", GA_STAFF, _contract, "계약서 원본·변경 계약서"),
+    "ga.contracts": ("총무관리", "계약·만기 관리", GA_STAFF, _contract, "계약서 원본·변경 계약서"),
     "ga.docs": ("총무관리", "문서수발·관인", GA_STAFF, _doc, "주고받은 공문 스캔본"),
-    "ga.company": ("총무관리", "회사 관리 만기", GA_STAFF, _item, "면허증·인허가증·보험증권·인증서"),
+    "ga.company": ("총무관리", "계약·만기 관리", GA_STAFF, _item, "면허증·인허가증·보험증권·인증서"),
 }
 
 
@@ -194,10 +200,146 @@ def _write(rel: str, raw: bytes):
         raise ArchiveError(f"보관함에 저장하지 못했습니다: {ex.__class__.__name__} (NAS 연결·폴더 권한을 확인하세요)") from ex
 
 
+# ── 폴더가 두 벌 생기지 않게 ───────────────────────────────────────────
+#  1) 대상을 등록하면 BMS 가 폴더를 먼저 만들어 둠 (ensure_folder) → 서류를 미리 넣을 때도 같은 폴더를 씀
+#  2) 손으로 만든 비슷한 이름의 폴더(차량번호만, 사번만 등)가 있으면 새로 만들지 않고 그 폴더의 이름을 규칙대로 바꿔 씀
+#  3) 폴더에 직접 넣어 둔 파일은 복사하지 않고 그 자리 그대로 대장에 올림 (unregistered / adopt)
+SKIP_NAMES = {"thumbs.db", "desktop.ini", ".ds_store"}
+
+
+def _target_dir(menu: str, t: dict) -> str:
+    """대상 폴더(하위 폴더 '과태료' 등은 뺀 것)의 상대 경로."""
+    return os.path.join(_safe(company.short(company.norm(t.get("company"))), 30), MENUS[menu][0], MENUS[menu][1], _safe(t["target"]))
+
+
+def _same_thing(name: str, key: str) -> bool:
+    """폴더 이름이 그 대상의 것으로 보이는지: 열쇠와 같거나, 열쇠 뒤에 빈칸·밑줄·붙임표가 오는 이름."""
+    n, k = name.strip().lower(), key.strip().lower()
+    return bool(k) and (n == k or any(n.startswith(k + sep) for sep in (" ", "_", "-", "(")))
+
+
+def ensure_folder(menu: str, ref_id: int) -> str | None:
+    """대상 폴더를 준비하고 상대 경로를 돌려줌. 이미 있으면 그대로, 비슷한 이름의 폴더가 딱 하나 있으면 이름을 바꿔 씀, 없으면 새로 만듦."""
+    t = target(menu, ref_id)
+    if not t:
+        return None
+    r = root()
+    rel = _target_dir(menu, t)
+    full = os.path.normpath(os.path.join(r, rel))
+    if not _inside(r, full):
+        return None
+    try:
+        if not os.path.isdir(full):
+            parent = os.path.dirname(full)
+            twins = []
+            if t.get("key") and os.path.isdir(parent):
+                twins = [d for d in os.listdir(parent) if os.path.isdir(os.path.join(parent, d)) and _same_thing(d, _safe(t["key"]))]
+            if len(twins) == 1:                              # 손으로 만든 폴더 → 규칙에 맞는 이름으로 바꿔서 그대로 씀
+                old_rel = os.path.join(os.path.dirname(rel), twins[0]).replace("\\", "/")
+                os.replace(os.path.join(parent, twins[0]), full)
+                new_rel = rel.replace("\\", "/")
+                for a in query("SELECT id, rel_path FROM attachments WHERE rel_path LIKE ?", (old_rel + "/%",)):
+                    execute("UPDATE attachments SET rel_path=? WHERE id=?", (new_rel + a["rel_path"][len(old_rel):], a["id"]))
+                audit("files", "폴더 이름 정리", twins[0], "→ " + os.path.basename(full))
+            else:
+                os.makedirs(full, exist_ok=True)
+    except OSError:
+        log.exception("폴더 준비 실패: %s", rel)
+        return None
+    return rel
+
+
+def ensure_quiet(menu: str, ref_id) -> None:
+    """등록·수정 화면에서 부르는 용도: 실패해도 저장을 막지 않음."""
+    try:
+        if ref_id:
+            ensure_folder(menu, int(ref_id))
+    except Exception:                                   # noqa: BLE001
+        log.exception("폴더 준비 실패")
+
+
+def ensure_all() -> int:
+    """지금 관리 중인 대상(재직 직원·보유 차량·유효 계약·관리 중인 면허·보험 등·쓰는 자산)의 폴더를 미리 만들어 둠."""
+    n = 0
+    t = datetime.now().strftime("%Y-%m-%d")
+    jobs = [("hr.employees", "SELECT id FROM employees WHERE resign_date IS NULL OR resign_date='' OR resign_date>=?", (t,)),
+            ("ga.vehicles", "SELECT id FROM ga_vehicles WHERE status<>'매각'", ()),
+            ("ga.contracts", "SELECT id FROM ga_contracts WHERE status='유효'", ()),
+            ("ga.company", "SELECT id FROM ga_company_items WHERE status IN ('유효','갱신중')", ()),
+            ("ga.assets", "SELECT id FROM ga_assets WHERE status<>'폐기'", ())]
+    for menu, sql, p in jobs:
+        for row in query(sql, p):
+            if ensure_folder(menu, row["id"]):
+                n += 1
+    return n
+
+
+def unregistered(menu: str, ref_id: int) -> list[dict]:
+    """대상 폴더에 직접 넣어 둔 파일 중 대장에 없는 것. BMS 가 만든 계약서·증명서 PDF(BMS_ 로 시작)는 따로 관리하므로 뺌."""
+    t = target(menu, ref_id)
+    if not t:
+        return []
+    r = root()
+    rel = folder(menu, t)
+    full = os.path.normpath(os.path.join(r, rel))
+    if not _inside(r, full) or not os.path.isdir(full):
+        return []
+    known = {a["rel_path"] for a in query("SELECT rel_path FROM attachments WHERE rel_path LIKE ?", (rel.replace("\\", "/") + "/%",))}
+    out = []
+    try:
+        names = sorted(os.listdir(full))
+    except OSError:
+        return []
+    for name in names:
+        p = os.path.join(full, name)
+        low = name.lower()
+        if low in SKIP_NAMES or name.startswith((".", "~$", "BMS_")) or low.endswith(".part") or not os.path.isfile(p):
+            continue
+        if os.path.splitext(low)[1] not in KINDS or (rel.replace("\\", "/") + "/" + name) in known:
+            continue
+        try:
+            out.append({"name": name, "size": os.path.getsize(p)})
+        except OSError:
+            continue
+    return out[:200]
+
+
+def adopt(menu: str, ref_id: int, names: list[str], note: str = "") -> tuple[int, list[str]]:
+    """폴더에 넣어 둔 파일을 옮기지 않고 그 자리 그대로 대장에 올림. (올린 수, 못 올린 이유들)"""
+    t = target(menu, ref_id)
+    if not t:
+        raise ArchiveError("붙일 대상을 찾을 수 없습니다")
+    waiting = {x["name"] for x in unregistered(menu, ref_id)}           # 화면이 보여 준 목록 안의 이름만 (경로 글자는 올 수 없음)
+    rel = folder(menu, t).replace("\\", "/")
+    ok, errs = 0, []
+    for name in names:
+        if name not in waiting:
+            continue
+        path = os.path.normpath(os.path.join(root(), rel, name))
+        if not _inside(root(), path):
+            continue
+        try:
+            with open(path, "rb") as f:
+                raw = f.read(MAX_MB * 1024 * 1024 + 1)
+            _ext, mime = check(name, raw)
+        except (OSError, ArchiveError) as ex:
+            errs.append(f"{name}: {ex if isinstance(ex, ArchiveError) else '읽을 수 없습니다'}")
+            continue
+        execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256, note, uploaded_by) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (menu, int(ref_id), company.norm(t.get("company")), rel + "/" + name, name[:120], mime, len(raw),
+                 hashlib.sha256(raw).hexdigest(), (note or "폴더에 넣어 둔 파일").strip()[:200], current_actor.get()[1]))
+        ok += 1
+    if ok:
+        audit("files", "폴더 파일을 대장에 올림", f"{MENUS[menu][1]} {t['title']}"[:120], f"{ok}개")
+    return ok, errs
+
+
 def save(menu: str, ref_id: int, orig_name: str, raw: bytes, note: str = "") -> int:
     t = target(menu, ref_id)
     if not t:
         raise ArchiveError("붙일 대상을 찾을 수 없습니다")
+    ensure_folder(menu, ref_id)                              # 손으로 만든 비슷한 폴더가 있으면 먼저 그 폴더로 맞춤
     ext, mime = check(orig_name, raw)
     base = _safe(os.path.splitext(os.path.basename(orig_name))[0], 50)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -283,7 +425,7 @@ def export_vehicle_photos(inspection_id: int | None = None) -> int:
     """확정한 점검의 사진을 보관함에 JPG 로 내보냄. 이미 있는 파일은 건너뜀. 내보낸 장수를 돌려줌."""
     from PIL import Image
     from app.modules.ga import fleet, photos
-    sql = ("SELECT i.id, i.kind, i.insp_date, v.plate_no, v.company FROM ga_vehicle_inspections i "
+    sql = ("SELECT i.id, i.kind, i.insp_date, v.plate_no, v.model, v.company FROM ga_vehicle_inspections i "
            "JOIN ga_vehicles v ON v.id=i.vehicle_id WHERE i.status='확정'")
     p = []
     if inspection_id:
@@ -291,7 +433,7 @@ def export_vehicle_photos(inspection_id: int | None = None) -> int:
         p.append(inspection_id)
     n = 0
     for i in query(sql, p):
-        t = {"company": i["company"], "target": i["plate_no"], "sub": "점검사진"}
+        t = {"company": i["company"], "target": vehicle_name(i["plate_no"], i["model"]), "sub": "점검사진"}
         base = os.path.join(folder("ga.vehicles", t), _safe(f"{i['insp_date']}_{i['kind']}_{i['id']}"))
         for ph in query("SELECT id, slot, note, verdict FROM ga_vehicle_photos WHERE inspection_id=? ORDER BY id", (i["id"],)):
             label = fleet.SLOT_LABEL.get(ph["slot"], ph["slot"])
@@ -315,12 +457,66 @@ _stop = threading.Event()
 _thread: threading.Thread | None = None
 
 
-def _loop():
-    while not _stop.wait(6 * 3600):                 # 놓친 사진이 있으면 6시간마다 다시 내보냄
+def _tidy_dirs(path: str):
+    """비어 버린 폴더를 위로 올라가며 지움 (보관함 맨 위 폴더는 남김)."""
+    r = root()
+    while _inside(r, path) and os.path.normpath(path) != r:
         try:
+            os.rmdir(path)
+        except OSError:
+            return
+        path = os.path.dirname(path)
+
+
+def rehome() -> int:
+    """대상의 이름이 바뀌어(차종을 고침, 회사를 옮김, 폴더 이름 규칙 변경 등) 폴더가 달라진 서류를 새 폴더로 옮기고 대장을 맞춤.
+    차량은 예전 폴더에 남은 점검 사진 폴더도 함께 옮깁니다. 옮긴 개수를 돌려줌. 파일이 없거나 옮기지 못하면 그대로 둠."""
+    r, n = root(), 0
+    for att in query("SELECT id, menu, ref_id, rel_path FROM attachments WHERE deleted_at IS NULL"):
+        t = target(att["menu"], att["ref_id"])
+        if not t:
+            continue
+        want = folder(att["menu"], t).replace("\\", "/")
+        cur_dir, name = os.path.split(att["rel_path"])
+        if cur_dir == want:
+            continue
+        src = os.path.normpath(os.path.join(r, att["rel_path"]))
+        dst = os.path.normpath(os.path.join(r, want, name))
+        if not (_inside(r, src) and _inside(r, dst)) or not os.path.exists(src) or os.path.exists(dst):
+            continue
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            os.replace(src, dst)
+        except OSError:
+            log.exception("서류 폴더 옮기기 실패 (붙임 %s)", att["id"])
+            continue
+        execute("UPDATE attachments SET rel_path=? WHERE id=?", (want + "/" + name, att["id"]))
+        n += 1
+        if att["menu"].startswith("ga.") and "법인차량" in want:           # 예전 차량 폴더의 점검 사진도 새 폴더로
+            old_car = os.path.normpath(os.path.join(r, *cur_dir.split("/")[:4]))
+            new_car = os.path.normpath(os.path.join(r, *want.split("/")[:4]))
+            old_ph, new_ph = os.path.join(old_car, "점검사진"), os.path.join(new_car, "점검사진")
+            try:
+                if old_car != new_car and os.path.isdir(old_ph) and not os.path.exists(new_ph):
+                    os.replace(old_ph, new_ph)
+            except OSError:
+                log.exception("점검 사진 폴더 옮기기 실패")
+        _tidy_dirs(os.path.dirname(src))
+    if n:
+        audit("files", "서류 폴더 정리", f"{n}개", "대상 이름에 맞춰 옮김")
+    return n
+
+
+def _loop():
+    while True:                                     # 시작할 때 한 번, 그 뒤 6시간마다: 폴더 이름 맞추기 + 놓친 차량 사진 내보내기
+        try:
+            ensure_all()                            # 먼저: 손으로 만든 폴더를 규칙 이름으로 바꿔 그대로 씀 (두 벌이 되지 않게)
+            rehome()
             export_vehicle_photos()
         except Exception:                           # noqa: BLE001
-            log.exception("차량 사진 내보내기 실패")
+            log.exception("문서 보관함 정리 실패")
+        if _stop.wait(6 * 3600):
+            return
 
 
 def start_worker():

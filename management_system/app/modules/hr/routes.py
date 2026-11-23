@@ -339,6 +339,8 @@ async def employee_create(request: Request):
         return _redirect("/hr/employees/new", str(ex))
     except Exception as ex:  # 사번 중복 등
         return _redirect("/hr/employees/new", f"저장 실패: {ex}")
+    from app import archive
+    await run_in_threadpool(archive.ensure_quiet, "hr.employees", emp_id)      # 문서 보관함에 직원 폴더를 먼저 만들어 둠
     if raw.get("paper_contract") == "1":                  # 기존 직원: 서면 계약 체결 완료로 바로 기록
         record_paper_contract(repo.get_employee(emp_id), raw.get("hire_date"), raw.get("paper_contract_end"))
         return _redirect(f"/hr/employees/{emp_id}", "임직원이 등록되었습니다 (근로계약: 기존 서면계약 체결)")
