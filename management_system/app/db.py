@@ -902,7 +902,8 @@ CREATE TABLE IF NOT EXISTS review_items (              -- 직원별 평가·최�
     employee_id  INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
     grade        TEXT,
     add_rate     REAL,                               -- 평가 가산(%p) — 비우면 등급 기준
-    final_rate   REAL,                               -- 개별 조정 최종 인상률(%) — 비우면 고정+가산
+    final_rate   REAL,                               -- (예전 방식) 최종 인상률 직접 — 비우면 고정+가산+추가
+    extra_rate   REAL,                               -- 추가 조정(%p): 고정 + 등급 가산 위에 더하거나 뺌
     comment      TEXT,                               -- 암호화
     evaluator    TEXT,
     updated_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
@@ -1187,6 +1188,9 @@ def _add_columns(conn):
         conn.execute("ALTER TABLE employee_payroll ADD COLUMN pension_monthly INTEGER")
         conn.execute("ALTER TABLE employee_payroll ADD COLUMN employ_monthly INTEGER")
         conn.execute("UPDATE employee_payroll SET pension_monthly=insured_monthly, employ_monthly=insured_monthly")
+    rv_cols = {r[1] for r in conn.execute("PRAGMA table_info(review_items)")}
+    if rv_cols and "extra_rate" not in rv_cols:
+        conn.execute("ALTER TABLE review_items ADD COLUMN extra_rate REAL")       # 숫자 칸이어야 해서 TEXT 일괄 추가와 따로
     code_cols = {r[1] for r in conn.execute("PRAGMA table_info(codes)")}
     if code_cols and "parent_id" not in code_cols:
         conn.execute("ALTER TABLE codes ADD COLUMN parent_id INTEGER")  # 부서 대·중·소분류

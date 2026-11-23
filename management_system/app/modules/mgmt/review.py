@@ -1,8 +1,9 @@
 """인사평가·연봉조정 (2026-11 개편: 평가표 없이 기준값으로 고정인상률 안을 자동 산출).
 
-흐름: ① 기준값(물가상승률·최저임금·손익) → ② 고정인상률 안 자동 산출·비교(물가보전·최저임금연동·성과공유·지불능력·직접)
-→ ③ 고른 안을 전원에 먼저 적용, 직원별 최종 %를 직접 조정(등급 가산은 선택), 최저임금 미달은 자동으로 기준선까지
+흐름: ① 기준값(물가상승률·최저임금·손익) → ② 추천 범위(하한·추천·상한)와 고정인상률 안 자동 산출·비교
+→ ③ 직원별: 고정인상률 + 등급 가산 + 추가(%p) = 최종. 최저임금 미달은 자동으로 기준선까지
 → ④ 고른 고정안 대비 조정 결과 비교 후 확정 → 인건비·연봉에 반영.
+(예전에는 ③에서 '최종 %'를 직접 넣었다. 그 값은 convert_overrides 가 '추가(%p)'로 한 번 바꿔 둔다.)
 """
 import csv
 import io
@@ -24,9 +25,12 @@ STATUS_LABEL = {"준비": "준비", "평가중": "조정 중", "확정": "확정
 # 기준값 입력칸 (review_cycles.inputs, 암호화 저장)
 INPUT_LABELS = {"cpi": "물가상승률(%)", "min_wage_cur": "올해 최저시급(원)", "min_wage_next": "다음 해 최저시급(원)",
                 "share_ratio": "성과공유 나눔비율(%)", "share_cap": "성과공유 가산 상한(%p)", "pay_ratio": "지불능력 한도(%)",
-                "memo": "메모"}
+                "afford_ratio": "인상 비용 상한(영업이익 대비 %)", "memo": "메모"}
 INPUT_KEYS = tuple(INPUT_LABELS)
-INPUT_DEFAULTS = {"share_ratio": 10.0, "share_cap": 3.0, "pay_ratio": 30.0}
+INPUT_DEFAULTS = {"share_ratio": 10.0, "share_cap": 3.0, "pay_ratio": 30.0, "afford_ratio": 20.0}
+EXTRA_LIMIT = 10.0              # 추가 조정 한 사람당 ±%p
+# 추천 범위: 영업이익률이 이만큼이면 성과 점수 만점, 영업이익 증가율이 이만큼이면 만점 (둘의 평균)
+MARGIN_FULL, GROWTH_FULL = 10.0, 20.0
 
 
 class ReviewError(ValueError):
@@ -194,8 +198,9 @@ def compute(c: dict, base_rate: float | None = None, use_overrides: bool = True,
         add = it["add_rate"] if it.get("add_rate") is not None else gmap.get(grade, 0.0)
         if not with_grades:
             add = 0.0
+        extra = (it.get("extra_rate") or 0.0) if use_overrides else 0.0
         override = it.get("final_rate") if use_overrides else None
-        final = override if override is not None else (base or 0.0) + add
+        final = override if override is not None else (base or 0.0) + add + extra
         new = round_to(base_sal * (1 + final / 100), unit) if base_sal else None
         min_fix = False
         if new and min_annual and new < min_annual and e.get("employment_type") != "단시간(파트타임)":
@@ -204,6 +209,7 @@ def compute(c: dict, base_rate: float | None = None, use_overrides: bool = True,
             min_fix = True
         rows.append({
             "employee": e, "grade": grade, "add_rate": add, "add_custom": it.get("add_rate") is not None,
+            "extra_rate": it.get("extra_rate") if use_overrides else None, "fixed_rate": base or 0.0,
             "final_rate": final, "override": override, "comment": it.get("comment") or "", "evaluator": it.get("evaluator") or "",
             "base_salary": base_sal, "base_year": base_year, "new_salary": new,
             "raise": (new - base_sal) if (new and base_sal) else None,
@@ -262,6 +268,8 @@ def basis(c: dict) -> dict:
         "op_growth": (op - op_prev) if (op is not None and op_prev is not None) else None,
         "op_growth_rate": ((op - op_prev) / abs(op_prev) * 100) if (op is not None and op_prev) else None,
         "share_ratio": opt("share_ratio"), "share_cap": opt("share_cap"), "pay_ratio": opt("pay_ratio"),
+        "afford_ratio": opt("afford_ratio"),
+        "margin": (op / f["by"]["매출액"]["cur"] * 100) if (op is not None and f["by"]["매출액"]["cur"]) else None,
         "mult": 1 + (rt["employer"] + rt["retire"]) / 100, "rates": rt, "fin": f,
         "total_base": compute(c, base_rate=0, use_overrides=False, with_grades=False)["total_base"],
     }
@@ -271,7 +279,13 @@ def plans(c: dict, b: dict | None = None) -> list[dict]:
     """고정인상률 안 자동 산출. 자료가 없으면 rate=None 과 채울 값 안내(why)."""
     b = b or basis(c)
     cpi = b["cpi"]
-    out = [
+    rc = recommend(b)
+    out = []
+    if rc["ready"]:
+        out += [{"key": "low", "name": "추천 하한", "rate": rc["low"], "formula": rc["low_why"], "why": None},
+                {"key": "rec", "name": "추천안", "rate": rc["rec"], "formula": rc["rec_why"], "why": None},
+                {"key": "high", "name": "추천 상한", "rate": rc["high"], "formula": rc["high_why"], "why": None}]
+    out += [
         {"key": "cpi", "name": "물가보전안", "rate": round(cpi, 1) if cpi is not None else None,
          "formula": "물가상승률 그대로 (실질임금 유지)", "why": None if cpi is not None else "물가상승률을 넣으면 계산됩니다"},
         {"key": "minwage", "name": "최저임금연동안", "rate": round(b["mw_rate"], 1) if b["mw_rate"] is not None else None,
@@ -295,6 +309,90 @@ def plans(c: dict, b: dict | None = None) -> list[dict]:
     for r in c["scenarios"]:
         out.append({"key": "manual", "name": "직접입력안", "rate": float(r), "formula": "직접 넣은 비교안", "why": None})
     return out
+
+
+def _clamp(v: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, v))
+
+
+def recommend(b: dict) -> dict:
+    """작년 손익·물가상승률·최저시급으로 고정인상률의 하한·추천·상한을 냅니다 (근거 글과 함께).
+
+    - 하한: 물가상승률과 최저임금 인상률 중 낮은 값 = 실질임금을 지키는 최소선. 적자면 0%(동결)까지 내려갑니다.
+    - 성과 점수(0~1): 영업이익률(10%면 만점)과 영업이익 증가율(20%면 만점)의 평균. 적자면 0.
+    - 추천: 물가상승률 + 성과 점수 × 성과 가산 상한. 적자면 하한 기준의 절반.
+    - 상한: 물가·최저임금 인상률 중 높은 값 + 성과 가산 상한 전부(가장 후하게 줄 때). 손익 자료가 없으면 가산 없이.
+      단, 회사 실부담이 작년 영업이익의 '인상 비용 상한' %를 넘지 않게.
+    """
+    cpi, mw = b.get("cpi"), b.get("mw_rate")
+    known = [v for v in (cpi, mw) if v is not None]
+    if not known:
+        return {"ready": False, "why": "물가상승률이나 다음 해 최저시급을 넣으면 추천 범위가 계산됩니다"}
+    lo_base, hi_base = min(known), max(known)
+    op, margin, growth = b.get("op"), b.get("margin"), b.get("op_growth_rate")
+    share_cap = b.get("share_cap", INPUT_DEFAULTS["share_cap"])
+    afford = b.get("afford_ratio", INPUT_DEFAULTS["afford_ratio"])
+    loss = op is not None and op <= 0
+    parts = []
+    if margin is not None:
+        parts.append(_clamp(margin / MARGIN_FULL, 0, 1))
+    if growth is not None:
+        parts.append(_clamp(growth / GROWTH_FULL, 0, 1))
+    score = 0.0 if loss else (sum(parts) / len(parts) if parts else None)
+    bonus = (score or 0.0) * share_cap
+    anchor = cpi if cpi is not None else lo_base
+    if loss:
+        low, rec, high = 0.0, lo_base / 2, lo_base
+    else:
+        low, rec, high = lo_base, anchor + bonus, hi_base + (share_cap if score is not None else 0.0)
+    aff, notes = None, []
+    if op is not None and op > 0 and b.get("total_base"):
+        aff = op * afford / 100 / (b["total_base"] * b.get("mult", 1)) * 100
+        if aff < high:
+            notes.append(f"회사 실부담이 영업이익의 {afford:g}%를 넘지 않도록 상한을 {aff:.1f}%로 낮췄습니다")
+            high = max(low, aff)
+        if aff < low:
+            notes.append(f"하한({low:.1f}%)만 줘도 실부담이 영업이익의 {afford:g}%를 넘습니다. 인상 폭을 신중히 검토하세요")
+    if loss:
+        notes.append("작년 영업이익이 적자입니다. 동결(0%)부터 물가 수준까지를 범위로 잡았습니다")
+    if score is None:
+        notes.append("손익 자료가 없어 성과 가산 없이 물가·최저임금만으로 계산했습니다 (fund에서 읽거나 직접 입력하면 반영)")
+    rec = _clamp(rec, low, high)
+    r1 = lambda v: math.floor(v * 10 + 0.5 + 1e-9) / 10      # noqa: E731  (0.05 는 올림)
+    low, rec, high = r1(low), r1(rec), r1(high)
+    src = " · ".join(x for x in (f"물가 {cpi:g}%" if cpi is not None else "", f"최저임금 {mw:.1f}%" if mw is not None else "") if x)
+    return {
+        "ready": True, "low": low, "rec": rec, "high": high, "score": score, "bonus": bonus, "aff": aff, "loss": loss,
+        "margin": margin, "growth": growth, "notes": notes,
+        "low_why": "적자 → 동결까지" if loss else f"물가·최저임금 인상률 중 낮은 값 ({src})",
+        "rec_why": (f"하한의 절반 (적자)" if loss else
+                    f"물가 {anchor:g}% + 성과 가산 {bonus:.1f}%p (성과 점수 {round((score or 0) * 100)}점 × 상한 {share_cap:g}%p)"),
+        "high_why": ("물가·최저임금 중 낮은 값 (적자)" if loss else
+                     f"물가·최저임금 중 높은 값 + 성과 가산 상한 {share_cap:g}%p (가장 후하게)" if score is not None else "물가·최저임금 중 높은 값") +
+                    (f", 지불능력 {aff:.1f}%로 제한" if aff is not None and aff < hi_base + share_cap and not loss else ""),
+    }
+
+
+def convert_overrides() -> int:
+    """예전 방식 '최종 % 직접'을 '추가(%p)'로 바꿉니다 (반영완료한 해는 그대로). 한 번만."""
+    if get_settings().get("review_extra_v1") == "1":
+        return 0
+    from app.db import set_setting
+    n = 0
+    with batch():
+        for c in cycles():
+            if c["status"] == "반영완료" or c["base_rate"] is None:
+                continue
+            gmap = {g: v for g, v in c["grades"]}
+            for it in query("SELECT * FROM review_items WHERE cycle_id=? AND final_rate IS NOT NULL", (c["id"],)):
+                add = it["add_rate"] if it["add_rate"] is not None else gmap.get(it["grade"] or "", 0.0)
+                extra = round(it["final_rate"] - c["base_rate"] - add, 2)
+                execute("UPDATE review_items SET extra_rate=?, final_rate=NULL WHERE id=?", (extra or None, it["id"]))
+                n += 1
+        set_setting("review_extra_v1", "1")
+        if n:
+            audit("mgmt", "인사평가 최종 직접 → 추가 조정 변환", "", f"{n}건")
+    return n
 
 
 def compare(c: dict) -> dict | None:
@@ -347,7 +445,12 @@ def scenarios(c: dict) -> dict:
             "labor_ratio_after": (labor_now + real) / rev * 100 if rev else None,
             "below_min": len(g["below_min"]),
         })
-    return {"rows": out, "plans": pl, "basis": b, "fin": f, "mult": mult, "rates": rt, "labor_now": labor_now,
+    rc = recommend(b)
+    if rc["ready"]:
+        g = compute(c, base_rate=rc["rec"], use_overrides=False, with_grades=False)
+        rc["labor_ratio_after"] = (labor_now + g["increase"] * mult) / rev * 100 if rev else None
+        rc["real_cost"] = g["increase"] * mult
+    return {"rows": out, "plans": pl, "basis": b, "fin": f, "mult": mult, "rates": rt, "labor_now": labor_now, "rec": rc,
             "labor_ratio_now": labor_now / rev * 100 if rev else None}
 
 
@@ -357,6 +460,7 @@ def save_items(c: dict, rows: list[dict], by: str = "") -> int:
         raise ReviewError("확정된 평가는 바꿀 수 없습니다. 먼저 '다시 열기'를 하세요.")
     grades = {g for g, _ in c["grades"]}
     allowed = {e["id"] for e in members(c)}
+    cur = items(c)
 
     def num(v):
         v = str(v if v is not None else "").strip().replace("%", "")
@@ -377,13 +481,16 @@ def save_items(c: dict, rows: list[dict], by: str = "") -> int:
                 raise ReviewError(f"없는 등급입니다: {g}")
             try:
                 add, final = num(r.get("add_rate")), num(r.get("final_rate"))
+                extra = num(r.get("extra_rate")) if "extra_rate" in r else (cur.get(eid) or {}).get("extra_rate")
             except ValueError as ex:
-                raise ReviewError("가산·최종 인상률은 숫자로 넣어 주세요") from ex
-            execute("INSERT INTO review_items(cycle_id, employee_id, grade, add_rate, final_rate, comment, evaluator, updated_at) "
-                    "VALUES (?,?,?,?,?,?,?,datetime('now','localtime')) ON CONFLICT(cycle_id, employee_id) DO UPDATE SET "
-                    "grade=excluded.grade, add_rate=excluded.add_rate, final_rate=excluded.final_rate, comment=excluded.comment, "
-                    "evaluator=excluded.evaluator, updated_at=excluded.updated_at",
-                    (c["id"], eid, g or None, add, final, enc((r.get("comment") or "").strip() or None),
+                raise ReviewError("가산·추가·최종 인상률은 숫자로 넣어 주세요") from ex
+            if extra is not None and abs(extra) > EXTRA_LIMIT:
+                raise ReviewError(f"추가 조정은 ±{EXTRA_LIMIT:g}%p 안에서 넣어 주세요")
+            execute("INSERT INTO review_items(cycle_id, employee_id, grade, add_rate, final_rate, extra_rate, comment, evaluator, updated_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,datetime('now','localtime')) ON CONFLICT(cycle_id, employee_id) DO UPDATE SET "
+                    "grade=excluded.grade, add_rate=excluded.add_rate, final_rate=excluded.final_rate, extra_rate=excluded.extra_rate, "
+                    "comment=excluded.comment, evaluator=excluded.evaluator, updated_at=excluded.updated_at",
+                    (c["id"], eid, g or None, add, final, extra or None, enc((r.get("comment") or "").strip() or None),
                      (r.get("evaluator") or "").strip() or None))
             n += 1
         if c["status"] == "준비" and n:
@@ -392,10 +499,11 @@ def save_items(c: dict, rows: list[dict], by: str = "") -> int:
     return n
 
 
-def bulk_set(c: dict, emp_ids: list[int], grade: str | None = None, final: str | None = None, by: str = "") -> int:
-    """여러 명에게 한꺼번에. grade·final 이 None 이면 그 칸은 그대로 두고, "" 이면 비웁니다. 메모 등 다른 칸은 건드리지 않습니다."""
-    if grade is None and final is None:
-        raise ReviewError("바꿀 내용을 고르세요 (등급 또는 최종 직접 %)")
+def bulk_set(c: dict, emp_ids: list[int], grade: str | None = None, final: str | None = None, by: str = "",
+             extra: str | None = None) -> int:
+    """여러 명에게 한꺼번에. grade·extra·final 이 None 이면 그 칸은 그대로 두고, "" 이면 비웁니다. 메모 등 다른 칸은 건드리지 않습니다."""
+    if grade is None and final is None and extra is None:
+        raise ReviewError("바꿀 내용을 고르세요 (등급 또는 추가 %p)")
     cur = items(c)
     keep = lambda v: "" if v is None else str(v)       # noqa: E731
     rows = []
@@ -403,6 +511,7 @@ def bulk_set(c: dict, emp_ids: list[int], grade: str | None = None, final: str |
         it = cur.get(eid) or {}
         rows.append({"employee_id": eid, "grade": keep(it.get("grade")) if grade is None else grade,
                      "final_rate": keep(it.get("final_rate")) if final is None else final,
+                     "extra_rate": keep(it.get("extra_rate")) if extra is None else extra,
                      "add_rate": keep(it.get("add_rate")), "comment": it.get("comment") or "", "evaluator": it.get("evaluator") or ""})
     return save_items(c, rows, by) if rows else 0
 

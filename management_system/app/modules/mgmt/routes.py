@@ -252,7 +252,7 @@ async def review_setup(request: Request, year: int):
 async def review_items(request: Request, year: int):
     c = _cycle(year)
     f = await request.form()
-    keys = ("employee_id", "grade", "add_rate", "final_rate", "comment", "evaluator")
+    keys = ("employee_id", "grade", "add_rate", "final_rate", "extra_rate", "comment", "evaluator")
     cols = {k: f.getlist(k) for k in keys}
     rows = [{k: (cols[k][i] if i < len(cols[k]) else "") for k in keys} for i in range(len(cols["employee_id"]))]
     dept = str(f.get("department") or "")
@@ -273,14 +273,17 @@ async def review_bulk(request: Request, year: int):
     g = str(f.get("grade") if f.get("grade") is not None else "__keep__")
     grade = None if g == "__keep__" else g.strip()
     final = "" if f.get("clear_final") else (str(f.get("final_rate") or "").strip().replace("%", "") or None)
+    extra = "" if f.get("clear_extra") else (str(f.get("extra_rate") or "").strip().replace("%p", "").replace("%", "") or None)
+    if extra is not None:
+        final = ""                                  # 추가 조정을 넣으면 예전 방식 '최종 직접'은 지움
     ids = [r["employee"]["id"] for r in _review_rows(review.compute(c)["rows"], dept, q)]
     if not ids:
         return _go(back, "적용할 사람이 없습니다")
     try:
-        n = review.bulk_set(c, ids, grade, final, _who(request))
+        n = review.bulk_set(c, ids, grade, final, _who(request), extra=extra)
     except review.ReviewError as ex:
         return _go(back, str(ex))
-    audit("mgmt", "인사평가 일괄 적용", str(year), f"{n}명 · 부서 {dept or '전체'} · 이름 {q or '-'} · 등급 {'그대로' if grade is None else (grade or '지움')} · 최종 {'그대로' if final is None else (final or '지움')}")
+    audit("mgmt", "인사평가 일괄 적용", str(year), f"{n}명 · 부서 {dept or '전체'} · 이름 {q or '-'} · 등급 {'그대로' if grade is None else (grade or '지움')} · 추가 {'그대로' if extra is None else (extra or '지움')}")
     return _go(back, f"{n}명에게 일괄 적용했습니다")
 
 
@@ -295,6 +298,8 @@ async def review_item_live(request: Request, year: int):
     if not isinstance(data, dict) or not str(data.get("employee_id", "")).isdigit():
         return JSONResponse({"ok": False, "message": "직원을 확인할 수 없습니다"}, status_code=400)
     row = {k: str(data.get(k) or "")[:300] for k in ("employee_id", "grade", "add_rate", "final_rate", "comment", "evaluator")}
+    if "extra_rate" in data:
+        row["extra_rate"] = str(data.get("extra_rate") or "")[:20]
     try:
         n = review.save_items(c, [row], _who(request))
     except review.ReviewError as ex:
@@ -356,12 +361,12 @@ async def review_sheet_upload(request: Request, year: int, file: UploadFile = Fi
 def review_result(year: int):
     c = _cycle(year)
     res = review.compute(c)
-    rows = [["부서", "사번", "성명", "직급", "등급", "평가 가산(%p)", "최종 인상률(%)", f"기준 연봉({c['year']})",
+    rows = [["부서", "사번", "성명", "직급", "등급", "고정(%)", "평가 가산(%p)", "추가(%p)", "최종 인상률(%)", f"기준 연봉({c['year']})",
              f"새 연봉({c['apply_year']})", "인상액", "최저임금 미달"]]
     for r in res["rows"]:
         e = r["employee"]
         rows.append([e.get("department") or "", e.get("emp_no") or "", e["name"], e.get("rank") or "", r["grade"],
-                     round(r["add_rate"], 2), round(r["final_rate"], 2), r["base_salary"] or "", r["new_salary"] or "",
+                     round(r["fixed_rate"], 2), round(r["add_rate"], 2), round(r["extra_rate"] or 0, 2), round(r["final_rate"], 2), r["base_salary"] or "", r["new_salary"] or "",
                      r["raise"] or "", "예" if r["below_min"] else ""])
     audit("mgmt", "인사평가 결과 내려받기", str(year), "")
     return _csv_response(rows, f"연봉조정_{c['apply_year']}.csv")

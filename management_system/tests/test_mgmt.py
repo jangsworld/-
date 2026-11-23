@@ -465,3 +465,61 @@ def test_review_live_item_save(env):
     now = next(x for x in review.compute(review.get(2026))["rows"] if x["employee"]["id"] == eid)
     assert abs(now["final_rate"] - 7.5) < 1e-9
     adm.post("/mgmt/api/review/2026/item", json={"employee_id": str(eid), "grade": "", "final_rate": ""})
+
+
+def test_review_recommend_range():
+    """손익·물가·최저시급 → 하한·추천·상한."""
+    base = {"cpi": 2.0, "mw_rate": 2.9, "share_cap": 3.0, "afford_ratio": 20.0, "total_base": 4_000_000_000, "mult": 1.2}
+    # 영업이익률 10%(만점), 증가율 10%(반) → 점수 0.75 → 가산 2.25
+    r = review.recommend(dict(base, op=1_000_000_000, margin=10.0, op_growth_rate=10.0, afford_ratio=30.0))
+    assert r["ready"] and r["low"] == 2.0 and r["rec"] == 4.3 and r["high"] == 5.9 and abs(r["score"] - 0.75) < 1e-9
+    assert not r["notes"]                                            # 지불능력 10억×30%÷(40억×1.2)=6.25% > 5.9%
+    r = review.recommend(dict(base, op=1_000_000_000, margin=10.0, op_growth_rate=10.0))      # 20%면 4.17%로 묶임
+    assert r["high"] == 4.2 and r["rec"] == 4.2 and any("상한" in n for n in r["notes"])
+    # 영업이익이 작으면 지불능력으로 상한·추천을 묶음
+    r = review.recommend(dict(base, op=500_000_000, margin=5.0, op_growth_rate=0.0))
+    aff = 500_000_000 * 0.2 / (4_000_000_000 * 1.2) * 100            # 2.08%
+    assert r["high"] == round(aff, 1) and r["rec"] <= r["high"] and r["low"] == 2.0 and any("상한" in n for n in r["notes"])
+    # 적자: 동결부터
+    r = review.recommend(dict(base, op=-100, margin=-1.0, op_growth_rate=-50.0))
+    assert r["loss"] and r["low"] == 0 and r["high"] == 2.0 and r["rec"] == 1.0 and any("적자" in n for n in r["notes"])
+    # 손익이 없으면 물가·최저임금만
+    r = review.recommend(dict(base, op=None, margin=None, op_growth_rate=None))
+    assert r["low"] == 2.0 and r["rec"] == 2.0 and r["high"] == 2.9 and any("손익 자료가 없어" in n for n in r["notes"])
+    assert not review.recommend({"cpi": None, "mw_rate": None})["ready"]
+
+
+def test_review_extra_steps_and_convert(env):
+    """고정 + 등급 가산 + 추가 = 최종. 추가 칸을 비우면 해제. 예전 '최종 직접'은 추가로 바뀜."""
+    adm = env["admin"]
+    adm.post("/mgmt/review/create", data={"year": "2032"})
+    c = review.get(2032)
+    adm.post("/mgmt/review/2032/setup", data={"base_rate": "2"})
+    c = review.get(2032)
+    eid = review.compute(c)["rows"][0]["employee"]["id"]
+    row = lambda: next(r for r in review.compute(review.get(2032))["rows"] if r["employee"]["id"] == eid)   # noqa: E731
+    adm.post("/mgmt/api/review/2032/item", json={"employee_id": str(eid), "grade": "S", "extra_rate": "1"})
+    assert abs(row()["final_rate"] - 5.0) < 1e-9 and row()["extra_rate"] == 1.0      # 2 + 2(S) + 1
+    adm.post("/mgmt/api/review/2032/item", json={"employee_id": str(eid), "grade": "C", "extra_rate": "1"})
+    assert abs(row()["final_rate"] - 2.0) < 1e-9                                     # 등급을 바꾸면 최종도 바뀜
+    adm.post("/mgmt/api/review/2032/item", json={"employee_id": str(eid), "grade": "C", "extra_rate": ""})
+    assert abs(row()["final_rate"] - 1.0) < 1e-9 and row()["extra_rate"] is None    # 비우면 해제
+    assert adm.post("/mgmt/api/review/2032/item", json={"employee_id": str(eid), "extra_rate": "11"}).status_code == 400
+    # 일괄 추가
+    adm.post("/mgmt/review/2032/bulk", data={"department": "", "q": "", "grade": "__keep__", "extra_rate": "+0.5"})
+    assert all(abs((r["extra_rate"] or 0) - 0.5) < 1e-9 for r in review.compute(review.get(2032))["rows"])
+    adm.post("/mgmt/review/2032/bulk", data={"department": "", "q": "", "grade": "__keep__", "clear_extra": "1"})
+    assert all(r["extra_rate"] is None for r in review.compute(review.get(2032))["rows"])
+    # 예전 방식 최종 직접 → 추가로 변환 (최종은 그대로)
+    execute("UPDATE review_items SET final_rate=4.7, extra_rate=NULL WHERE cycle_id=? AND employee_id=?", (c["id"], eid))
+    assert abs(row()["final_rate"] - 4.7) < 1e-9 and row()["override"] == 4.7
+    assert "직접</span>" in adm.get("/mgmt/review?year=2032").text
+    set_setting("review_extra_v1", "")
+    assert review.convert_overrides() >= 1
+    assert abs(row()["final_rate"] - 4.7) < 1e-9 and row()["override"] is None and abs(row()["extra_rate"] - 3.7) < 1e-9   # 2 + (-1) + 3.7
+    assert review.convert_overrides() == 0                                           # 한 번만
+    page = adm.get("/mgmt/review?year=2032").text
+    assert "추천 고정인상률" in page or "추천 범위가 계산됩니다" in page
+    assert 'name="extra_rate"' in page and 'name="final_rate"' not in page
+    execute("DELETE FROM review_items WHERE cycle_id=?", (c["id"],))
+    execute("DELETE FROM review_cycles WHERE id=?", (c["id"],))

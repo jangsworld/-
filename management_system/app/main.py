@@ -75,6 +75,8 @@ async def lifespan(_app):
     os.makedirs(os.path.join(os.path.dirname(settings.db_path), "asset_photos"), exist_ok=True)   # 백업 대상
     ensure_templates()
     upgrade_cert_templates()
+    from app.modules.mgmt.review import convert_overrides
+    convert_overrides()
     ga_repo.ensure_event_rules()
     if is_new and settings.seed_sample:
         seed_sample()
