@@ -1,7 +1,7 @@
 {% macro field(name, label, type='text', col='col-md-4', opts=None, req=False, step=None, value='', ph='', blank=True) -%}
 <div class="{{ col }}"><label class="form-label small">{{ label }}{% if req %} <span class="text-danger">*</span>{% endif %}</label>
 {%- if opts is not none %}
-  <select class="form-select form-select-sm" name="{{ name }}" {% if req %}required{% endif %}>{% if blank %}<option value=""></option>{% endif %}
+  <select class="form-select form-select-sm" name="{{ name }}" {% if req %}required{% endif %} {% if opts and opts[0] is mapping and opts|length > 8 %}data-search{% endif %}>{% if blank %}<option value=""></option>{% endif %}
   {%- for o in opts %}{% if o is mapping %}<option value="{{ o.v }}" {% if value|string == o.v|string %}selected{% endif %}>{{ o.t }}</option>{% else %}<option {% if value == o %}selected{% endif %}>{{ o }}</option>{% endif %}{% endfor %}</select>
 {%- elif type == 'textarea' %}
   <textarea class="form-control form-control-sm" name="{{ name }}" rows="2" placeholder="{{ ph }}">{{ value }}</textarea>
@@ -35,6 +35,13 @@
 {% macro cofield(col='col-md-4') -%}
 {% if co.enabled() %}<div class="{{ col }}"><label class="form-label small">회사 <span class="text-danger">*</span></label>
   <select class="form-select form-select-sm" name="company">{% for c in co.companies() %}<option value="{{ c.id }}" {% if co.pick('') == c.id %}selected{% endif %}>{{ c.short }}</option>{% endfor %}</select></div>{% endif %}
+{%- endmacro %}
+
+{# 등록 창 안에서 바로 서류 붙이기 (저장하면 문서 보관함의 그 대상 폴더에 들어감) #}
+{% macro attfield(label='서류 붙이기', hint='계약서 원본 등') -%}
+<div class="col-12"><label class="form-label small"><i class="bi bi-paperclip"></i> {{ label }} <span class="text-muted fw-normal">(선택 · 여러 개 가능 · {{ hint }})</span></label>
+  <input class="form-control form-control-sm" type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.hwp,.hwpx,.doc,.docx,.xls,.xlsx,.pptx">
+  <div class="help">저장하면 문서 보관함(NAS)의 이 항목 폴더에 함께 저장됩니다. 나중에 📎 버튼으로 더 붙일 수도 있습니다.</div></div>
 {%- endmacro %}
 
 {% macro cobadge(v) -%}{% if co.enabled() %}<span class="co-badge co-{{ co.norm(v) }}">{{ co.label(v) }}</span>{% endif %}{%- endmacro %}

@@ -313,3 +313,79 @@ def test_no_duplicate_folders(client, two):
     finally:
         execute("DELETE FROM attachments WHERE menu='ga.vehicles' AND ref_id=?", (vid,))
         execute("DELETE FROM ga_vehicles WHERE id=?", (vid,))
+
+
+def test_register_with_files_search_and_codes(client, two):
+    """등록 창에서 바로 서류 붙이기, 담당자 찾기 칸, 면허·보험·인증 구분을 구분값으로, 차량 폴더는 차종까지만."""
+    from app.db import get_codes
+    from app.modules.ga import company as items
+    assert archive.vehicle_name("12가3456", "샘플차종_홍길동") == "12가3456 샘플차종" and archive.vehicle_name("12가3456", "") == "12가3456"
+    page = client.get("/ga/contracts?co=all").text
+    assert 'name="manager_id"' in page and "data-search" in page.split('name="manager_id"')[1][:200]
+    assert page.count('name="files" multiple') == 2 and page.count('enctype="multipart/form-data"') >= 2
+    # 계약 등록과 동시에 계약서 붙이기
+    r = client.post("/ga/contracts/save", data={"category": "임대차", "title": "첨부동시 계약", "counterparty": "임대인", "status": "유효", "company": "1"},
+                    files=[("files", ("계약서 스캔.pdf", PDF, "application/pdf")), ("files", ("나쁜.pdf", b"zz", "application/pdf"))], follow_redirects=False)
+    assert r.status_code == 303
+    cid = query_one("SELECT id FROM ga_contracts WHERE title='첨부동시 계약'")["id"]
+    iid = None
+    try:
+        rows = archive.items("ga.contracts", cid)
+        assert len(rows) == 1 and rows[0]["orig_name"] == "계약서 스캔.pdf" and "/계약·만기 관리/첨부동시 계약/" in rows[0]["rel_path"]
+        # 면허·보험·인증도 등록과 동시에
+        r = client.post("/ga/company/save", data={"category": "보험·보증", "name": "첨부동시 보험", "expire_date": "2027-03-01", "company": "1"},
+                        files=[("files", ("증권.pdf", PDF, "application/pdf"))], follow_redirects=False)
+        assert r.status_code == 303
+        iid = query_one("SELECT id FROM ga_company_items WHERE name='첨부동시 보험'")["id"]
+        assert len(archive.items("ga.company", iid)) == 1
+        # 구분값: 설정에서 고친 목록을 씀
+        assert "보험·보증" in get_codes("COMPANY_ITEM") and items.categories() == get_codes("COMPANY_ITEM")
+        execute("INSERT INTO codes(group_code, name, sort_order) VALUES ('COMPANY_ITEM', '새구분시험', 99)")
+        assert "새구분시험" in client.get("/ga/contracts").text
+        iid2 = items.save({"category": "새구분시험", "name": "새구분 항목"})
+        items.delete(iid2)
+        with pytest.raises(items.CompanyError):
+            items.save({"category": "없는구분", "name": "x"})
+    finally:
+        execute("DELETE FROM codes WHERE group_code='COMPANY_ITEM' AND name='새구분시험'")
+        execute("DELETE FROM attachments WHERE menu IN ('ga.contracts','ga.company') AND ref_id IN (?,?)", (cid, iid or 0))
+        execute("DELETE FROM ga_contracts WHERE id=?", (cid,))
+        if iid:
+            items.delete(iid)
+
+
+def test_subfolders_are_recognized(client, two):
+    """대상 폴더 안에 담당자가 만든 하위 폴더의 파일도 대장에 올릴 수 있고, 대상 이름이 바뀌어도 하위 폴더가 유지된다."""
+    from app.modules.ga import repo as ga
+    cid = ga.save("ga_contracts", None, {"category": "임대차", "title": "하위폴더 계약", "counterparty": "임대인", "status": "유효", "company": "1"})
+    vid = ga.save("ga_vehicles", None, {"plate_no": "66바6666", "model": "하위차", "status": "운행", "company": "1"})
+    try:
+        base = os.path.join(archive.root(), archive.ensure_folder("ga.contracts", cid))
+        os.makedirs(os.path.join(base, "기타서류", "2024"))
+        for rel in ("본계약.pdf", "기타서류/확인서.pdf", "기타서류/2024/영수증.pdf", "기타서류/메모.txt", "기타서류/BMS_자동.pdf"):
+            with open(os.path.join(base, *rel.split("/")), "wb") as f:
+                f.write(PDF)
+        names = [x["name"] for x in archive.unregistered("ga.contracts", cid)]
+        assert names == ["기타서류/2024/영수증.pdf", "기타서류/확인서.pdf", "본계약.pdf"]
+        page = client.get(f"/files/ga.contracts/{cid}").text
+        assert "대장에 없는 파일" in page and "확인서.pdf" in page and "기타서류" in page
+        client.post(f"/files/ga.contracts/{cid}/adopt", data={"names": names + ["기타서류/../../밖.pdf"]})
+        rows = {r["rel_path"].split("/하위폴더 계약/")[1]: r for r in archive.items("ga.contracts", cid)}
+        assert set(rows) == set(names) and rows["기타서류/2024/영수증.pdf"]["subdir"] == "기타서류/2024" and rows["본계약.pdf"]["subdir"] is None
+        assert client.get(f"/files/get/{rows['기타서류/확인서.pdf']['id']}").content == PDF
+        assert archive.unregistered("ga.contracts", cid) == [] and archive.rehome() == 0         # 하위 폴더 파일을 위로 끌어올리지 않음
+        ga.save("ga_contracts", cid, {"title": "하위폴더 계약 새이름"})
+        assert archive.rehome() == 3
+        moved = archive.get(rows["기타서류/2024/영수증.pdf"]["id"])
+        assert moved["rel_path"].endswith("/하위폴더 계약 새이름/기타서류/2024/영수증.pdf") and archive.read(moved) == PDF
+        # 차량 서류 화면은 과태료·사고·점검사진 폴더(다른 메뉴 것)를 건너뜀
+        vbase = os.path.join(archive.root(), archive.ensure_folder("ga.vehicles", vid))
+        for d in ("과태료", "보험"):
+            os.makedirs(os.path.join(vbase, d))
+            with open(os.path.join(vbase, d, "문서.pdf"), "wb") as f:
+                f.write(PDF)
+        assert [x["name"] for x in archive.unregistered("ga.vehicles", vid)] == ["보험/문서.pdf"]
+    finally:
+        execute("DELETE FROM attachments WHERE (menu='ga.contracts' AND ref_id=?) OR (menu='ga.vehicles' AND ref_id=?)", (cid, vid))
+        execute("DELETE FROM ga_contracts WHERE id=?", (cid,))
+        execute("DELETE FROM ga_vehicles WHERE id=?", (vid,))

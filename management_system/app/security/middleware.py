@@ -131,7 +131,7 @@ def body_limit(path: str) -> int:
     """경로별 요청 본문 한도(바이트)."""
     if path.startswith("/login"):
         return 64 * 1024                                   # 로그인·인증번호 요청은 몇 KB 면 충분
-    if path.startswith("/files/") and path.endswith("/upload"):
+    if (path.startswith("/files/") and path.endswith("/upload")) or path in ("/ga/contracts/save", "/ga/company/save"):
         return 200 * 1024 * 1024                           # 붙임 서류 여러 개 (한 개 30MB 는 저장할 때 확인)
     photo_up = path.startswith(("/ga/assets/", "/vq/")) or (path.startswith("/ga/vehicles/") and path.endswith("/photo"))
     return (25 if photo_up else settings.max_upload_mb) * 1024 * 1024      # 자산·차량 사진은 서버에서 줄여 저장

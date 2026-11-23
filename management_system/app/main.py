@@ -219,6 +219,7 @@ CODE_SECTIONS = {
     "총무관리": {"ASSET_EVENT": "자산 처리 구분", "ASSET_LOC": "자산 보관위치", "FUEL": "차량 연료",
               "VEHICLE_OWNERSHIP": "차량 소유형태", "MAINT_CATEGORY": "차량 정비 구분", "DOC_METHOD": "문서 수발 방법",
               "RETENTION": "문서 보존기간", "SEAL_TYPE": "관인 종류", "GA_CONTRACT": "계약 구분",
+              "COMPANY_ITEM": "면허·보험·인증 구분",
               "EVENT_CATEGORY": "경조 구분", "EVENT_RELATION": "경조 관계"},
 }
 CODE_HINTS = {

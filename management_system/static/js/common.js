@@ -507,10 +507,13 @@ document.querySelectorAll('select[data-search]').forEach((sel) => {
     sel.replaceChildren(...(hit.length ? hit : [none]));
     const real = hit.filter((o) => o.value);
     sel.value = real.some((o) => o.value === keep) ? keep : (q && real.length ? real[0].value : (hit.length ? hit[0].value : ''));
+    if (!q && all.some((o) => o.value === keep)) sel.value = keep;
     sel.dispatchEvent(new Event('change', { bubbles: true }));
   };
   box.addEventListener('input', apply);
   box.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sel.focus(); } });   // Enter 로 저장되지 않게
   const modal = sel.closest('.modal');
   if (modal) modal.addEventListener('hidden.bs.modal', () => { box.value = ''; sel.replaceChildren(...all); });
+  const form = sel.closest('form');                       // 등록·수정 창을 다시 열 때: 찾던 글자를 지우고 전체 목록에서 값이 잡히게
+  if (form) form.addEventListener('reset', () => { box.value = ''; sel.replaceChildren(...all); });
 });

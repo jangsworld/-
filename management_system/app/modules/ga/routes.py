@@ -405,7 +405,8 @@ ITEM_STATUS = {"유효": "관리중", "": ""}          # 화면의 상태 고르
 def contracts(request: Request, category: str = "", status: str = "유효", kind: str = ""):
     """계약·만기 관리: 계약·임대차와 면허·보험·인증 등 회사 관리 만기를 한 표로 (만기 가까운 순)."""
     from app.modules.ga import company as items_mod
-    from app.modules.mgmt.constants import COMPANY_CATEGORIES, COMPANY_CYCLES, COMPANY_EXAMPLES, COMPANY_STATUSES
+    from app.modules.mgmt.constants import COMPANY_CYCLES, COMPANY_EXAMPLES, COMPANY_STATUSES
+    COMPANY_CATEGORIES = items_mod.categories()
     services.roll_auto_renew()
     contract_cats = get_codes("GA_CONTRACT")
     show_c = kind in ("", "contract") and (not category or category in contract_cats) and (status in CONTRACT_STATUSES or status == "")
@@ -577,7 +578,10 @@ async def event_save(request: Request):
 @router.post("/{kind}/save")
 async def generic_save(request: Request, kind: str):
     table = _table(kind)
-    f = dict(await request.form())
+    form = await request.form()
+    f = dict(form)
+    uploads = [u for u in form.getlist("files") if getattr(u, "filename", "")][:20] if kind == "contracts" else []
+    f.pop("files", None)
     for cb in ("auto_renew", "flower"):
         if table in ("ga_contracts", "ga_event_rules") and cb in ("auto_renew", "flower"):
             f.setdefault(cb, 0)
@@ -600,12 +604,14 @@ async def generic_save(request: Request, kind: str):
         except items_mod.CompanyError as ex:
             return _redirect("/ga/contracts", str(ex))
     rid = repo.save(table, int(f.get("id") or 0) or None, f)
+    extra = ""
     if kind in ("vehicles", "contracts"):                    # 문서 보관함에 그 대상의 폴더를 먼저 만들어 둠 (실패해도 저장은 그대로)
         from app import archive
         await run_in_threadpool(archive.ensure_quiet, "ga." + kind, rid)
+        extra = await archive.save_uploads("ga." + kind, rid, uploads)
     nxt = f.get("next") or {"vehicles": f"/ga/vehicles/{rid}", "maint": f"/ga/vehicles/{f.get('vehicle_id')}",
                             "seals": "/ga/docs?tab=seal", "contracts": "/ga/contracts", "rules": "/ga/events"}.get(kind, "/ga/dashboard")
-    return _redirect(nxt if nxt.startswith("/ga/") else "/ga/dashboard", "저장되었습니다")
+    return _redirect(nxt if nxt.startswith("/ga/") else "/ga/dashboard", "저장되었습니다" + extra)
 
 
 @router.post("/{kind}/{rid}/delete")

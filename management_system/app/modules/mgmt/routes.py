@@ -538,13 +538,16 @@ async def _reflect_msg(iid: int) -> str:
 @company_router.post("/save")
 async def company_save(request: Request):
     f = await request.form()
+    data = dict(f)
+    data.pop("files", None)
     try:
-        iid = company.save(dict(f), _who(request))
+        iid = company.save(data, _who(request))
     except company.CompanyError as ex:
         return _go("/ga/contracts", str(ex))
     from app import archive
     await run_in_threadpool(archive.ensure_quiet, "ga.company", iid)
-    return _go("/ga/contracts", "저장했습니다" + await _reflect_msg(iid))
+    extra = await archive.save_uploads("ga.company", iid, [u for u in f.getlist("files") if getattr(u, "filename", "")][:20])
+    return _go("/ga/contracts", "저장했습니다" + extra + await _reflect_msg(iid))
 
 
 @company_router.post("/{iid}/delete")

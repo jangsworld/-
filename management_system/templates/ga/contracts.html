@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "ga/_macros.html" import field, modal, del_btn, dday, cofield, cobadge, att %}
+{% from "ga/_macros.html" import field, modal, del_btn, dday, cofield, cobadge, att, attfield %}
 {% block title %}계약·만기 관리{% endblock %}
 {% block page_title %}<i class="bi bi-file-earmark-check me-2"></i>계약 · 만기 관리 <span class="text-muted small">계약·임대차 + 면허·보험·인증 등 기한이 있는 것 모두</span>{% endblock %}
 {% block content %}
@@ -47,7 +47,10 @@
       <optgroup label="면허·보험·인증 등">{% for c in item_categories %}<option {% if f.category == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</optgroup></select></div>
     <div class="col-auto"><select class="form-select form-select-sm" name="status" data-autosubmit>
       {% for s in status_opts %}<option value="{{ s }}" {% if f.status == s %}selected{% endif %}>{{ '유효 (관리 중)' if s == '유효' else (s or '상태 전체') }}</option>{% endfor %}</select></div>
-    <div class="col text-end">{% if can_write %}<a class="btn btn-sm btn-outline-secondary" href="/ga/contracts/export.csv"><i class="bi bi-download"></i> 계약 CSV</a>
+    <div class="col text-end">{% if perms.admin %}<span class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown"><i class="bi bi-list-check"></i> 구분 고치기</button>
+        <ul class="dropdown-menu"><li><a class="dropdown-item small" href="/settings/codes?group=GA_CONTRACT">계약 구분 (임대차·렌탈 등)</a></li>
+          <li><a class="dropdown-item small" href="/settings/codes?group=COMPANY_ITEM">면허·보험·인증 구분</a></li></ul></span>{% endif %}
+      {% if can_write %}<a class="btn btn-sm btn-outline-secondary" href="/ga/contracts/export.csv"><i class="bi bi-download"></i> 계약 CSV</a>
       <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#contractModal" data-fill='{"status":"유효","pay_cycle":"월","notice_days":30}'><i class="bi bi-plus"></i> 계약 등록</button>
       <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#itemModal" data-fill='{}'><i class="bi bi-plus"></i> 면허·보험·인증 등 등록</button>{% endif %}</div>
   </form></div>
@@ -90,7 +93,7 @@
   {% for h in history %}<tr><td>{{ h.done_date }}</td><td>{{ h.name }}</td><td>{{ h.old_expire or '-' }}</td><td>{{ h.new_expire }}</td><td class="small">{{ h.done_by or '' }}</td><td class="small">{{ h.note or '' }}</td></tr>{% endfor %}
 </tbody></table></div></div>{% endif %}
 {% if can_write %}
-{% call modal('contractModal', '계약', '/ga/contracts/save') %}
+{% call modal('contractModal', '계약', '/ga/contracts/save', enctype='multipart/form-data') %}
   {{ cofield() }}
   {{ field('category', '구분', opts=categories, blank=False) }}{{ field('title', '계약명', req=True, col='col-md-8', ph='본사 사무실 임대차, 복합기 렌탈 등') }}
   {{ field('counterparty', '상대방', req=True) }}{{ field('contract_no', '계약번호') }}{{ field('manager_id', '담당자', opts=emp_opts) }}
@@ -100,6 +103,7 @@
   <div class="col-md-8"><label class="form-label small">만기 알림 받을 메일 <span class="text-muted fw-normal">(담당자 · 쉼표로 여러 명)</span></label><input class="form-control form-control-sm" name="alert_email" placeholder="예: name@company.com">
     <div class="help">넣어 두면 통보기한(없으면 만료일) 30일 전, 7일 전, 당일에 메일을 보냅니다. 비워 두면 대시보드에만 표시됩니다.</div></div>
   {{ field('memo', '비고', 'textarea', col='col-12') }}
+  {{ attfield('계약서 붙이기', '계약서 원본·변경 계약서') }}
 {% endcall %}
 {% call modal('draftModal', '계약서 초안 확인 ·', '/ga/contract-drafts/confirm') %}
   {{ cofield() }}
@@ -114,7 +118,7 @@
 {% endcall %}
 
 <datalist id="exNames">{% for x in examples %}<option value="{{ x }}">{% endfor %}</datalist>
-<div class="modal fade" id="itemModal" tabindex="-1"><div class="modal-dialog modal-lg"><form class="modal-content" method="post" action="/ga/company/save">
+<div class="modal fade" id="itemModal" tabindex="-1"><div class="modal-dialog modal-lg"><form class="modal-content" method="post" action="/ga/company/save" enctype="multipart/form-data">
   <input type="hidden" name="id" value="">
   <div class="modal-header"><h6 class="modal-title">면허·보험·인증 등 <span data-mode-title>등록</span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body row g-2">
@@ -135,6 +139,7 @@
       <div><label class="small"><input type="checkbox" class="form-check-input me-1" name="emp_insurance" value="1">재직 직원 인사기록카드에 반영</label></div>
       <div class="help">체크하면 이름·기관·번호·기간이 직원별 「상해공제」에 들어갑니다.</div></div>
     <div class="col-12"><label class="form-label small">메모 (준비 서류, 갱신 방법 등)</label><textarea class="form-control form-control-sm" name="note" rows="2"></textarea></div>
+    {{ attfield('서류 붙이기', '면허증·보험증권·인증서 등') }}
   </div>
   <div class="modal-footer"><button type="button" class="btn btn-sm btn-outline-secondary me-auto" data-bs-dismiss="modal">취소</button><button class="btn btn-sm btn-primary"><i class="bi bi-save"></i> 저장</button></div>
 </form></div></div>

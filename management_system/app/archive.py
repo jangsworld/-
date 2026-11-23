@@ -56,8 +56,9 @@ def _emp(ref_id):
 
 
 def vehicle_name(plate, model) -> str:
-    """차량 폴더 이름: '차량번호 차종' (폴더만 보고 어느 차인지 알 수 있게)."""
-    return f"{plate or ''} {model or ''}".strip()
+    """차량 폴더 이름: '차량번호 차종' (폴더만 보고 어느 차인지 알 수 있게).
+    차종 칸에 '차종_사용자' 처럼 밑줄 뒤에 사용자 이름이 붙어 있으면 차종까지만 씁니다."""
+    return f"{plate or ''} {str(model or '').split('_')[0].strip()}".strip()
 
 
 def _vehicle(ref_id):
@@ -274,61 +275,78 @@ def ensure_all() -> int:
     return n
 
 
+RESERVED_SUBDIRS = {"ga.vehicles": {"과태료", "사고·파손", "점검사진"}}     # 다른 메뉴가 쓰는 하위 폴더 (차량 서류 화면에서는 건너뜀)
+SCAN_DEPTH = 5
+
+
 def unregistered(menu: str, ref_id: int) -> list[dict]:
-    """대상 폴더에 직접 넣어 둔 파일 중 대장에 없는 것. BMS 가 만든 계약서·증명서 PDF(BMS_ 로 시작)는 따로 관리하므로 뺌."""
+    """대상 폴더(하위 폴더 포함)에 직접 넣어 둔 파일 중 대장에 없는 것. name 은 대상 폴더 기준 경로('기타서류/파일.pdf').
+    BMS 가 만든 계약서·증명서 PDF(BMS_ 로 시작)는 따로 관리하므로 뺌."""
     t = target(menu, ref_id)
     if not t:
         return []
     r = root()
-    rel = folder(menu, t)
+    rel = folder(menu, t).replace("\\", "/")
     full = os.path.normpath(os.path.join(r, rel))
     if not _inside(r, full) or not os.path.isdir(full):
         return []
-    known = {a["rel_path"] for a in query("SELECT rel_path FROM attachments WHERE rel_path LIKE ?", (rel.replace("\\", "/") + "/%",))}
+    known = {a["rel_path"] for a in query("SELECT rel_path FROM attachments WHERE rel_path LIKE ?", (rel + "/%",))}
+    skip_top = RESERVED_SUBDIRS.get(menu, set())
     out = []
-    try:
-        names = sorted(os.listdir(full))
-    except OSError:
-        return []
-    for name in names:
-        p = os.path.join(full, name)
-        low = name.lower()
-        if low in SKIP_NAMES or name.startswith((".", "~$", "BMS_")) or low.endswith(".part") or not os.path.isfile(p):
-            continue
-        if os.path.splitext(low)[1] not in KINDS or (rel.replace("\\", "/") + "/" + name) in known:
-            continue
+
+    def walk(d: str, prefix: str, depth: int):
         try:
-            out.append({"name": name, "size": os.path.getsize(p)})
+            names = sorted(os.listdir(d))
         except OSError:
-            continue
-    return out[:200]
+            return
+        for name in names:
+            if len(out) >= 300:
+                return
+            p = os.path.join(d, name)
+            low = name.lower()
+            if low in SKIP_NAMES or name.startswith((".", "~$", "@")) or low.endswith(".part"):
+                continue
+            if os.path.isdir(p):
+                if depth < SCAN_DEPTH and not (depth == 0 and name in skip_top):
+                    walk(p, prefix + name + "/", depth + 1)
+                continue
+            if name.startswith("BMS_") or os.path.splitext(low)[1] not in KINDS or (rel + "/" + prefix + name) in known:
+                continue
+            try:
+                out.append({"name": prefix + name, "file": name, "sub": prefix.rstrip("/"), "size": os.path.getsize(p)})
+            except OSError:
+                continue
+
+    walk(full, "", 0)
+    return out
 
 
 def adopt(menu: str, ref_id: int, names: list[str], note: str = "") -> tuple[int, list[str]]:
-    """폴더에 넣어 둔 파일을 옮기지 않고 그 자리 그대로 대장에 올림. (올린 수, 못 올린 이유들)"""
+    """폴더(하위 폴더 포함)에 넣어 둔 파일을 옮기지 않고 그 자리 그대로 대장에 올림. (올린 수, 못 올린 이유들)"""
     t = target(menu, ref_id)
     if not t:
         raise ArchiveError("붙일 대상을 찾을 수 없습니다")
-    waiting = {x["name"] for x in unregistered(menu, ref_id)}           # 화면이 보여 준 목록 안의 이름만 (경로 글자는 올 수 없음)
+    waiting = {x["name"]: x for x in unregistered(menu, ref_id)}       # 화면이 보여 준 목록 안의 이름만 (그 밖의 경로는 올 수 없음)
     rel = folder(menu, t).replace("\\", "/")
     ok, errs = 0, []
     for name in names:
-        if name not in waiting:
+        w = waiting.get(name)
+        if not w:
             continue
         path = os.path.normpath(os.path.join(root(), rel, name))
-        if not _inside(root(), path):
+        if not _inside(os.path.join(root(), rel), path):
             continue
         try:
             with open(path, "rb") as f:
                 raw = f.read(MAX_MB * 1024 * 1024 + 1)
-            _ext, mime = check(name, raw)
+            _ext, mime = check(w["file"], raw)
         except (OSError, ArchiveError) as ex:
             errs.append(f"{name}: {ex if isinstance(ex, ArchiveError) else '읽을 수 없습니다'}")
             continue
-        execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256, note, uploaded_by) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (menu, int(ref_id), company.norm(t.get("company")), rel + "/" + name, name[:120], mime, len(raw),
-                 hashlib.sha256(raw).hexdigest(), (note or "폴더에 넣어 둔 파일").strip()[:200], current_actor.get()[1]))
+        execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256, note, uploaded_by, subdir) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (menu, int(ref_id), company.norm(t.get("company")), rel + "/" + name, w["file"][:120], mime, len(raw),
+                 hashlib.sha256(raw).hexdigest(), (note or "폴더에 넣어 둔 파일").strip()[:200], current_actor.get()[1], w["sub"] or None))
         ok += 1
     if ok:
         audit("files", "폴더 파일을 대장에 올림", f"{MENUS[menu][1]} {t['title']}"[:120], f"{ok}개")
@@ -359,10 +377,28 @@ def save(menu: str, ref_id: int, orig_name: str, raw: bytes, note: str = "") -> 
     return att
 
 
+async def save_uploads(menu: str, ref_id: int, uploads) -> str:
+    """등록 창에서 함께 올린 파일들을 보관함에 저장하고, 화면에 덧붙일 안내 문구를 돌려줌 (없으면 빈 글자)."""
+    from fastapi.concurrency import run_in_threadpool
+    ok, errs = 0, []
+    for up in uploads or []:
+        name = getattr(up, "filename", "") or ""
+        if not name:
+            continue
+        raw = await up.read(MAX_MB * 1024 * 1024 + 1)
+        try:
+            await run_in_threadpool(save, menu, ref_id, name, raw, "")
+            ok += 1
+        except ArchiveError as ex:
+            errs.append(f"{name}: {ex}")
+    return (f" · 서류 {ok}개를 보관함에 저장했습니다" if ok else "") + ((" · 저장하지 못한 서류 — " + " / ".join(errs)) if errs else "")
+
+
 def items(menu: str, ref_id: int) -> list[dict]:
     rows = query("SELECT * FROM attachments WHERE menu=? AND ref_id=? AND deleted_at IS NULL ORDER BY id DESC", (menu, int(ref_id)))
     for r in rows:
         r["where"] = " \\ ".join(re.split(r"[\\/]+", os.path.dirname(r["rel_path"])))
+        r["sub"] = (r.get("subdir") or "").replace("/", " \\ ")
         r["inline"] = r["mime"] in INLINE
     return rows
 
@@ -472,11 +508,12 @@ def rehome() -> int:
     """대상의 이름이 바뀌어(차종을 고침, 회사를 옮김, 폴더 이름 규칙 변경 등) 폴더가 달라진 서류를 새 폴더로 옮기고 대장을 맞춤.
     차량은 예전 폴더에 남은 점검 사진 폴더도 함께 옮깁니다. 옮긴 개수를 돌려줌. 파일이 없거나 옮기지 못하면 그대로 둠."""
     r, n = root(), 0
-    for att in query("SELECT id, menu, ref_id, rel_path FROM attachments WHERE deleted_at IS NULL"):
+    for att in query("SELECT id, menu, ref_id, rel_path, subdir FROM attachments WHERE deleted_at IS NULL"):
         t = target(att["menu"], att["ref_id"])
         if not t:
             continue
-        want = folder(att["menu"], t).replace("\\", "/")
+        base = folder(att["menu"], t).replace("\\", "/")
+        want = base + ("/" + att["subdir"] if att.get("subdir") else "")       # 담당자가 만든 하위 폴더는 그대로 둠
         cur_dir, name = os.path.split(att["rel_path"])
         if cur_dir == want:
             continue

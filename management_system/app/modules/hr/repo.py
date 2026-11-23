@@ -941,6 +941,7 @@ CODE_USAGE = {
     "MAINT_CATEGORY": [("ga_vehicle_maint", "category")], "DOC_METHOD": [("ga_docs", "method")],
     "RETENTION": [("ga_docs", "retention")], "SEAL_TYPE": [("ga_seal_logs", "seal_type")],
     "GA_CONTRACT": [("ga_contracts", "category")],
+    "COMPANY_ITEM": [("ga_company_items", "category")],
     "EVENT_CATEGORY": [("ga_events", "category"), ("ga_event_rules", "category")],
     "EVENT_RELATION": [("ga_events", "relation"), ("ga_event_rules", "relation")],
 }

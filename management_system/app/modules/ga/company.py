@@ -39,6 +39,12 @@ def get(iid: int) -> dict | None:
     return query_one("SELECT * FROM ga_company_items WHERE id=?", (iid,))
 
 
+def categories() -> list[str]:
+    """면허·보험·인증 구분: 구분값 설정(COMPANY_ITEM)에서 고친 목록. 비어 있으면 기본 목록."""
+    from app.db import get_codes
+    return get_codes("COMPANY_ITEM") or list(COMPANY_CATEGORIES)
+
+
 def clean_mails(text) -> list[str]:
     """알림 받을 메일 주소들 (쉼표·빈칸으로 구분, 5명까지). 틀리면 CompanyError."""
     mails = [m.strip() for m in re.split(r"[,;\s]+", str(text or "")) if m.strip()]
@@ -51,8 +57,9 @@ def save(f: dict, by: str = "") -> int:
     name = (f.get("name") or "").strip()
     if not name:
         raise CompanyError("이름을 넣어 주세요")
-    cat = f.get("category") or "기타"
-    if cat not in COMPANY_CATEGORIES:
+    cats = categories()
+    cat = f.get("category") or ("기타" if "기타" in cats else cats[0])
+    if cat not in cats and not query_one("SELECT 1 x FROM ga_company_items WHERE category=? LIMIT 1", (cat,)):   # 예전에 쓰던 구분은 그대로 둘 수 있게
         raise CompanyError("구분을 목록에서 고르세요")
     if (f.get("cycle") or "없음") not in COMPANY_CYCLES or (f.get("status") or "유효") not in COMPANY_STATUSES:
         raise CompanyError("주기·상태를 목록에서 고르세요")
