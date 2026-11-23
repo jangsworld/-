@@ -523,3 +523,66 @@ def test_review_extra_steps_and_convert(env):
     assert 'name="extra_rate"' in page and 'name="final_rate"' not in page
     execute("DELETE FROM review_items WHERE cycle_id=?", (c["id"],))
     execute("DELETE FROM review_cycles WHERE id=?", (c["id"],))
+
+
+def test_review_checks_guide_neutral_band(env):
+    """등급 분포 가이드 · 예산 중립 맞춤 · 연봉 밴드 점검."""
+    from collections import Counter
+    adm = env["admin"]
+    adm.post("/mgmt/review/create", data={"year": "2033"})
+    c = review.get(2033)
+    # 등급 분포: 기본 권장(S 10·A 20…), 후한 등급 쏠림 경고
+    g = review.grade_guide(c, {"graded": 10, "count": 12, "grade_dist": Counter({"S": 4, "A": 3, "B": 3})})
+    s_row = next(r for r in g["rows"] if r["grade"] == "S")
+    assert s_row["target"] == 10 and s_row["target_count"] == 1 and s_row["over"] and g["lenient"]
+    assert not review.grade_guide(c, {"graded": 10, "count": 10, "grade_dist": Counter({"S": 1, "A": 2, "B": 4, "C": 2, "D": 1})})["lenient"]
+    with pytest.raises(review.ReviewError, match="100%"):
+        review.parse_guide("S:50, A:20", ["S", "A", "B"])
+    with pytest.raises(review.ReviewError, match="없는 등급"):
+        review.parse_guide("Z:100", ["S", "A"])
+    r = adm.post("/mgmt/review/2033/setup", data={"guide": "S:5, A:15, B:60, C:15, D:5"}, follow_redirects=False)
+    assert review.get(2033)["inputs"]["guide"].startswith("S:5")
+    adm.post("/mgmt/review/2033/setup", data={"guide": "S:90"})
+    assert review.get(2033)["inputs"]["guide"].startswith("S:5")                 # 합이 100이 아니면 저장 안 됨
+    # 연봉 밴드: 넣은 범위 우선, 없으면 중간값 ±20% (3명 이상)
+    assert review.parse_band("사원:3000~3800, 대리 : 3600-4600") == {"사원": (30_000_000, 38_000_000), "대리": (36_000_000, 46_000_000)}
+    with pytest.raises(review.ReviewError):
+        review.parse_band("사원:4000~3000")
+    emp = lambda i, rk: {"id": i, "rank": rk, "employment_type": "정규직"}     # noqa: E731
+    rows = [{"employee": emp(1, "사원"), "new_salary": 30_000_000}, {"employee": emp(2, "사원"), "new_salary": 31_000_000},
+            {"employee": emp(3, "사원"), "new_salary": 45_000_000}, {"employee": emp(4, "부장"), "new_salary": 90_000_000},
+            {"employee": emp(5, "대리"), "new_salary": 33_000_000}]
+    bs = review.salary_bands(dict(c, inputs={"band": "대리:3600~4600"}), {"rows": rows})
+    assert bs["flags"][3]["side"] == "high" and 1 not in bs["flags"] and 4 not in bs["flags"]    # 부장 1명은 점검 안 함
+    assert bs["flags"][5]["side"] == "low" and bs["flags"][5]["gap"] == 3_000_000
+    # 예산 중립: 계산식을 단순하게 바꿔 확인 (총액 = 1억 × 고정% + 등급 가산 500만)
+    real = review.compute
+
+    def fake(cc, base_rate=None, use_overrides=True, with_grades=True):
+        rr = cc["base_rate"] if base_rate is None else base_rate
+        return {"total_base": 100_000_000, "increase": 1_000_000 * rr + (5_000_000 if (use_overrides and with_grades) else 0)}
+    review.compute = fake
+    try:
+        nt = review.neutral(dict(c, base_rate=3.0), 3.0)
+        assert nt["target"] == 3_000_000 and nt["gap"] == 5_000_000 and nt["rate"] == -2.0 and nt["after"] <= nt["target"]
+        assert review.neutral(dict(c, base_rate=None), 3.0) is None
+    finally:
+        review.compute = real
+    # 실제 화면·저장: 초안 → 등급 S → 총액 맞추기 → 고정이 내려가고 목표가 저장됨, 초안을 다시 정하면 목표 지워짐
+    adm.post("/mgmt/review/2033/setup", data={"base_rate": "4"})
+    eid = review.compute(review.get(2033))["rows"][0]["employee"]["id"]
+    adm.post("/mgmt/api/review/2033/item", json={"employee_id": str(eid), "grade": "S"})
+    page = adm.get("/mgmt/review?year=2033").text
+    assert "예산 중립 맞춤" in page and "등급 분포" in page and "연봉 밴드" in page and 'id="chkBox"' in page
+    r = adm.post("/mgmt/review/2033/neutral", data={"target_rate": "4"}, follow_redirects=False)
+    assert r.status_code == 303
+    c = review.get(2033)
+    assert c["base_rate"] < 4 and float(c["inputs"]["budget_rate"]) == 4
+    assert review.compute(c)["increase"] <= review.compute(c, base_rate=4, use_overrides=False, with_grades=False)["increase"]
+    assert review.checks(c, review.compute(c))["target_rate"] == 4
+    adm.post("/mgmt/review/2033/setup", data={"base_rate": "3.5"})
+    c = review.get(2033)
+    assert c["inputs"]["budget_rate"] == "" and review.budget_target_rate(c) == 3.5
+    assert adm.post("/mgmt/review/2033/neutral", data={"target_rate": "abc"}, follow_redirects=False).status_code == 303
+    execute("DELETE FROM review_items WHERE cycle_id=?", (c["id"],))
+    execute("DELETE FROM review_cycles WHERE id=?", (c["id"],))

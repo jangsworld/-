@@ -63,6 +63,10 @@
         <div class="help">성과공유안: 영업이익 증가율 중 직원 몫</div></div>
       <div class="col-md-4"><label class="form-label small">지불능력 한도(%)</label><input class="form-control form-control-sm" name="pay_ratio" value="{{ c.inputs.pay_ratio or '' }}" placeholder="{{ '%g'|format(b.pay_ratio) }}">
         <div class="help">지불능력안: 늘어난 영업이익 중 인건비로 쓸 몫</div></div>
+      <div class="col-md-6"><label class="form-label small">등급 분포 권장(%)</label><input class="form-control form-control-sm" name="guide" value="{{ c.inputs.guide or '' }}" placeholder="{{ chk.guide.text or '예: S:10, A:20, B:40, C:20, D:10' }}">
+        <div class="help">합계 100%. 비우면 기본값 (S 10 · A 20 · B 40 · C 20 · D 10)</div></div>
+      <div class="col-md-6"><label class="form-label small">직급별 연봉 범위(만원)</label><input class="form-control form-control-sm" name="band" value="{{ c.inputs.band or '' }}" placeholder="예: 사원:3000~3800, 대리:3600~4600">
+        <div class="help">비우면 같은 직급 새 연봉 중간값 ±{{ '%g'|format(chk.bands.tol) }}%로 점검 ({{ 3 }}명 이상 직급만)</div></div>
       </div></div>
       <div class="col-md-4"><label class="form-label small">직접 비교할 안(%, 쉼표)</label><input class="form-control form-control-sm" name="scenarios" value="{{ c.scenarios|join(', ') }}" placeholder="예: 3, 4"></div>
       <div class="col-md-4"><label class="form-label small">반올림 단위(원)</label><select class="form-select form-select-sm" name="round_unit">{% for u in [1000, 10000, 100000] %}<option value="{{ u }}" {{ 'selected' if c.round_unit == u }}>{{ u|won }}</option>{% endfor %}</select></div>
@@ -183,7 +187,7 @@
     <td data-live class="num">{{ '%g'|format(r.add_rate) if r.add_rate else '0' }}{% if r.add_rate %}<span class="text-muted">%p</span>{% endif %}</td>
     <td><input class="form-control form-control-sm text-end" name="extra_rate" value="{{ ('%+g'|format(r.extra_rate)) if r.extra_rate else '' }}" placeholder="0" inputmode="decimal" aria-label="{{ e.name }} 추가 %p" {{ 'disabled' if c.locked }}></td>
     <td data-live class="num fw-semibold {{ 'up' if c.base_rate is not none and r.final_rate > c.base_rate + 0.005 else ('down' if c.base_rate is not none and r.final_rate < c.base_rate - 0.005) }}">{{ '%.2f'|format(r.final_rate) }}%{% if r.override is not none %} <span class="badge text-bg-warning" title="예전 방식으로 최종 %를 직접 넣은 값입니다. 이 줄을 한 번 고치면 단계 계산으로 바뀝니다">직접</span>{% endif %}</td>
-    <td data-live class="num">{{ r.new_salary|won }}{% if r.min_fix %} <span class="badge text-bg-warning" title="{{ c.apply_year }}년 최저임금 기준선까지 자동으로 올림">최저임금 맞춤</span>{% endif %}{% if r.already and c.status != '반영완료' %} <span class="badge text-bg-light border" title="이미 {{ c.apply_year }}년 연봉 {{ r.already|won }}원 등록됨">등록됨</span>{% endif %}</td>
+    <td data-live class="num">{{ r.new_salary|won }}{% set bd = chk.bands.flags.get(e.id) %}{% if bd %} <span class="badge {{ 'text-bg-info' if bd.side == 'low' else 'text-bg-danger' }}" title="{{ bd.rank }} 범위 {{ bd.lo|man_won }}~{{ bd.hi|man_won }}원 ({{ bd.src }})보다 {{ bd.gap|man_won }}원 {{ '낮음' if bd.side == 'low' else '높음' }}">밴드{{ '↓' if bd.side == 'low' else '↑' }}</span>{% endif %}{% if r.min_fix %} <span class="badge text-bg-warning" title="{{ c.apply_year }}년 최저임금 기준선까지 자동으로 올림">최저임금 맞춤</span>{% endif %}{% if r.already and c.status != '반영완료' %} <span class="badge text-bg-light border" title="이미 {{ c.apply_year }}년 연봉 {{ r.already|won }}원 등록됨">등록됨</span>{% endif %}</td>
     <td data-live class="num text-muted">{{ r.new_salary|monthly|won if r.new_salary else '-' }}</td>
     <td data-live class="num">{{ r.raise|won if r.raise is not none else '-' }}</td>
     <td><input class="form-control form-control-sm" name="comment" value="{{ r.comment }}" {{ 'disabled' if c.locked }}></td></tr>
@@ -191,6 +195,61 @@
   </tbody></table></div>
   <noscript>{% if not c.locked and rows %}<div class="card-footer text-end"><button class="btn btn-sm btn-primary">저장</button></div>{% endif %}</noscript>
   </form></div>
+
+{# ③-2 확정 전 점검 #}
+<h6 id="check">점검 <span class="help">등급이 한쪽으로 쏠렸는지, 총액이 초안을 넘는지, 직급 대비 너무 낮거나 높은 사람이 있는지 봅니다 (전체 직원 기준)</span></h6>
+<div class="row g-3 mb-4" id="chkBox">
+  {% set gd = chk.guide %}
+  <div class="col-lg-4"><div class="card h-100 {{ 'border-warning' if gd.lenient }}"><div class="card-header">등급 분포 <span class="help ms-1">평가 {{ gd.graded }}/{{ gd.count }}명</span></div>
+    <div class="table-responsive"><table class="table table-sm mb-0 align-middle"><thead><tr><th>등급</th><th class="num">권장</th><th class="num">실제</th><th style="width:40%"></th></tr></thead><tbody>
+    {% for r in gd.rows %}<tr class="{{ 'table-warning' if r.over }}"><td class="fw-semibold">{{ r.grade }} <span class="help">{{ '%+g'|format(r.add) }}</span></td>
+      <td class="num text-muted">{{ ('%g'|format(r.target) ~ '%') if r.target is not none else '-' }}{% if r.target_count is not none %}<br><span class="help">{{ r.target_count }}명</span>{% endif %}</td>
+      <td class="num {{ 'text-danger fw-semibold' if r.over }}">{{ r.count }}명<br><span class="help">{{ '%.0f'|format(r.pct) }}%</span></td>
+      <td><div class="position-relative bg-light rounded" style="height:12px" aria-hidden="true">
+        <div class="position-absolute top-0 start-0 h-100 rounded {{ 'bg-danger' if r.over else 'bg-primary' }}" style="width:{{ [r.pct, 100]|min }}%;opacity:.7"></div>
+        {% if r.target is not none %}<div class="position-absolute top-0 h-100 border-start border-2 border-dark" style="left:{{ [r.target, 100]|min }}%" title="권장 {{ '%g'|format(r.target) }}%"></div>{% endif %}</div></td></tr>
+    {% endfor %}</tbody></table></div>
+    <div class="card-footer small">{% if not gd.graded %}<span class="text-muted">등급을 넣으면 분포가 나옵니다.</span>
+      {% elif not gd.has_target %}<span class="text-muted">등급 이름을 바꿔서 기본 권장 비율이 없습니다. 기준값 › 세부 기준에서 넣어 주세요.</span>
+      {% elif gd.lenient %}<span class="text-danger"><i class="bi bi-exclamation-triangle"></i> 후한 등급({{ gd.good_names }})이 {{ '%.0f'|format(gd.good_pct) }}%로 권장 {{ '%g'|format(gd.good_target) }}%보다 많습니다.</span>
+      {% else %}<span class="text-success"><i class="bi bi-check2-circle"></i> 권장 범위 안입니다 (±{{ '%g'|format(gd.tol) }}%p).</span>{% endif %}</div>
+  </div></div>
+
+  {% set nt = chk.neutral %}
+  <div class="col-lg-4"><div class="card h-100 {{ 'border-warning' if nt and nt.gap > 0 }}"><div class="card-header">예산 중립 맞춤</div><div class="card-body small">
+    {% if not nt %}<span class="text-muted">② 에서 고정인상률(초안)을 정하면 나옵니다.</span>
+    {% else %}
+    <div>목표: 모두 <b>{{ '%g'|format(nt.target_rate) }}%</b> 일괄일 때 총액 <b>{{ nt.target|man_won }}원</b>{% if not chk.target_saved %} <span class="help">(지금 초안)</span>{% endif %}</div>
+    <div>지금 (등급·추가 포함): <b>{{ nt.current|man_won }}원</b>
+      <span class="{{ 'text-danger' if nt.gap > 0 else 'text-success' }} fw-semibold">{{ ('+' if nt.gap > 0 else '') ~ (nt.gap|man_won if nt.gap else '0') }}{{ '원' if nt.gap }}</span></div>
+    {% if nt.rate is none %}<div class="text-danger mt-2">고정을 -10%까지 낮춰도 맞출 수 없습니다. 등급·추가를 줄여 주세요.</div>
+    {% elif (nt.rate - c.base_rate)|abs < 0.05 %}<div class="text-success mt-2"><i class="bi bi-check2-circle"></i> 고정 {{ '%g'|format(c.base_rate) }}%로 목표 총액 안입니다.</div>
+    {% else %}<div class="mt-2">고정을 <b>{{ '%g'|format(c.base_rate) }}% → {{ '%g'|format(nt.rate) }}%</b>로 {{ '낮추면' if nt.rate < c.base_rate else '올려도' }} 총액이 {{ nt.after|man_won }}원으로 목표 안에 듭니다.
+      <div class="help">등급·추가 차이는 그대로 두고 모두의 고정만 같은 폭으로 바뀝니다.</div></div>{% endif %}
+    {% if not c.locked and nt.rate is not none %}
+    <form method="post" action="/mgmt/review/{{ year }}/neutral" class="d-flex flex-wrap gap-1 align-items-center mt-2"
+          data-confirm="총액을 모두 목표 % 일괄일 때에 맞추도록 고정인상률을 바꿀까요?">
+      <span>목표</span><input class="form-control form-control-sm text-end" name="target_rate" value="{{ '%g'|format(nt.target_rate) }}" style="width:70px" aria-label="목표 인상률"><span>%</span>
+      <button class="btn btn-sm btn-outline-primary">총액 맞추기</button></form>
+    <div class="help mt-1">②에서 고정인상률을 새로 정하면 목표도 그 값으로 바뀝니다.</div>{% endif %}
+    {% endif %}
+  </div></div></div>
+
+  {% set bs = chk.bands %}
+  <div class="col-lg-4"><div class="card h-100 {{ 'border-warning' if bs.out }}"><div class="card-header">연봉 밴드 <span class="help ms-1">새 연봉 기준 · {{ '넣어 둔 범위' if bs.manual else '같은 직급 중간값 ±' ~ ('%g'|format(bs.tol)) ~ '%' }}</span></div>
+    <div class="table-responsive" style="max-height:300px"><table class="table table-sm mb-0 align-middle"><thead class="sticky-top"><tr><th>직급</th><th class="num">인원</th><th class="num">범위(만원)</th><th class="num">벗어남</th></tr></thead><tbody>
+    {% for r in bs.ranks %}<tr><td>{{ r.rank }}</td><td class="num">{{ r.count }}</td>
+      <td class="num small">{% if r.lo is not none %}{{ (r.lo / 10000)|round|int }}~{{ (r.hi / 10000)|round|int }}{% else %}<span class="help">{{ r.src }}</span>{% endif %}</td>
+      <td class="num">{% if r.low %}<span class="badge text-bg-info">↓{{ r.low }}</span>{% endif %}{% if r.high %} <span class="badge text-bg-danger">↑{{ r.high }}</span>{% endif %}{% if r.lo is not none and not r.low and not r.high %}<span class="text-success">-</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="4" class="text-muted text-center py-3">기준 연봉이 있는 직원이 없습니다</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if bs.out %}<div class="card-footer small"><div class="fw-semibold mb-1">벗어난 사람 {{ bs.out|length }}명</div>
+      {% for r in bs.out[:8] %}<div><a href="?year={{ year }}&q={{ r.employee.name|urlencode }}#eval">{{ r.employee.name }}</a> <span class="text-muted">{{ r.band.rank }}</span>
+        {{ r.new_salary|man_won }}원 <span class="{{ 'text-info' if r.band.side == 'low' else 'text-danger' }}">({{ r.band.gap|man_won }}원 {{ '낮음' if r.band.side == 'low' else '높음' }})</span></div>{% endfor %}
+      {% if bs.out|length > 8 %}<div class="text-muted">외 {{ bs.out|length - 8 }}명 — 표의 「밴드」 표시를 보세요</div>{% endif %}</div>
+    {% else %}<div class="card-footer small text-success"><i class="bi bi-check2-circle"></i> 범위를 벗어난 사람이 없습니다.</div>{% endif %}
+  </div></div>
+</div>
 
 {# ④ 확정 전 비교 #}
 <h6 id="compare">④ 확정 전 비교 <span class="help">고른 고정인상률을 모두에게 똑같이 줬을 때와, 직원별 조정 후 실제 결과</span></h6>
@@ -276,7 +335,7 @@ drawCmp();
       const pa = or.querySelector('[name=final_rate]'), pb = nr.querySelector('[name=final_rate]');
       if (pa && pb) pa.placeholder = pb.placeholder;
     });
-    ['evalKpi', 'cmpBox'].forEach((id) => { const a = document.getElementById(id), b = doc.getElementById(id); if (a && b) a.innerHTML = b.innerHTML; });
+    ['evalKpi', 'cmpBox', 'chkBox'].forEach((id) => { const a = document.getElementById(id), b = doc.getElementById(id); if (a && b) a.innerHTML = b.innerHTML; });
     drawCmp();
   }
   form.addEventListener('change', async (e) => {

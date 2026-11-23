@@ -222,8 +222,9 @@ def review_page(request: Request, year: int | None = None, department: str = "",
            "fund_ready": fin.fund_configured()}
     if c:
         res = review.compute(c)
-        ctx.update(res=res, sc=review.scenarios(c), cmp=review.compare(c), status_label=review.STATUS_LABEL,
-                   rows=_review_rows(res["rows"], department, q))
+        sc = review.scenarios(c)
+        ctx.update(res=res, sc=sc, cmp=review.compare(c), status_label=review.STATUS_LABEL,
+                   rows=_review_rows(res["rows"], department, q), chk=review.checks(c, res, sc["rec"]))
     else:
         ctx["fin"] = fin.summary(y)
     return _render(request, "mgmt/review.html", ctx, "mgmt.review")
@@ -285,6 +286,22 @@ async def review_bulk(request: Request, year: int):
         return _go(back, str(ex))
     audit("mgmt", "인사평가 일괄 적용", str(year), f"{n}명 · 부서 {dept or '전체'} · 이름 {q or '-'} · 등급 {'그대로' if grade is None else (grade or '지움')} · 추가 {'그대로' if extra is None else (extra or '지움')}")
     return _go(back, f"{n}명에게 일괄 적용했습니다")
+
+
+@router.post("/review/{year}/neutral")
+async def review_neutral(request: Request, year: int):
+    """예산 중립 맞춤: 등급·추가로 늘어난 총액만큼 고정인상률을 낮춰 '모두 목표 %'일 때 총액에 맞춤."""
+    c = _cycle(year)
+    f = await request.form()
+    try:
+        t = float(str(f.get("target_rate") or "").strip().replace("%", ""))
+    except ValueError:
+        return _go(f"/mgmt/review?year={year}#check", "목표 인상률을 숫자로 넣어 주세요")
+    try:
+        nt = review.set_neutral(c, t, _who(request))
+    except review.ReviewError as ex:
+        return _go(f"/mgmt/review?year={year}#check", str(ex))
+    return _go(f"/mgmt/review?year={year}#check", f"고정인상률을 {nt['rate']:g}%로 맞췄습니다 (총액 = 모두 {t:g}% 줄 때 이내)")
 
 
 @router.post("/api/review/{year}/item")

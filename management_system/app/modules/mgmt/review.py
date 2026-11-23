@@ -13,7 +13,7 @@ from collections import Counter, defaultdict
 from datetime import date
 
 from app.common import to_date
-from app.db import audit, batch, execute, get_settings, query, query_one
+from app.db import audit, batch, execute, get_codes, get_settings, query, query_one
 from app.modules.hr import repo as hr_repo
 from app.modules.mgmt import fin, labor
 from app.modules.mgmt.common import in_service, round_to, salary_for, salary_map
@@ -25,12 +25,19 @@ STATUS_LABEL = {"준비": "준비", "평가중": "조정 중", "확정": "확정
 # 기준값 입력칸 (review_cycles.inputs, 암호화 저장)
 INPUT_LABELS = {"cpi": "물가상승률(%)", "min_wage_cur": "올해 최저시급(원)", "min_wage_next": "다음 해 최저시급(원)",
                 "share_ratio": "성과공유 나눔비율(%)", "share_cap": "성과공유 가산 상한(%p)", "pay_ratio": "지불능력 한도(%)",
-                "afford_ratio": "인상 비용 상한(영업이익 대비 %)", "memo": "메모"}
+                "afford_ratio": "인상 비용 상한(영업이익 대비 %)", "budget_rate": "목표 총액 기준 인상률(%)",
+                "guide": "등급 분포 권장(%)", "band": "직급별 연봉 범위(만원)", "memo": "메모"}
+TEXT_INPUTS = ("memo", "guide", "band")
 INPUT_KEYS = tuple(INPUT_LABELS)
 INPUT_DEFAULTS = {"share_ratio": 10.0, "share_cap": 3.0, "pay_ratio": 30.0, "afford_ratio": 20.0}
 EXTRA_LIMIT = 10.0              # 추가 조정 한 사람당 ±%p
 # 추천 범위: 영업이익률이 이만큼이면 성과 점수 만점, 영업이익 증가율이 이만큼이면 만점 (둘의 평균)
 MARGIN_FULL, GROWTH_FULL = 10.0, 20.0
+# 등급 분포 권장(%) — 등급이 기본(S~D)일 때만 기본값을 씀. 권장보다 이만큼(%p) 넘게 많으면 표시
+DEFAULT_GUIDE = {"S": 10.0, "A": 20.0, "B": 40.0, "C": 20.0, "D": 10.0}
+GUIDE_TOL = 5.0
+# 연봉 밴드: 직급별 범위를 따로 안 넣으면 같은 직급 새 연봉 중간값 ±이 % (3명 이상일 때만)
+BAND_TOL, BAND_MIN_PEOPLE = 20.0, 3
 
 
 class ReviewError(ValueError):
@@ -115,13 +122,20 @@ def save_setup(c: dict, form: dict, by: str = ""):
     for k in INPUT_KEYS:
         if k not in form:
             continue
-        if k == "memo":
-            inputs[k] = str(form.get(k) or "").strip()[:500]
+        if k in TEXT_INPUTS:
+            t = str(form.get(k) or "").strip()[:500]
+            if k == "guide" and t:
+                parse_guide(t, [g for g, _ in parse_grades(form.get("grades") or ", ".join(f"{g}:{v:+g}" for g, v in c["grades"]))])
+            if k == "band" and t:
+                parse_band(t)
+            inputs[k] = t
             continue
         v = str(form.get(k) or "").strip().replace(",", "").replace("%", "")
         if v and _num(v) is None:
             raise ReviewError(f"{INPUT_LABELS[k]}은(는) 숫자로 넣어 주세요")
         inputs[k] = v
+    if "base_rate" in form and "budget_rate" not in form:
+        inputs["budget_rate"] = ""                  # 초안을 새로 정하면 예산 중립 목표도 새 초안으로
     base = str(keep("base_rate") if keep("base_rate") is not None else "").strip()
     try:
         base_rate = float(base) if base else None
@@ -452,6 +466,181 @@ def scenarios(c: dict) -> dict:
         rc["real_cost"] = g["increase"] * mult
     return {"rows": out, "plans": pl, "basis": b, "fin": f, "mult": mult, "rates": rt, "labor_now": labor_now, "rec": rc,
             "labor_ratio_now": labor_now / rev * 100 if rev else None}
+
+
+# ── 확정 전 점검: 등급 분포 · 예산 중립 · 연봉 밴드 ─────────────────────────
+def parse_guide(text: str, grades: list[str]) -> dict[str, float]:
+    """'S:10, A:20, B:40, C:20, D:10' → {'S': 10.0, ...}. 합계 100%, 있는 등급만."""
+    out = {}
+    for part in (text or "").replace("\n", ",").split(","):
+        if not part.strip():
+            continue
+        if ":" not in part:
+            raise ReviewError(f"등급 분포는 'S:10, A:20' 처럼 적어 주세요: {part.strip()}")
+        g, v = (x.strip() for x in part.split(":", 1))
+        if g not in grades:
+            raise ReviewError(f"등급 분포에 없는 등급이 있습니다: {g}")
+        try:
+            out[g] = float(v.replace("%", "") or 0)
+        except ValueError as ex:
+            raise ReviewError(f"등급 분포 비율을 읽지 못했습니다: {part.strip()}") from ex
+        if out[g] < 0:
+            raise ReviewError("등급 분포 비율은 0 이상으로 넣어 주세요")
+    if out and abs(sum(out.values()) - 100) > 0.5:
+        raise ReviewError(f"등급 분포 비율의 합이 100%가 되어야 합니다 (지금 {sum(out.values()):g}%)")
+    return out
+
+
+def parse_band(text: str) -> dict[str, tuple[int, int]]:
+    """'사원:3000~3800, 대리:3600~4600' (만원) → {'사원': (30000000, 38000000), ...}"""
+    out = {}
+    for part in (text or "").replace("\n", ",").split(","):
+        if not part.strip():
+            continue
+        try:
+            rank, rng = (x.strip() for x in part.split(":", 1))
+            lo, hi = (float(x.strip().replace("만원", "").replace(",", "")) for x in rng.replace("-", "~").split("~", 1))
+        except ValueError as ex:
+            raise ReviewError(f"직급별 연봉 범위는 '사원:3000~3800' 처럼 만원 단위로 적어 주세요: {part.strip()}") from ex
+        if not rank or lo <= 0 or hi < lo:
+            raise ReviewError(f"직급별 연봉 범위를 확인해 주세요 (낮은 값 ~ 높은 값): {part.strip()}")
+        out[rank] = (int(lo * 10000), int(hi * 10000))
+    return out
+
+
+def guide_targets(c: dict) -> dict[str, float]:
+    grades = [g for g, _ in c["grades"]]
+    try:
+        g = parse_guide(c["inputs"].get("guide") or "", grades)
+    except ReviewError:
+        g = {}
+    if g:
+        return g
+    return dict(DEFAULT_GUIDE) if grades == list(DEFAULT_GUIDE) else {}
+
+
+def grade_guide(c: dict, res: dict) -> dict:
+    """등급 분포: 권장 비율·인원과 실제를 나란히. 후한 등급(가산 +)이 권장보다 많으면 경고."""
+    tg = guide_targets(c)
+    n = res["graded"]
+    dist = res["grade_dist"]
+    rows = []
+    for g, v in c["grades"]:
+        cnt = dist.get(g, 0)
+        pct = cnt / n * 100 if n else 0.0
+        t = tg.get(g)
+        tc = round(n * t / 100) if (t is not None and n) else None
+        rows.append({"grade": g, "add": v, "count": cnt, "pct": pct, "target": t, "target_count": tc,
+                     "over": bool(tc is not None and pct > t + GUIDE_TOL and cnt > tc)})
+    pos = [r for r in rows if r["add"] > 0]
+    good_pct = sum(r["pct"] for r in pos)
+    good_target = sum(r["target"] for r in pos) if pos and all(r["target"] is not None for r in pos) else None
+    return {"rows": rows, "graded": n, "count": res["count"], "has_target": bool(tg), "good_pct": good_pct,
+            "good_target": good_target, "good_names": "·".join(r["grade"] for r in pos),
+            "lenient": bool(good_target is not None and n and good_pct > good_target + GUIDE_TOL),
+            "tol": GUIDE_TOL, "text": ", ".join(f"{g}:{t:g}" for g, t in tg.items())}
+
+
+def budget_target_rate(c: dict, rc: dict | None = None) -> float | None:
+    """예산 중립의 목표: 맞춤 때 저장해 둔 값, 없으면 지금 고른 고정인상률(초안).
+    ②에서 고정인상률을 새로 정하면 저장해 둔 목표는 지워져 새 초안이 목표가 됩니다."""
+    v = _num(c["inputs"].get("budget_rate"))
+    return v if v is not None else c["base_rate"]
+
+
+def neutral(c: dict, target_rate: float | None) -> dict | None:
+    """등급·추가로 늘어난(줄어든) 총액만큼 고정인상률을 조정해, 총 인상액을 '모두 목표 % 일괄'과 같게(넘지 않게) 맞춤.
+    고정은 0.1% 단위, 목표를 넘지 않는 가장 높은 값."""
+    if c["base_rate"] is None or target_rate is None:
+        return None
+    now = compute(c)
+    if not now["total_base"]:
+        return None                                  # 기준 연봉이 하나도 없으면 맞출 총액이 없음
+    target = compute(c, base_rate=target_rate, use_overrides=False, with_grades=False)["increase"]
+    cur = now["increase"]
+    cache = {}
+
+    def cost(i):
+        if i not in cache:
+            cache[i] = compute(c, base_rate=i / 10)["increase"]
+        return cache[i]
+    out = {"target_rate": target_rate, "target": target, "current": cur, "gap": cur - target, "rate": None, "after": None}
+    lo, hi = -100, 300
+    if cost(lo) > target:
+        return out
+    if cost(hi) <= target:
+        lo = hi
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if cost(mid) <= target:
+            lo = mid
+        else:
+            hi = mid
+    out.update(rate=lo / 10, after=cost(lo))
+    return out
+
+
+def set_neutral(c: dict, target_rate: float, by: str = "") -> dict:
+    c = _fresh(c)
+    if c["locked"]:
+        raise ReviewError("확정된 평가는 바꿀 수 없습니다. 먼저 '다시 열기'를 하세요.")
+    if not -10 <= target_rate <= 30:
+        raise ReviewError("목표 인상률은 -10~30% 사이로 넣어 주세요")
+    nt = neutral(c, target_rate)
+    if not nt:
+        raise ReviewError("고정인상률을 먼저 정하고, 기준 연봉이 있어야 맞출 수 있습니다")
+    if nt["rate"] is None:
+        raise ReviewError("등급·추가 조정이 너무 커서 고정인상률을 -10%까지 낮춰도 목표 총액에 맞출 수 없습니다")
+    save_setup(c, {"base_rate": f"{nt['rate']:g}", "budget_rate": f"{target_rate:g}"}, by)
+    audit("mgmt", "인사평가 예산 중립 맞춤", str(c["year"]), f"목표 {target_rate:g}% 일괄 → 고정 {nt['rate']:g}%")
+    return nt
+
+
+def salary_bands(c: dict, res: dict) -> dict:
+    """직급별 연봉 밴드 점검 (새 연봉 기준). 넣어 둔 범위가 있으면 그것, 없으면 같은 직급 중간값 ±BAND_TOL%."""
+    try:
+        manual = parse_band(c["inputs"].get("band") or "")
+    except ReviewError:
+        manual = {}
+    by = defaultdict(list)
+    for r in res["rows"]:
+        e = r["employee"]
+        if r["new_salary"] and e.get("employment_type") != "단시간(파트타임)":
+            by[(e.get("rank") or "").strip() or "직급 없음"].append(r)
+    order = {n: i for i, n in enumerate(get_codes("RANK"))}
+    ranks, flags = [], {}
+    for rank in sorted(by, key=lambda k: (order.get(k, 999), k)):
+        rs = by[rank]
+        vals = sorted(r["new_salary"] for r in rs)
+        k = len(vals)
+        med = vals[k // 2] if k % 2 else (vals[k // 2 - 1] + vals[k // 2]) / 2
+        if rank in manual:
+            lo, hi, src = manual[rank][0], manual[rank][1], "넣어 둔 범위"
+        elif k >= BAND_MIN_PEOPLE:
+            lo, hi, src = med * (1 - BAND_TOL / 100), med * (1 + BAND_TOL / 100), f"중간값 ±{BAND_TOL:g}%"
+        else:
+            ranks.append({"rank": rank, "count": k, "median": med, "lo": None, "hi": None,
+                          "src": f"{BAND_MIN_PEOPLE}명 미만이라 점검 안 함", "low": 0, "high": 0})
+            continue
+        low = high = 0
+        for r in rs:
+            v = r["new_salary"]
+            if v < lo or v > hi:
+                side = "low" if v < lo else "high"
+                low += side == "low"
+                high += side == "high"
+                flags[r["employee"]["id"]] = {"side": side, "lo": lo, "hi": hi, "rank": rank, "src": src,
+                                             "gap": (lo - v) if side == "low" else (v - hi)}
+        ranks.append({"rank": rank, "count": k, "median": med, "lo": lo, "hi": hi, "src": src, "low": low, "high": high})
+    out = [dict(r, band=flags[r["employee"]["id"]]) for r in res["rows"] if r["employee"]["id"] in flags]
+    return {"ranks": ranks, "flags": flags, "out": out, "tol": BAND_TOL, "manual": bool(manual)}
+
+
+def checks(c: dict, res: dict, rc: dict | None = None) -> dict:
+    """③ 아래 점검 상자에 쓰는 세 가지."""
+    t = budget_target_rate(c, rc)
+    return {"guide": grade_guide(c, res), "neutral": neutral(c, t), "bands": salary_bands(c, res),
+            "target_rate": t, "target_saved": _num(c["inputs"].get("budget_rate")) is not None}
 
 
 def save_items(c: dict, rows: list[dict], by: str = "") -> int:
