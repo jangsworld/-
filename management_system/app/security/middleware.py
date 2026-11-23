@@ -16,7 +16,8 @@ from app.security import auth
 PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/favicon.ico", "/sign/",  # /sign/: 직원 전자서명 (토큰+본인확인)
                    "/q/",            # /q/: 자산 라벨 QR 기본 정보 (무작위 열쇠, 금액·이력 제외)
                    "/leave-plan/",   # /leave-plan/: 직원 연차 사용계획 회신 (토큰+생년월일)
-                   "/vq/")           # /vq/: 차량 QR — 점검 사진·파손 신고 (무작위 열쇠 + 이름·생년월일)
+                   "/vq/",           # /vq/: 차량 QR — 점검 사진·파손 신고 (무작위 열쇠 + 이름·생년월일)
+                   "/robot/ecount/")  # 이카운트 로봇: 로그인 없이 '로봇 열쇠'로만 (경로 안에서 열쇠·HTTPS 확인, 요청한 직원 1명 값만)
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 # 경로별 필요 권한 (위에서부터 첫 일치 규칙 적용)
@@ -213,7 +214,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         cl = request.headers.get("content-length")
         if cl and cl.isdigit() and int(cl) > body_limit(path):
             return PlainTextResponse("요청 크기가 너무 큽니다", status_code=413)
-        if request.method == "POST" and path.startswith("/login") and login_rate_exceeded(ip):
+        if request.method == "POST" and path.startswith(("/login", "/robot/")) and login_rate_exceeded(ip):
             return PlainTextResponse("요청이 너무 많습니다. 잠시 후 다시 시도하세요", status_code=429)
 
         is_public = path.startswith(PUBLIC_PREFIXES)

@@ -6,6 +6,7 @@
   <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'pending' }}" href="?tab=pending">반영 대기 <span class="badge text-bg-{{ 'danger' if new_rows or out_rows else 'light border' }}">{{ new_rows|length + out_rows|length }}</span></a></li>
   <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'history' }}" href="?tab=history">반영 기록</a></li>
   <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'template' }}" href="?tab=template">양식·설정</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'robot' }}" href="?tab=robot">로봇 <span class="badge text-bg-{{ 'success' if robot.online else 'light border' }}">{{ '켜짐' if robot.online else '꺼짐' }}</span></a></li>
   <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'helper' }}" href="?tab=helper">입력 도우미</a></li>
 </ul>
 
@@ -21,15 +22,22 @@
     <div class="card-header fw-semibold">{{ title }} <span class="badge text-bg-light border">{{ rows|length }}</span></div>
     <div class="table-responsive"><table class="table table-sm align-middle mb-0">
       <thead><tr><th style="width:32px"><input type="checkbox" class="form-check-input" data-check-group="{{ act }}" {{ 'checked' if rows }}></th>
-        <th>성명</th><th>사번</th><th>부서</th><th>직급</th><th>고용형태</th><th>{{ '입사일' if act == '신규' else '퇴사일' }}</th><th>확인할 점</th></tr></thead>
+        <th>성명</th><th>사번</th><th>부서</th><th>직급</th><th>고용형태</th><th>{{ '입사일' if act == '신규' else '퇴사일' }}</th><th>확인할 점</th><th>로봇</th></tr></thead>
       <tbody>
       {% for r in rows %}
       <tr><td><input type="checkbox" class="form-check-input" name="keys" value="{{ r.id }}:{{ act }}" data-group="{{ act }}" checked></td>
         <td class="fw-semibold"><a href="/hr/employees/{{ r.id }}?tab=payroll">{{ r.name }}</a></td><td>{{ r.emp_no }}</td>
         <td>{{ r.department or '' }}</td><td>{{ r.rank or '' }}</td><td>{{ r.employment_type or '' }}</td>
         <td>{{ r.hire_date if act == '신규' else r.resign_date }}</td>
-        <td class="small">{% for w in r.warn %}<span class="badge text-bg-warning me-1">{{ w }}</span>{% else %}<span class="text-success"><i class="bi bi-check2"></i> 준비됨</span>{% endfor %}</td></tr>
-      {% else %}<tr><td colspan="8" class="text-center text-muted p-3">대기 중인 {{ '신규 입사자' if act == '신규' else '퇴사자' }}가 없습니다</td></tr>{% endfor %}
+        <td class="small">{% for w in r.warn %}<span class="badge text-bg-warning me-1">{{ w }}</span>{% else %}<span class="text-success"><i class="bi bi-check2"></i> 준비됨</span>{% endfor %}</td>
+        <td class="small">{% set j = jobs.get((r.id, act)) %}{% if not j %}<span class="text-muted">-</span>
+          {% elif j.status == '요청' %}<span class="badge text-bg-info">요청함</span> <button class="btn btn-sm btn-link p-0" formaction="/hr/ecount/robot/cancel/{{ j.id }}">취소</button>
+          {% elif j.status == '처리중' %}<span class="badge text-bg-primary">넣는 중…</span>
+          {% elif j.status == '실패' %}<span class="badge text-bg-danger">실패</span> <span title="{{ j.finished_at }}">{{ j.message }}</span>
+            {% if j.detail.mismatch %}<div class="text-danger">다른 칸: {{ j.detail.mismatch|join(', ') }}</div>{% endif %}
+            {% if j.detail.skipped %}<div>못 넣은 칸: {% for a, b in j.detail.skipped %}{{ a }}({{ b }}){{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
+          {% elif j.status == '취소' %}<span class="text-muted">취소함</span>{% else %}<span class="text-muted">-</span>{% endif %}</td></tr>
+      {% else %}<tr><td colspan="9" class="text-center text-muted p-3">대기 중인 {{ '신규 입사자' if act == '신규' else '퇴사자' }}가 없습니다</td></tr>{% endfor %}
       </tbody></table></div>
   </div>
   {% endfor %}
@@ -37,10 +45,14 @@
   <div class="card"><div class="card-body d-flex flex-wrap align-items-center gap-2">
     <div class="form-check me-2"><input class="form-check-input" type="checkbox" name="include_rrn" value="1" id="incRrn" checked>
       <label class="form-check-label small" for="incRrn">엑셀에 주민등록번호 포함 <span class="text-muted">(연말정산에 필요 · 내려받은 기록이 남습니다)</span></label></div>
+    <button class="btn btn-sm btn-primary" formaction="/hr/ecount/robot/request" {{ 'disabled' if not robot.has_key }}
+            data-confirm="고른 직원을 로봇이 이카운트 사원등록에 넣고 저장합니다. 저장 뒤 다시 열어 값이 맞는지 대조한 결과가 여기에 표시됩니다. 진행할까요?"><i class="bi bi-robot"></i> 로봇으로 이카운트에 넣기</button>
+    {% if not robot.has_key %}<a class="small" href="?tab=robot">로봇 연결하기</a>{% elif not robot.online %}<span class="small text-warning">로봇 꺼짐{{ (' · 마지막 ' ~ robot.seen[5:16]) if robot.seen }}</span>{% endif %}
+    <span class="vr mx-1"></span>
     <button class="btn btn-sm btn-success" formaction="/hr/ecount/export"><i class="bi bi-file-earmark-excel"></i> 고른 직원 엑셀 받기</button>
     <span class="vr mx-1"></span>
     <input type="hidden" name="method" value="엑셀">
-    <button class="btn btn-sm btn-primary" formaction="/hr/ecount/mark" name="status" value="완료"
+    <button class="btn btn-sm btn-outline-primary" formaction="/hr/ecount/mark" name="status" value="완료"
             data-confirm="고른 직원을 이카운트에 넣었다고 표시합니다. 이카운트에서 저장까지 끝냈나요?"><i class="bi bi-check2-all"></i> 반영 완료로 표시</button>
     <button class="btn btn-sm btn-outline-secondary" formaction="/hr/ecount/mark" name="status" value="제외"
             data-confirm="고른 직원은 이카운트에 넣지 않는 것으로 표시합니다(예: 이카운트 급여 대상이 아닌 직원). 계속할까요?">이카운트 대상 아님</button>
@@ -48,6 +60,46 @@
   </div></div>
   {% endif %}
 </form>
+
+{% elif tab == 'robot' %}
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card mb-3"><div class="card-header fw-semibold">로봇 연결</div><div class="card-body small">
+      <div class="mb-2">상태: {% if robot.online %}<span class="badge text-bg-success">켜짐</span>{% else %}<span class="badge text-bg-secondary">꺼짐</span>{% endif %}
+        {% if robot.seen %}<span class="text-muted">마지막으로 다녀간 때 {{ robot.seen }}</span>{% else %}<span class="text-muted">아직 한 번도 연결되지 않았습니다</span>{% endif %}</div>
+      <ul class="ps-3 mb-2">
+        <li>로봇은 관리 PC에서 돌며, 이카운트 <b>전용 계정</b>으로 사원등록에 값을 넣고 저장한 뒤 다시 열어 대조합니다.</li>
+        <li>이카운트 비밀번호는 BMS에 저장하지 않습니다. 관리 PC에만 암호화해 둡니다.</li>
+        <li>로봇은 [로봇으로 이카운트에 넣기]를 누른 직원의 값만 받아 갑니다.</li>
+      </ul>
+      {% if robot_new_key %}
+      <div class="alert alert-warning mb-2"><div class="fw-semibold">새 로봇 열쇠 (지금 한 번만 보입니다)</div>
+        <code class="user-select-all d-block my-1" style="word-break:break-all">{{ robot_new_key }}</code>
+        관리 PC에서 로봇 설정 프로그램을 실행해 이 열쇠를 붙여 넣으세요. 예전 열쇠는 이제 쓸 수 없습니다.</div>
+      {% endif %}
+      <form method="post" action="/hr/ecount/robot/key" data-confirm="새 열쇠를 만들면 예전 열쇠로는 로봇이 연결되지 않습니다. 관리 PC에 새 열쇠를 다시 넣어야 합니다. 만들까요?">
+        <button class="btn btn-sm btn-outline-danger">{{ '로봇 열쇠 다시 만들기' if robot.has_key else '로봇 열쇠 만들기' }}</button>
+        <span class="help ms-1">관리자만 · {{ '열쇠 있음' if robot.has_key else '열쇠 없음' }}</span></form>
+    </div></div>
+  </div>
+  <div class="col-lg-7"><form class="card" method="post" action="/hr/ecount/robot/settings">
+    <div class="card-header fw-semibold">부서 짝 맞추기 <span class="help ms-1">BMS 부서 → 이카운트 부서. 비워 두면 상위 부서의 짝을 따르고, 그것도 없으면 부서 칸을 비워 둔 채 알려 줍니다</span></div>
+    {% if not ec_depts %}<div class="card-body small text-muted">이카운트 부서 목록이 아직 없습니다. 로봇이 처음 연결되면 자동으로 읽어 옵니다.</div>{% endif %}
+    <div class="table-responsive" style="max-height:420px"><table class="table table-sm align-middle mb-0"><thead class="sticky-top"><tr><th>BMS 부서</th><th>이카운트 부서</th></tr></thead><tbody>
+      {% set ec_codes = ec_depts|map(attribute=0)|list %}
+      {% for d in bms_depts %}<tr><td style="padding-left:{{ 8 + (d.level - 1) * 18 }}px">{{ d.name }}</td>
+        <td><select class="form-select form-select-sm" name="dept:{{ d.name }}" aria-label="{{ d.name }} 이카운트 부서"><option value="">{{ '(상위 부서를 따름)' if d.level > 1 else '(없음)' }}</option>
+          {% for c, n in ec_depts %}<option value="{{ c }}" {{ 'selected' if dept_map.get(d.name) == c }}>{{ n }} ({{ c }})</option>{% endfor %}
+          {% if dept_map.get(d.name) and dept_map.get(d.name) not in ec_codes %}<option value="{{ dept_map.get(d.name) }}" selected>{{ dept_map.get(d.name) }}</option>{% endif %}</select></td></tr>
+      {% else %}<tr><td colspan="2" class="text-muted text-center p-3">BMS 부서가 없습니다</td></tr>{% endfor %}
+    </tbody></table></div>
+    <div class="card-body border-top row g-2 small">
+      <div class="col-md-4"><label class="form-label small">지급구분 코드 (신입 기본)</label><input class="form-control form-control-sm" name="pay_std" value="{{ pay_std }}"><div class="help">00001 = 1차수, 00002 = 2차수</div></div>
+      <div class="col-md-8"><label class="form-label small">저장 때 [확인]을 눌러도 되는 안내 (글자 일부, 쉼표)</label><input class="form-control form-control-sm" name="ok_confirms" value="{{ ok_confirms }}">
+        <div class="help">여기에 없는 안내가 뜨면 로봇은 [취소]하고 멈춘 뒤 그 글을 알려 줍니다</div></div>
+      <div class="col-12 text-end"><button class="btn btn-sm btn-primary">저장</button></div>
+    </div></form></div>
+</div>
 
 {% elif tab == 'history' %}
 <div class="card"><table class="table table-sm align-middle mb-0" data-excel data-excel-unit="건">

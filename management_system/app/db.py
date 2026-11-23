@@ -413,6 +413,20 @@ CREATE TABLE IF NOT EXISTS ecount_sync (
     UNIQUE(employee_id, action)
 );
 
+-- 이카운트 사원등록 로봇 일감 (담당자가 요청 → 로봇이 가져가 처리 → 결과)
+CREATE TABLE IF NOT EXISTS ecount_robot_jobs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id  INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    action       TEXT NOT NULL,            -- 신규/퇴사
+    status       TEXT NOT NULL,            -- 요청/처리중/완료/실패/취소
+    requested_by TEXT,
+    requested_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    claimed_at   TEXT,
+    finished_at  TEXT,
+    message      TEXT,
+    detail       TEXT                      -- JSON: 못 넣은 칸·다른 칸의 '이름'만 (값은 담지 않음)
+);
+
 -- 상해공제(단체상해보험) 가입 이력: 안전사고 대비 직원별 가입
 CREATE TABLE IF NOT EXISTS employee_insurances (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

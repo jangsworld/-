@@ -155,3 +155,69 @@ def test_guess_field():
     assert ecount.guess_field("건강보험 보수월액") == "insured_monthly"
     assert ecount.guess_field("식대") == "pay:식대"
     assert ecount.guess_field("비고") == ""
+
+
+def test_robot_jobs_key_and_flow(client):
+    """로봇: 열쇠 없이는 못 쓰고, 요청한 직원 1명 값만 받아 가고, 대조 결과에 따라 완료·실패."""
+    from app.db import execute, set_setting
+    from app.modules.hr import ecount_robot as er
+    eid = _new_emp("로봇시험직원", birth_date="1990-01-01")
+    repo.set_rrn(eid, "900101-1000000")
+    # 열쇠가 없으면 요청 불가, 통로도 막힘
+    set_setting("ecount_robot_key", "")
+    r = client.post("/hr/ecount/robot/request", data={"keys": f"{eid}:신규"}, follow_redirects=False)
+    assert r.status_code == 303 and "tab=robot" in r.headers["location"]
+    assert client.post("/robot/ecount/claim", json={}).status_code == 403
+    # 열쇠는 관리자만
+    r = client.post("/hr/ecount/robot/key", follow_redirects=False)
+    assert r.status_code == 303 and not er.status()["has_key"]
+    key = er.new_key()
+    assert er.check_key(key) and not er.check_key(key + "x") and not er.check_key("")
+    assert key not in (query_one("SELECT value FROM settings WHERE key='ecount_robot_key'")["value"])   # 지문만 저장
+    H = {"x-robot-key": key}
+    assert client.post("/robot/ecount/claim", json={}, headers={"x-robot-key": "wrong"}).status_code == 403
+    assert client.post("/robot/ecount/claim", json={}, headers=H).json() == {"ok": True, "job": None}     # 요청이 없으면 아무것도 안 줌
+    assert er.status()["online"]
+    # 부서 목록·짝 (하위 부서는 상위 부서의 짝을 따름)
+    assert client.post("/robot/ecount/depts", json={"depts": [["00002", "경영관리그룹"], ["00038", "사업수행그룹"]]}, headers=H).json()["saved"] == 2
+    client.post("/hr/ecount/robot/settings", data={"dept:경영지원팀": "00002", "dept:없는부서": "99999", "pay_std": "00001", "ok_confirms": "사업자단위과세"})
+    assert er.dept_map() == {"경영지원팀": "00002"} and er.dept_code_for("경영지원팀") == "00002" and er.dept_code_for("모르는팀") == ""
+    # 요청 → 가져가기 → 값
+    r = client.post("/hr/ecount/robot/request", data={"keys": f"{eid}:신규"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert er.request([(eid, "신규")], "x") == 0                                    # 같은 직원 두 번 요청 안 됨
+    page = client.get("/hr/ecount").text
+    assert "요청함" in page and "로봇으로 이카운트에 넣기" in page
+    job = client.post("/robot/ecount/claim", json={}, headers=H).json()["job"]
+    v = job["values"]
+    assert job["action"] == "신규" and v["name"] == "로봇시험직원" and v["rrn"] == "900101-1000000" and v["dept_code"] == "00002"
+    assert v["pay_std_code"] == "00001" and job["ok_confirms"] == ["사업자단위과세"]
+    assert client.post("/robot/ecount/claim", json={}, headers=H).json()["job"] is None       # 한 번만 내줌
+    assert "넣는 중" in client.get("/hr/ecount").text
+    # 저장됐지만 값이 다르면 실패 → 대기 그대로
+    jid = job["job_id"]
+    assert client.post("/robot/ecount/finish", json={"job_id": jid, "ok": True, "message": "", "detail": {"saved": True, "mismatch": ["계좌번호"]}}, headers=H).json()["ok"]
+    assert (eid, "신규") in {(x["id"], x["action"]) for x in ecount.pending()}
+    assert "다른 칸: 계좌번호" in client.get("/hr/ecount").text
+    assert not client.post("/robot/ecount/finish", json={"job_id": jid, "ok": True, "detail": {"saved": True}}, headers=H).json()["ok"]   # 끝난 일감은 다시 못 바꿈
+    # 다시 요청 → 완료 → 반영 기록
+    assert er.request([(eid, "신규")], "x") == 1
+    job = er.claim()
+    assert er.finish(job["job_id"], True, "", {"saved": True, "skipped": [["부서", "짝 없음"]], "mismatch": []})
+    assert (eid, "신규") not in {(x["id"], x["action"]) for x in ecount.pending()}
+    row = query_one("SELECT * FROM ecount_sync WHERE employee_id=? AND action='신규'", (eid,))
+    assert row["method"] == "로봇" and "못 넣은 칸: 부서" in row["note"]
+    # 처리중인 채 오래되면 실패로
+    eid2 = _new_emp("로봇시간초과")
+    er.request([(eid2, "신규")], "x")
+    j2 = er.claim()
+    execute("UPDATE ecount_robot_jobs SET claimed_at='2020-01-01 00:00:00' WHERE id=?", (j2["job_id"],))
+    assert er.latest_jobs()[(eid2, "신규")]["status"] == "실패"
+    # 요청 취소
+    er.request([(eid2, "신규")], "x")
+    jid3 = er.latest_jobs()[(eid2, "신규")]["id"]
+    assert client.post(f"/hr/ecount/robot/cancel/{jid3}", follow_redirects=False).status_code == 303
+    assert er.latest_jobs()[(eid2, "신규")]["status"] == "취소"
+    # 로봇 탭 화면
+    page = client.get("/hr/ecount?tab=robot").text
+    assert "부서 짝 맞추기" in page and "경영관리그룹 (00002)" in page and key not in page
