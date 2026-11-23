@@ -1037,6 +1037,24 @@ CREATE INDEX IF NOT EXISTS idx_doc_mails ON hr_doc_mails(doc_id);
 CREATE INDEX IF NOT EXISTS idx_leave_emp ON leave_records(employee_id, start_date);
 CREATE INDEX IF NOT EXISTS idx_leave_promo ON leave_promotions(employee_id, year);
 CREATE INDEX IF NOT EXISTS idx_leave_plans ON leave_plans(employee_id, year);
+-- 문서 보관함: 각 메뉴에 붙인 서류 대장 (파일은 NAS 의 메뉴별 폴더, app/archive.py)
+CREATE TABLE IF NOT EXISTS attachments (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    menu        TEXT NOT NULL,               -- hr.employees / ga.vehicles / ga.fines ...
+    ref_id      INTEGER NOT NULL,            -- 그 메뉴의 대상 번호 (직원·차량·과태료 등)
+    company     TEXT,
+    rel_path    TEXT NOT NULL,               -- 보관함 안의 상대 경로
+    orig_name   TEXT NOT NULL,
+    mime        TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    sha256      TEXT NOT NULL,
+    note        TEXT,
+    uploaded_by TEXT,
+    uploaded_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    deleted_at  TEXT,
+    deleted_by  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_att_ref ON attachments(menu, ref_id);
 CREATE INDEX IF NOT EXISTS idx_rewards_emp ON rewards(employee_id);
 CREATE INDEX IF NOT EXISTS idx_specials_emp ON work_specials(employee_id);
 CREATE INDEX IF NOT EXISTS idx_ins_emp ON employee_insurances(employee_id);
@@ -1189,6 +1207,11 @@ ADDED_COLUMNS = {
     "users": ["email"],                                            # 2단계 인증 메일 받을 회사 메일
     "sessions": ["mail_code", "mail_exp", "mail_tries", "mail_sends"],  # 메일 인증번호(해시)·만료·시도
 }
+# 두 회사 구분 (app/company.py): '2' = 자회사, 비어 있으면 본사. 직원에 딸린 표는 직원을 따라가므로 칸이 없음
+for _t in ("employees", "doc_templates", "ga_assets", "ga_vehicles", "ga_docs", "ga_seal_logs", "ga_contracts",
+           "ga_company_items", "compliance_tasks", "ga_contract_drafts"):
+    ADDED_COLUMNS.setdefault(_t, []).append("company")
+
 
 
 def _add_columns(conn):

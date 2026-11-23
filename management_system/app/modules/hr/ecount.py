@@ -17,6 +17,7 @@ from xml.sax.saxutils import escape
 
 from app.common import today
 from app.db import audit, execute, get_settings, query, query_one, set_setting
+from app import company
 
 PAY_ITEMS_DEFAULT = ("기본급,시간외수당(월24시간),야간수당(월8시간),식대,연구보조비,보육수당,자가운전보조금(비과세),통신비지원,"
                      "문화생활관광비,정착수당,전담인력활동수당,교육훈련비,직무발명보상금,당직수당,연차수당,기타수당,"
@@ -158,7 +159,7 @@ def baseline_once():
 def pending(action: str | None = None) -> list[dict]:
     """이카운트에 아직 반영하지 않은 신규 입사자·퇴사자."""
     emps = query("SELECT id, emp_no, name, department, rank, employment_type, hire_date, resign_date, "
-                 "bank_name, bank_account FROM employees ORDER BY hire_date, emp_no")
+                 "bank_name, bank_account, company FROM employees WHERE 1=1" + company.sql("") + " ORDER BY hire_date, emp_no")
     done = {(r["employee_id"], r["action"]) for r in query("SELECT employee_id, action FROM ecount_sync")}
     rrn_ids = {r["employee_id"] for r in query("SELECT employee_id FROM employee_rrn")}
     pay = {r["employee_id"]: r for r in query("SELECT employee_id, insured_monthly, pay_items FROM employee_payroll")}
@@ -188,7 +189,7 @@ def pending(action: str | None = None) -> list[dict]:
 
 def history(limit: int = 100) -> list[dict]:
     return query("SELECT s.*, e.name, e.emp_no, e.department FROM ecount_sync s JOIN employees e ON e.id=s.employee_id "
-                 "WHERE s.method<>'기존' ORDER BY s.done_at DESC, s.id DESC LIMIT ?", (limit,))
+                 "WHERE s.method<>'기존'" + company.sql("e") + " ORDER BY s.done_at DESC, s.id DESC LIMIT ?", (limit,))
 
 
 def mark(items: list[tuple[int, str]], status: str, method: str, note: str = "") -> int:

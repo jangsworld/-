@@ -4,6 +4,7 @@ from datetime import date
 
 from app.common import to_date, today
 from app.db import audit, execute, get_settings, query, query_one
+from app import company
 from app.modules.mgmt import training
 from app.modules.mgmt.constants import COMPLIANCE_CYCLES
 
@@ -36,7 +37,7 @@ def occurrences(t: dict, year: int) -> list[dict]:
 
 
 def tasks(active_only: bool = False) -> list[dict]:
-    return query("SELECT * FROM compliance_tasks" + (" WHERE is_active=1" if active_only else "") +
+    return query("SELECT * FROM compliance_tasks WHERE 1=1" + company.sql("") + (" AND is_active=1" if active_only else "") +
                  " ORDER BY is_active DESC, COALESCE(month, 0), COALESCE(day, 0), id")
 
 
@@ -87,7 +88,7 @@ def calendar_year(year: int, sources=("의무", "교육", "회사관리", "계�
                            "status": _status(d, False, int(r.get("alert_days") or 60)), "detail": r.get("agency") or "",
                            "link": "/ga/company"})
     if "계약" in sources:
-        for r in query("SELECT * FROM ga_contracts WHERE status='유효' AND end_date LIKE ?", (f"{y}-%",)):
+        for r in query("SELECT * FROM ga_contracts WHERE status='유효' AND end_date LIKE ?" + company.sql(""), (f"{y}-%",)):
             d = to_date(r["end_date"])
             if d:
                 ev.append({"date": d, "title": f"계약 만료: {r['title']}", "category": r["category"], "source": "계약",
@@ -140,9 +141,11 @@ def save_task(f: dict) -> int:
     if tid:
         execute("UPDATE compliance_tasks SET title=?, category=?, cycle=?, month=?, day=?, due_date=?, basis=?, owner=?, note=?, "
                 "is_active=? WHERE id=?", (*vals, tid))
+        if f.get("company") in company.IDS:
+            execute("UPDATE compliance_tasks SET company=? WHERE id=?", (company.pick(f.get("company")), tid))
     else:
-        tid = execute("INSERT INTO compliance_tasks(title, category, cycle, month, day, due_date, basis, owner, note, is_active) "
-                      "VALUES (?,?,?,?,?,?,?,?,?,?)", vals)
+        tid = execute("INSERT INTO compliance_tasks(title, category, cycle, month, day, due_date, basis, owner, note, is_active, company) "
+                      "VALUES (?,?,?,?,?,?,?,?,?,?,?)", (*vals, company.pick(f.get("company"))))
     audit("mgmt", "법정의무 일정 저장", title, cyc)
     return tid
 

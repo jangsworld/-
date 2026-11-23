@@ -1,5 +1,6 @@
-{% from "ga/_macros.html" import field, modal %}
+{% from "ga/_macros.html" import field, modal, cofield %}
 {% call modal('vehicleModal', '차량', '/ga/vehicles/save') %}
+  {{ cofield() }}
   {{ field('plate_no', '차량번호', req=True, ph='12가 3456') }}{{ field('model', '차종', req=True, ph='쏘나타 2.0') }}
   {{ field('model_year', '연식', 'number') }}{{ field('fuel', '연료', opts=fuels) }}
   {{ field('ownership', '소유형태', opts=ownership, blank=False) }}{{ field('acquired_date', '취득(계약)일', 'date') }}

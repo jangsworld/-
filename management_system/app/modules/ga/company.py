@@ -7,6 +7,7 @@ from datetime import timedelta
 
 from app.common import add_years, days_until, to_date, today
 from app.db import audit, batch, execute, get_settings, query, query_one, set_setting
+from app import company as co_mod
 from app.modules.mgmt.constants import COMPANY_CATEGORIES, COMPANY_CYCLES, COMPANY_STATUSES
 
 
@@ -18,7 +19,7 @@ CYCLE_YEARS = {"매년": 1, "2년": 2, "3년": 3, "5년": 5}
 
 
 def items(category: str = "", status: str = "") -> list[dict]:
-    sql, p = "SELECT * FROM ga_company_items WHERE 1=1", []
+    sql, p = "SELECT * FROM ga_company_items WHERE 1=1" + co_mod.sql(""), []
     if category:
         sql += " AND category=?"
         p.append(category)
@@ -68,9 +69,12 @@ def save(f: dict, by: str = "") -> int:
     if iid:
         execute("UPDATE ga_company_items SET category=?, name=?, number=?, agency=?, start_date=?, expire_date=?, cycle=?, owner=?, "
                 "alert_days=?, status=?, note=?, emp_insurance=?, alert_email=? WHERE id=?", (*vals, iid))
+        if f.get("company") in co_mod.IDS:
+            execute("UPDATE ga_company_items SET company=? WHERE id=?", (co_mod.pick(f.get("company")), iid))
     else:
         iid = execute("INSERT INTO ga_company_items(category, name, number, agency, start_date, expire_date, cycle, owner, "
-                      "alert_days, status, note, emp_insurance, alert_email) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", vals)
+                      "alert_days, status, note, emp_insurance, alert_email, company) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (*vals, co_mod.pick(f.get("company"))))
     audit("ga", "회사 관리 만기 저장", name, f"{cat} {vals[5] or ''}")
     return iid
 

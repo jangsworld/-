@@ -5,22 +5,23 @@
 <div class="card mb-3"><div class="card-body">
   <form class="row g-2 align-items-end" method="post" action="/hr/certificates/new">
     <div class="col-md-4"><label class="form-label small">대상자</label><select class="form-select form-select-sm" name="employee_id" id="certEmp" required data-search>
-      {% for e in emps %}<option value="{{ e.id }}">{{ e.name }} · {{ e.department or '' }} ({{ e.status }})</option>{% endfor %}</select></div>
+      {% for e in emps %}<option value="{{ e.id }}">{{ e.name }} · {% if co.enabled() %}{{ co.label(e.company) }} · {% endif %}{{ e.department or '' }} ({{ e.status }})</option>{% endfor %}</select></div>
     <div class="col-md-3"><label class="form-label small">종류</label><select class="form-select form-select-sm" name="template_id">
-      {% for t in tpls %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></div>
+      {% for t in tpls %}<option value="{{ t.id }}">{{ t.name }}{% if co.enabled() and t.company %} ({{ co.short(t.company) }} 전용){% endif %}</option>{% endfor %}</select></div>
     <div class="col-md-3"><label class="form-label small">용도</label><input class="form-control form-control-sm" name="purpose" placeholder="금융기관 제출용" required></div>
     <div class="col-md-2"><button class="btn btn-sm btn-primary w-100"><i class="bi bi-patch-check"></i> 발급</button></div>
   </form>
   <div class="help mt-2">
+    {% if co.enabled() %}증명서의 회사명·대표자·도장·로고는 <b>대상자가 속한 회사</b> 것으로 자동으로 들어갑니다. 위의 회사 탭에서 회사를 고르면 그 회사 직원만 보입니다.<br>{% endif %}
     <b>① 발급</b>하면 증명서 화면이 열립니다 → <b>② 내용을 확인·수정</b>하고 → <b>③ [메일로 보내기]</b>(인사기록카드 메일 또는 직접 입력) 또는 <b>[임직원 폴더에 PDF 저장]</b>, [인쇄]를 고릅니다.<br>
     발급번호는 연도별로 자동으로 매겨지고(제YYYY-0001호), 한 번 쓴 번호는 다시 쓰지 않습니다. 잘못 나간 증명서는 지우지 않고 <b>발급취소</b>(사유 기록)로 처리해 대장에 남깁니다.
     {% if not mail_ready %}<span class="text-danger">메일 서버가 설정되지 않아 메일 발송은 꺼져 있습니다.</span>{% endif %}</div>
 </div></div>
 <div class="card">
   <div class="card-header"><form class="d-flex gap-2" method="get"><input class="form-control form-control-sm" style="max-width:240px" name="q" value="{{ q }}" placeholder="성명 검색"><button class="btn btn-sm btn-outline-secondary">조회</button></form></div>
-  <div class="table-responsive"><table class="table table-sm table-hover mb-0" data-excel><thead><tr><th>발급번호</th><th>종류</th><th>성명</th><th>부서</th><th>용도</th><th>발급일</th><th>메일</th><th>폴더</th><th>상태</th></tr></thead><tbody>
+  <div class="table-responsive"><table class="table table-sm table-hover mb-0" data-excel><thead><tr><th>발급번호</th>{% if co.enabled() %}<th>회사</th>{% endif %}<th>종류</th><th>성명</th><th>부서</th><th>용도</th><th>발급일</th><th>메일</th><th>폴더</th><th>상태</th></tr></thead><tbody>
   {% for d in docs %}<tr data-href="/hr/documents/{{ d.id }}" class="{{ 'text-muted' if d.status == '발급취소' }}">
-    <td class="{{ 'text-decoration-line-through' if d.status == '발급취소' }}">{{ d.doc_no }}</td><td>{{ d.category }}</td><td class="fw-semibold">{{ d.name }}</td><td>{{ d.department or '' }}</td>
+    <td class="{{ 'text-decoration-line-through' if d.status == '발급취소' }}">{{ d.doc_no }}</td>{% if co.enabled() %}<td><span class="co-badge co-{{ co.norm(d.company) }}">{{ co.label(d.company) }}</span></td>{% endif %}<td>{{ d.category }}</td><td class="fw-semibold">{{ d.name }}</td><td>{{ d.department or '' }}</td>
     <td>{{ d.purpose or '' }}</td><td>{{ d.signed_date or d.created_at[:10] }}</td>
     <td>{% if d.emailed_at %}<span class="text-success small"><i class="bi bi-envelope-check"></i> {{ d.emailed_at[5:10] }}</span>{% endif %}</td>
     <td>{% if d.pdf_saved_at %}<span class="text-success small"><i class="bi bi-folder-check"></i> {{ d.pdf_saved_at[5:10] }}</span>{% endif %}</td>

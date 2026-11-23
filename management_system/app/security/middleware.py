@@ -45,6 +45,7 @@ RULES = [
     # 경영관리: 교육 이수·법정의무 일정은 총무 담당 이상, 인건비·인사평가·인센티브는 관리자·인사담당만
     (r"^/mgmt/(training|compliance)", GA_STAFF, GA_STAFF),
     (r"^/mgmt", WRITERS, WRITERS),
+    (r"^/files", ALL, ALL),                 # 문서 보관함: 메뉴별 권한은 주소 안에서 다시 확인 (app/files.py)
     (r"^/$", ALL, ALL),
 ]
 
@@ -130,6 +131,8 @@ def body_limit(path: str) -> int:
     """경로별 요청 본문 한도(바이트)."""
     if path.startswith("/login"):
         return 64 * 1024                                   # 로그인·인증번호 요청은 몇 KB 면 충분
+    if path.startswith("/files/") and path.endswith("/upload"):
+        return 200 * 1024 * 1024                           # 붙임 서류 여러 개 (한 개 30MB 는 저장할 때 확인)
     photo_up = path.startswith(("/ga/assets/", "/vq/")) or (path.startswith("/ga/vehicles/") and path.endswith("/photo"))
     return (25 if photo_up else settings.max_upload_mb) * 1024 * 1024      # 자산·차량 사진은 서버에서 줄여 저장
 
@@ -224,6 +227,14 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         # 로그인 절차(2단계 인증·비밀번호 변경)를 모두 마친 사용자만 메뉴·이름을 화면에 보임
         request.state.full_auth = bool(user) and self._gate(user, sess, "/") is None
         actor = current_actor.set((user["id"], user["username"], ip) if user else (None, "anonymous", ip))
+        # 회사 탭(통합/본사/자회사): 주소의 co 값이 있으면 그것으로, 없으면 기억해 둔 쿠키로. 로그인한 화면에서만
+        from app import company
+        co_new = request.query_params.get("co")
+        co_new = co_new if co_new in ("all",) + company.IDS else None
+        co_val = co_new or request.cookies.get(company.COOKIE)
+        # 목록·현황 화면에서만: 주소에 번호가 들어간 화면(한 건을 여는 상세·수정·저장)은 회사 탭과 상관없이 그 자료를 그대로 다룸
+        co_on = (path == "/" or path.startswith(("/hr", "/ga", "/mgmt/training", "/mgmt/compliance")))             and not re.search(r"/\d+(/|$)", path)
+        co_tok = company.scope.set(co_val if (co_on and request.state.full_auth and co_val in company.IDS) else "all")
         try:
             # CSRF: 상태 변경 요청은 Origin 확인 + (로그인 후) 세션 토큰 확인
             if request.method not in SAFE_METHODS:
@@ -247,7 +258,11 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         finally:
             current_actor.reset(actor)
+            company.scope.reset(co_tok)
 
+        if co_new and request.state.full_auth and request.method in SAFE_METHODS:
+            response.set_cookie(company.COOKIE, co_new, max_age=60 * 60 * 24 * 180, httponly=True, samesite="lax",
+                                secure=settings.secure_cookie, path="/")
         self._headers(request, response, path)
         return response
 

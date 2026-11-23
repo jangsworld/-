@@ -18,6 +18,9 @@ from app.config import APP_DIR, SYSTEM_CODE, SYSTEM_NAME, settings
 from app.db import audit, init_db, get_settings, set_setting, DEFAULT_SETTINGS, DEPT_LEVELS, dept_tree, dept_text, dept_path, dept_scope
 from app.modules import MODULES
 from app import brand, mailer
+from app import company as company_mod
+from app import archive
+from app.files import router as files_router
 from app.modules.ga import cartax, company as company_alerts, contract_intake
 from app.modules.ga.constants import ASSET_BEHAVIORS
 from app.modules.hr import intake, repo as hr_repo
@@ -97,10 +100,12 @@ async def lifespan(_app):
     except Exception:   # 정리 작업 실패로 시스템이 안 뜨는 일은 없게
         log.exception("시작 시 자료 정리 실패")
     log.info("BMS started on port %s", settings.port)
-    intake.start_worker()
+    if settings.employee_drafts:
+        intake.start_worker()
     cartax.start_worker()
     contract_intake.start_worker()
     company_alerts.start_worker()          # 회사 관리 만기 알림 메일
+    archive.start_worker()                 # 차량 점검 사진을 보관함으로 (놓친 것 다시)
     from app.modules.hr import appoint
     appoint.start_worker()                 # 예정 인사발령: 발령일에 자동 적용
     yield
@@ -108,6 +113,7 @@ async def lifespan(_app):
     cartax.stop_worker()
     contract_intake.stop_worker()
     company_alerts.stop_worker()
+    archive.stop_worker()
     appoint.stop_worker()
 
 
@@ -128,6 +134,7 @@ app.include_router(health_router)
 app.include_router(leave_public_router)
 app.include_router(hr_router)
 app.include_router(sign_router)
+app.include_router(files_router)
 app.include_router(mgmt_router)
 app.include_router(company_router)        # /ga/company: 일반 총무 경로보다 먼저
 app.include_router(fleet_router)          # /ga/vehicles/labels 등: 일반 차량 경로보다 먼저
@@ -138,7 +145,11 @@ app.include_router(ga_public_router)
 templates.env.globals["MODULES"] = MODULES
 templates.env.globals["SYSTEM_CODE"] = SYSTEM_CODE
 templates.env.globals["company"] = lambda: get_settings().get("company_name", "")
-templates.env.globals["brand_css"] = brand.css      # 증명서 도장·로고 자리 (정해진 글자로만 만들어지는 CSS)
+templates.env.globals["co"] = company_mod          # 두 회사 구분: 탭·배지 (app/company.py)
+templates.env.globals["CO_TAB_PATHS"] = {it["url"] for m in MODULES if m["key"] in ("home", "hr", "ga") for it in m.get("menus", []) if it.get("url")} \
+    | {"/hr/insurances", "/hr/ecount"}
+templates.env.globals["att_counts"] = archive.counts   # 메뉴별 붙임 서류 수 {대상 번호: 개수}
+templates.env.globals["brand_css"] = brand.css     # 증명서 도장·로고 자리 (정해진 글자로만 만들어지는 CSS)
 templates.env.globals["ROLE_NAMES"] = auth.ROLES
 templates.env.globals["dept_text"] = dept_text     # 부서 선택 목록: 하위 부서 들여쓰기
 templates.env.globals["dept_path"] = dept_path
@@ -223,6 +234,10 @@ def settings_page(request: Request):
     return templates.TemplateResponse(request, "settings.html", {
         "s": get_settings(), "labels": SETTING_LABELS,
         "brand": {k: {"label": v, "has": bool(brand.get(k))} for k, v in brand.KINDS.items()},
+        "brand2": {k: {"label": v, "has": bool(brand.get(k, "2"))} for k, v in brand.KINDS.items()},
+        "co2": {**company_mod.info("2"), "company_short": get_settings().get("co2_company_short", ""),
+                "company_short_1": get_settings().get("company_short", "")},
+        "arch": archive.status(),
         "brand_msg": request.query_params.get("bmsg", ""), "brand_ok": request.query_params.get("bok") == "1",
         "active_menu": "settings", "msg": request.query_params.get("msg", ""),
         "cfg": {"포트": settings.port, "HTTPS": "사용" if settings.https else "미사용(내부 테스트용)",
@@ -325,9 +340,9 @@ def settings_fund_test():
 @app.post("/settings")
 async def settings_save(request: Request):
     form = await request.form()
-    for k in DEFAULT_SETTINGS:
+    for k in list(DEFAULT_SETTINGS) + ["company_short"] + ["co2_" + x for x in company_mod.INFO_KEYS] + ["co2_company_short"]:
         if k in form:
-            set_setting(k, str(form[k]).strip())
+            set_setting(k, str(form[k]).strip()[:200])
     audit("system", "설정 변경", "회사정보", "")
     return RedirectResponse("/settings?msg=" + quote("설정이 저장되었습니다"), status_code=303)
 
@@ -338,14 +353,15 @@ async def settings_brand(kind: str, request: Request):
     if kind not in brand.KINDS:
         raise StarletteHTTPException(404)
     form = await request.form()
-    label = brand.KINDS[kind]
+    co = company_mod.norm(form.get("c"))
+    label = brand.KINDS[kind] + (" (" + company_mod.short("2") + ")" if co == "2" else "")
     if form.get("remove"):
-        brand.remove(kind)
+        brand.remove(kind, co)
         err, msg = "", f"{label} 그림을 지웠습니다"
     else:
         f = form.get("file")
         raw = await f.read(brand.MAX_BYTES + 1) if hasattr(f, "read") else b""
-        err = await run_in_threadpool(brand.save, kind, raw)
+        err = await run_in_threadpool(brand.save, kind, raw, co)
         msg = f"{label}: {err}" if err else f"{label} 그림을 저장했습니다. 아래 미리보기를 확인하세요. 새로 만드는 증명서 PDF부터 들어갑니다"
     # 결과를 잠깐 뜨는 알림이 아니라 이 칸 안에 계속 보이게
     return RedirectResponse("/settings?" + urlencode({"bmsg": msg, "bok": "" if err else "1"}) + "#brand", status_code=303)

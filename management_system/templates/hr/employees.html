@@ -2,6 +2,7 @@
 {% block title %}임직원 현황{% endblock %}
 {% block page_title %}<i class="bi bi-person-vcard me-2"></i>임직원 현황{% endblock %}
 {% block content %}
+{% set emp_nav = 'list' %}{% include "hr/_emp_nav.html" %}
 <div class="card mb-3">
   <div class="card-body">
     <form class="row g-2 align-items-end" method="get">
@@ -28,7 +29,7 @@
   </div>
 </div>
 
-{% if perms.write and (drafts or intake.enabled) %}
+{% if perms.write and intake.enabled %}
 <div class="card mb-3 {{ 'border-warning' if drafts }}" id="drafts">
   <div class="card-header d-flex align-items-center gap-2">
     <span><i class="bi bi-folder-symlink me-1"></i>입사서류 등록 초안</span>
@@ -59,11 +60,15 @@
   <div class="table-responsive">
     <table class="table table-hover table-sm align-middle mb-0" data-excel data-excel-unit="명">
       <thead><tr>
+        {% if co.enabled() and perms.write %}<th data-nofilter style="width:28px"><input type="checkbox" class="form-check-input" data-check-group="emp" title="모두 고르기"></th>{% endif %}
+        {% if co.enabled() %}<th>회사</th>{% endif %}
         <th>사번</th><th>성명</th><th>부서</th><th>직급</th><th>직책</th><th>고용형태</th><th>입사일</th><th>근속</th>
         {% if perms.salary %}<th class="num">현재연봉</th><th class="num">월 급여</th><th>계약서</th>{% endif %}<th>상태</th>{% if perms.pii %}<th>연락처</th>{% endif %}</tr></thead>
       <tbody>
       {% for e in rows %}
         <tr data-href="/hr/employees/{{ e.id }}">
+          {% if co.enabled() and perms.write %}<td data-nolink><input type="checkbox" class="form-check-input" name="ids" value="{{ e.id }}" form="coMove" data-group="emp"></td>{% endif %}
+          {% if co.enabled() %}<td><span class="co-badge co-{{ co.norm(e.company) }}">{{ co.label(e.company) }}</span></td>{% endif %}
           <td class="text-muted">{{ e.emp_no }}</td>
           <td class="fw-semibold" data-v="{{ e.name }}">{{ e.name }}{% if e.gender %} <span class="text-muted small">({{ e.gender }})</span>{% endif %}</td>
           <td>{{ e.department or '' }}</td><td>{{ e.rank or '' }}</td><td>{{ e.title or '' }}</td>
@@ -75,11 +80,19 @@
           {% if perms.pii %}<td class="small text-muted">{{ e.phone or '' }}</td>{% endif %}
         </tr>
       {% else %}
-        <tr><td colspan="13" class="text-center text-muted p-4">조회된 임직원이 없습니다</td></tr>
+        <tr><td colspan="15" class="text-center text-muted p-4">조회된 임직원이 없습니다</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
+  {% if co.enabled() and perms.write %}
+  <form id="coMove" method="post" action="/hr/employees/company" class="card-footer d-flex flex-wrap align-items-center gap-2 no-print"
+        data-confirm="고른 직원의 회사를 바꿉니다. 계약서·증명서에 들어가는 회사명·도장도 바뀐 회사 것으로 나옵니다. 계속할까요?">
+    <span class="small text-muted">왼쪽에서 고른 직원을</span>
+    <select class="form-select form-select-sm w-auto" name="company">{% for c in co.companies() %}<option value="{{ c.id }}">{{ c.short }}</option>{% endfor %}</select>
+    <button class="btn btn-sm btn-outline-primary">(으)로 옮기기</button>
+    <span class="help">자회사 직원을 처음 나눌 때 쓰세요. 한 명씩은 인사기록카드 수정에서도 바꿀 수 있습니다.</span>
+  </form>{% endif %}
 </div>
 
 <div class="modal fade" id="importModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="/hr/employees/import" enctype="multipart/form-data">

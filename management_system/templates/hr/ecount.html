@@ -1,12 +1,13 @@
 {% extends "base.html" %}
-{% block title %}이카운트 연동{% endblock %}
-{% block page_title %}<i class="bi bi-arrow-left-right me-2"></i>이카운트 연동 <span class="text-muted small">BMS 인사등록 → 이카운트 사원등록</span>{% endblock %}
+{% block title %}임직원 현황 - 이카운트 연동{% endblock %}
+{% block page_title %}<i class="bi bi-person-vcard me-2"></i>임직원 현황 <span class="text-muted small">이카운트 연동 · BMS 인사등록 → 이카운트 사원등록</span>{% endblock %}
 {% block content %}
-<ul class="nav nav-tabs mb-3">
+{% set emp_nav = 'ecount' %}{% set ecount_wait = new_rows|length + out_rows|length %}{% include "hr/_emp_nav.html" %}
+<ul class="nav nav-pills nav-sm mb-3">
   <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'pending' }}" href="?tab=pending">반영 대기 <span class="badge text-bg-{{ 'danger' if new_rows or out_rows else 'light border' }}">{{ new_rows|length + out_rows|length }}</span></a></li>
   <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'history' }}" href="?tab=history">반영 기록</a></li>
   <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'template' }}" href="?tab=template">양식·설정</a></li>
-  <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'robot' }}" href="?tab=robot">로봇 <span class="badge text-bg-{{ 'success' if robot.online else 'light border' }}">{{ '켜짐' if robot.online else '꺼짐' }}</span></a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'robot' }}" href="?tab=robot">로봇 {% if co.enabled() %}{% for c in co.companies() %}<span class="badge text-bg-{{ 'success' if robots[c.id].online else 'light border' }}">{{ c.short }} {{ '켜짐' if robots[c.id].online else '꺼짐' }}</span> {% endfor %}{% else %}<span class="badge text-bg-{{ 'success' if robot.online else 'light border' }}">{{ '켜짐' if robot.online else '꺼짐' }}</span>{% endif %}</a></li>
   <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'helper' }}" href="?tab=helper">입력 도우미</a></li>
 </ul>
 
@@ -22,10 +23,11 @@
     <div class="card-header fw-semibold">{{ title }} <span class="badge text-bg-light border">{{ rows|length }}</span></div>
     <div class="table-responsive"><table class="table table-sm align-middle mb-0">
       <thead><tr><th style="width:32px"><input type="checkbox" class="form-check-input" data-check-group="{{ act }}" {{ 'checked' if rows }}></th>
-        <th>성명</th><th>사번</th><th>부서</th><th>직급</th><th>고용형태</th><th>{{ '입사일' if act == '신규' else '퇴사일' }}</th><th>확인할 점</th><th>로봇</th></tr></thead>
+        {% if co.enabled() %}<th>회사</th>{% endif %}<th>성명</th><th>사번</th><th>부서</th><th>직급</th><th>고용형태</th><th>{{ '입사일' if act == '신규' else '퇴사일' }}</th><th>확인할 점</th><th>로봇</th></tr></thead>
       <tbody>
       {% for r in rows %}
       <tr><td><input type="checkbox" class="form-check-input" name="keys" value="{{ r.id }}:{{ act }}" data-group="{{ act }}" checked></td>
+        {% if co.enabled() %}<td><span class="co-badge co-{{ co.norm(r.company) }}">{{ co.label(r.company) }}</span></td>{% endif %}
         <td class="fw-semibold"><a href="/hr/employees/{{ r.id }}?tab=payroll">{{ r.name }}</a></td><td>{{ r.emp_no }}</td>
         <td>{{ r.department or '' }}</td><td>{{ r.rank or '' }}</td><td>{{ r.employment_type or '' }}</td>
         <td>{{ r.hire_date if act == '신규' else r.resign_date }}</td>
@@ -37,7 +39,7 @@
             {% if j.detail.mismatch %}<div class="text-danger">다른 칸: {{ j.detail.mismatch|join(', ') }}</div>{% endif %}
             {% if j.detail.skipped %}<div>못 넣은 칸: {% for a, b in j.detail.skipped %}{{ a }}({{ b }}){{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
           {% elif j.status == '취소' %}<span class="text-muted">취소함</span>{% else %}<span class="text-muted">-</span>{% endif %}</td></tr>
-      {% else %}<tr><td colspan="9" class="text-center text-muted p-3">대기 중인 {{ '신규 입사자' if act == '신규' else '퇴사자' }}가 없습니다</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="10" class="text-center text-muted p-3">대기 중인 {{ '신규 입사자' if act == '신규' else '퇴사자' }}가 없습니다</td></tr>{% endfor %}
       </tbody></table></div>
   </div>
   {% endfor %}
@@ -45,9 +47,9 @@
   <div class="card"><div class="card-body d-flex flex-wrap align-items-center gap-2">
     <div class="form-check me-2"><input class="form-check-input" type="checkbox" name="include_rrn" value="1" id="incRrn" checked>
       <label class="form-check-label small" for="incRrn">엑셀에 주민등록번호 포함 <span class="text-muted">(연말정산에 필요 · 내려받은 기록이 남습니다)</span></label></div>
-    <button class="btn btn-sm btn-primary" formaction="/hr/ecount/robot/request" {{ 'disabled' if not robot.has_key }}
+    <button class="btn btn-sm btn-primary" formaction="/hr/ecount/robot/request" {{ 'disabled' if not (robots['1'].has_key or robots['2'].has_key) }}
             data-confirm="고른 직원을 로봇이 이카운트 사원등록에 넣고 저장합니다. 저장 뒤 다시 열어 값이 맞는지 대조한 결과가 여기에 표시됩니다. 진행할까요?"><i class="bi bi-robot"></i> 로봇으로 이카운트에 넣기</button>
-    {% if not robot.has_key %}<a class="small" href="?tab=robot">로봇 연결하기</a>{% elif not robot.online %}<span class="small text-warning">로봇 꺼짐{{ (' · 마지막 ' ~ robot.seen[5:16]) if robot.seen }}</span>{% endif %}
+    {% if not (robots['1'].has_key or robots['2'].has_key) %}<a class="small" href="?tab=robot">로봇 연결하기</a>{% elif not co.enabled() and not robot.online %}<span class="small text-warning">로봇 꺼짐{{ (' · 마지막 ' ~ robot.seen[5:16]) if robot.seen }}</span>{% endif %}
     <span class="vr mx-1"></span>
     <button class="btn btn-sm btn-success" formaction="/hr/ecount/export"><i class="bi bi-file-earmark-excel"></i> 고른 직원 엑셀 받기</button>
     <span class="vr mx-1"></span>
@@ -62,9 +64,16 @@
 </form>
 
 {% elif tab == 'robot' %}
+{% if co.enabled() %}
+<div class="alert alert-light border small d-flex flex-wrap align-items-center gap-2 mb-3">
+  <span>로봇은 회사마다 따로 연결합니다 (이카운트 회사코드·계정이 다르기 때문). 지금 보는 설정:</span>
+  {% for c in co.companies() %}<a class="btn btn-sm {{ 'btn-primary' if rc == c.id else 'btn-outline-secondary' }}" href="?tab=robot&co={{ c.id }}">{{ c.short }} 로봇
+    <span class="badge text-bg-{{ 'success' if robots[c.id].online else 'light border' }}">{{ '켜짐' if robots[c.id].online else ('열쇠 있음' if robots[c.id].has_key else '연결 전') }}</span></a>{% endfor %}
+</div>
+{% endif %}
 <div class="row g-3">
   <div class="col-lg-5">
-    <div class="card mb-3"><div class="card-header fw-semibold">로봇 연결</div><div class="card-body small">
+    <div class="card mb-3"><div class="card-header fw-semibold">로봇 연결{% if co.enabled() %} <span class="co-badge co-{{ rc }}">{{ co.short(rc) }}</span>{% endif %}</div><div class="card-body small">
       <div class="mb-2">상태: {% if robot.online %}<span class="badge text-bg-success">켜짐</span>{% else %}<span class="badge text-bg-secondary">꺼짐</span>{% endif %}
         {% if robot.seen %}<span class="text-muted">마지막으로 다녀간 때 {{ robot.seen }}</span>{% else %}<span class="text-muted">아직 한 번도 연결되지 않았습니다</span>{% endif %}</div>
       <ul class="ps-3 mb-2">
@@ -83,6 +92,7 @@
     </div></div>
   </div>
   <div class="col-lg-7"><form class="card" method="post" action="/hr/ecount/robot/settings">
+    <input type="hidden" name="rc" value="{{ rc }}">
     <div class="card-header fw-semibold">부서 짝 맞추기 <span class="help ms-1">BMS 부서 → 이카운트 부서. 비워 두면 상위 부서의 짝을 따르고, 그것도 없으면 부서 칸을 비워 둔 채 알려 줍니다</span></div>
     {% if not ec_depts %}<div class="card-body small text-muted">이카운트 부서 목록이 아직 없습니다. 로봇이 처음 연결되면 자동으로 읽어 옵니다.</div>{% endif %}
     <div class="table-responsive" style="max-height:420px"><table class="table table-sm align-middle mb-0"><thead class="sticky-top"><tr><th>BMS 부서</th><th>이카운트 부서</th></tr></thead><tbody>

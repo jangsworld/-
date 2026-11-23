@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 from app.common import templates, today
 from app.db import audit, dept_tree, get_settings, query_one, set_setting
+from app import company
 from app.modules.hr import ecount, ecount_robot
 
 router = APIRouter()
@@ -49,7 +50,7 @@ def ecount_home(request: Request, tab: str = "pending"):
     t = ecount.get_template()
     s = get_settings()
     return templates.TemplateResponse(request, "hr/ecount.html", {
-        "active_menu": "hr.ecount", "msg": request.query_params.get("msg", ""), "tab": tab,
+        "active_menu": "hr.employees", "msg": request.query_params.get("msg", ""), "tab": tab,
         "new_rows": [r for r in rows if r["action"] == "신규"], "out_rows": [r for r in rows if r["action"] == "퇴사"],
         "history": ecount.history() if tab == "history" else [],
         "tpl": t, "targets": ecount.all_targets(), "pay_items": ",".join(ecount.pay_items()),
@@ -58,10 +59,17 @@ def ecount_home(request: Request, tab: str = "pending"):
     })
 
 
+def _rc() -> str:
+    """로봇 탭이 다루는 회사: 위의 회사 탭이 자회사면 자회사, 아니면 본사."""
+    return "2" if company.cur() == "2" else "1"
+
+
 def _robot_ctx(new_key: str = "") -> dict:
-    return {"jobs": ecount_robot.latest_jobs(), "robot": ecount_robot.status(), "robot_new_key": new_key,
-            "ec_depts": ecount_robot.ecount_depts(), "dept_map": ecount_robot.dept_map(), "bms_depts": dept_tree(),
-            "pay_std": ecount_robot.pay_std(), "ok_confirms": ", ".join(ecount_robot.ok_confirms())}
+    rc = _rc()
+    return {"jobs": ecount_robot.latest_jobs(), "robot": ecount_robot.status(rc), "robot_new_key": new_key, "rc": rc,
+            "robots": {c: ecount_robot.status(c) for c in company.IDS},
+            "ec_depts": ecount_robot.ecount_depts(rc), "dept_map": ecount_robot.dept_map(rc), "bms_depts": dept_tree(),
+            "pay_std": ecount_robot.pay_std(rc), "ok_confirms": ", ".join(ecount_robot.ok_confirms(rc))}
 
 
 def _who(request: Request) -> str:
@@ -80,7 +88,8 @@ async def robot_request(request: Request):
         n = ecount_robot.request(keys, _who(request))
     except ecount_robot.RobotError as ex:
         return _redirect("/hr/ecount?tab=robot", str(ex))
-    tail = "" if ecount_robot.status()["online"] else " 로봇이 꺼져 있는 것 같습니다. 관리 PC를 확인하세요."
+    on = all(ecount_robot.status(c)["online"] for c in {company.of_employee(e) for e, _a in keys})
+    tail = "" if on else " 로봇이 꺼져 있는 것 같습니다. 관리 PC를 확인하세요."
     return _redirect("/hr/ecount", (f"{n}명을 로봇에 요청했습니다. 1~3분 뒤 결과가 표시됩니다." if n
                                     else "이미 요청했거나 대기 중이 아닌 직원입니다.") + tail)
 
@@ -95,11 +104,11 @@ def robot_cancel(request: Request, job_id: int):
 def robot_key(request: Request):
     if (request.state.user or {}).get("role") != "admin":
         return _redirect("/hr/ecount?tab=robot", "로봇 열쇠는 관리자만 만들 수 있습니다")
-    key = ecount_robot.new_key()
+    key = ecount_robot.new_key(_rc())
     rows = ecount.pending()
     s = get_settings()
     return templates.TemplateResponse(request, "hr/ecount.html", {
-        "active_menu": "hr.ecount", "msg": "", "tab": "robot",
+        "active_menu": "hr.employees", "msg": "", "tab": "robot",
         "new_rows": [r for r in rows if r["action"] == "신규"], "out_rows": [r for r in rows if r["action"] == "퇴사"],
         "history": [], "tpl": ecount.get_template(), "targets": ecount.all_targets(), "pay_items": ",".join(ecount.pay_items()),
         "date_format": s.get("ecount_date_format") or "YYYY-MM-DD", "date_formats": DATE_FORMATS, **_robot_ctx(key)})
@@ -108,25 +117,28 @@ def robot_key(request: Request):
 @router.post("/hr/ecount/robot/settings")
 async def robot_settings(request: Request):
     f = await request.form()
-    ecount_robot.save_dept_map({k[5:]: str(v).strip() for k, v in f.items() if k.startswith("dept:")})
+    rc = company.norm(f.get("rc")) if company.enabled() else "1"      # 화면이 보여 준 회사의 설정을 저장
+    ecount_robot.save_dept_map({k[5:]: str(v).strip() for k, v in f.items() if k.startswith("dept:")}, rc)
     ps = str(f.get("pay_std") or "").strip()
     if ps and len(ps) <= 20:
-        set_setting("ecount_pay_std", ps)
-    set_setting("ecount_ok_confirms", str(f.get("ok_confirms") or "").strip()[:300])
+        set_setting(company.key("ecount_pay_std", rc), ps)
+    set_setting(company.key("ecount_ok_confirms", rc), str(f.get("ok_confirms") or "").strip()[:300])
     return _redirect("/hr/ecount?tab=robot", "로봇 설정을 저장했습니다")
 
 
 # ── 로봇: 프로그램이 부르는 통로 (로그인 없이 열쇠로만) ────────────────────
-def _robot_guard(request: Request) -> JSONResponse | None:
+def _robot_guard(request: Request) -> JSONResponse | str:
+    """막을 때는 응답, 통과면 그 열쇠의 회사('1'/'2')."""
     from app.security.middleware import _proxied, is_https
     peer = request.client.host if request.client else ""
     local = peer in ("127.0.0.1", "::1", "testclient") and not _proxied(request)       # 개발·시험용 직접 접속
     if not (is_https(request) or local):
         return JSONResponse({"ok": False, "message": "HTTPS 로만 쓸 수 있습니다"}, status_code=403)
-    if not ecount_robot.check_key(request.headers.get("x-robot-key")):
+    co = ecount_robot.key_company(request.headers.get("x-robot-key"))
+    if not co:
         audit("security", "이카운트 로봇 열쇠 불일치", getattr(request.state, "ip", ""), "")
         return JSONResponse({"ok": False, "message": "열쇠가 맞지 않습니다"}, status_code=403)
-    return None
+    return co
 
 
 async def _robot_body(request: Request) -> dict:
@@ -139,32 +151,32 @@ async def _robot_body(request: Request) -> dict:
 
 @router.post("/robot/ecount/claim")
 async def robot_claim(request: Request):
-    bad = _robot_guard(request)
-    if bad:
-        return bad
-    return JSONResponse({"ok": True, "job": ecount_robot.claim()}, headers={"Cache-Control": "no-store"})
+    co = _robot_guard(request)
+    if not isinstance(co, str):
+        return co
+    return JSONResponse({"ok": True, "job": ecount_robot.claim(co)}, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/robot/ecount/finish")
 async def robot_finish(request: Request):
-    bad = _robot_guard(request)
-    if bad:
-        return bad
+    co = _robot_guard(request)
+    if not isinstance(co, str):
+        return co
     b = await _robot_body(request)
     jid = b.get("job_id")
     done = ecount_robot.finish(int(jid) if str(jid).isdigit() else 0, bool(b.get("ok")), str(b.get("message") or ""),
-                               b.get("detail") if isinstance(b.get("detail"), dict) else {})
+                               b.get("detail") if isinstance(b.get("detail"), dict) else {}, co)
     return JSONResponse({"ok": done})
 
 
 @router.post("/robot/ecount/depts")
 async def robot_depts(request: Request):
-    bad = _robot_guard(request)
-    if bad:
-        return bad
+    co = _robot_guard(request)
+    if not isinstance(co, str):
+        return co
     b = await _robot_body(request)
-    ecount_robot.touch()
-    return JSONResponse({"ok": True, "saved": ecount_robot.save_ecount_depts(b.get("depts"))})
+    ecount_robot.touch(co)
+    return JSONResponse({"ok": True, "saved": ecount_robot.save_ecount_depts(b.get("depts"), co)})
 
 
 @router.post("/hr/ecount/export")

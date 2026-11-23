@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response, Streamin
 
 from app.common import templates, to_date, today
 from app.db import audit, get_codes, query
+from app import company
 from app.modules.hr import appoint
 from app.storage import StorageError, render_pdf
 
@@ -46,8 +47,8 @@ def page(request: Request):
         "types": sorted({r["appt_type"] for r in query("SELECT DISTINCT appt_type FROM appointments")}),
         "depts": get_codes("DEPT"), "today_iso": t,
         "planned": sum(1 for r in rows if r["planned"]),
-        "emps": [e for e in query("SELECT id, name, emp_no, department, rank, title, work_location, resign_date FROM employees "
-                                  "ORDER BY department, name") if not e.get("resign_date") or e["resign_date"] >= t],
+        "emps": [e for e in query("SELECT id, name, emp_no, department, rank, title, work_location, resign_date FROM employees WHERE 1=1" + company.sql("") +
+                                  " ORDER BY department, name") if not e.get("resign_date") or e["resign_date"] >= t],
         "query": urlencode({k: v for k, v in f.items() if v}),
         "active_menu": "hr.appointments", "msg": request.query_params.get("msg", ""),
     })

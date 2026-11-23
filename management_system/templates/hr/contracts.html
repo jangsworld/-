@@ -53,7 +53,7 @@
     {% for d in docs %}
       <tr data-href="/hr/documents/{{ d.id }}">
         <td><span class="badge text-bg-light border">{{ d.category }}</span></td>
-        <td class="fw-semibold">{{ d.name }}{% if d.resign_date %} <span class="text-muted small">(퇴사)</span>{% endif %}</td>
+        <td class="fw-semibold">{{ d.name }}{% if co.enabled() %} <span class="co-badge co-{{ co.norm(d.company) }}">{{ co.label(d.company) }}</span>{% endif %}{% if d.resign_date %} <span class="text-muted small">(퇴사)</span>{% endif %}</td>
         <td>{{ d.department or '' }}</td><td class="small">{{ d.employment_type }}</td><td>{{ d.title }}</td>
         <td class="small">{{ d.start_date or '' }} ~ {{ d.end_date or '정함없음' }}</td>
         <td>{% if d.dday is not none and d.status == '체결완료' %}

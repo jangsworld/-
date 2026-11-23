@@ -21,23 +21,53 @@
     </form>
   </div>
 
+  <div class="col-lg-6" id="co2">
+    <form class="card h-100" method="post" action="/settings">
+      <div class="card-header">자회사 정보 <span class="help">이름을 넣으면 인사·총무 화면에 회사 탭(통합 / 본사 / 자회사)이 생깁니다</span></div>
+      <div class="card-body row g-2">
+        <div class="col-md-6"><label class="form-label small">자회사 회사명</label>
+          <input class="form-control form-control-sm" name="co2_company_name" value="{{ co2.company_name }}" placeholder="비워 두면 한 회사로만 씁니다"></div>
+        <div class="col-md-6"><label class="form-label small">자회사 대표자</label>
+          <input class="form-control form-control-sm" name="co2_ceo_name" value="{{ co2.ceo_name }}"></div>
+        <div class="col-12"><label class="form-label small">자회사 주소</label>
+          <input class="form-control form-control-sm" name="co2_company_address" value="{{ co2.company_address }}"></div>
+        <div class="col-md-6"><label class="form-label small">자회사 사업자등록번호</label>
+          <input class="form-control form-control-sm" name="co2_business_no" value="{{ co2.business_no }}"></div>
+        <div class="col-md-6"><label class="form-label small">자회사 대표 전화</label>
+          <input class="form-control form-control-sm" name="co2_company_phone" value="{{ co2.company_phone }}"></div>
+        <div class="col-md-6"><label class="form-label small">탭에 보일 짧은 이름 (본사)</label>
+          <input class="form-control form-control-sm" name="company_short" value="{{ co2.company_short_1 }}" maxlength="12" placeholder="{{ co.short('1') }}"></div>
+        <div class="col-md-6"><label class="form-label small">탭에 보일 짧은 이름 (자회사)</label>
+          <input class="form-control form-control-sm" name="co2_company_short" value="{{ co2.company_short }}" maxlength="12" placeholder="{{ co.short('2') if co.enabled() else '' }}"></div>
+        <div class="col-12 help">자회사 직원의 근로계약서·증명서에는 여기 적은 회사명·대표자·주소와 아래의 자회사 도장·로고가 들어갑니다.
+          임금지급일·최저임금 같은 기준값은 두 회사가 같이 씁니다.</div>
+      </div>
+      <div class="card-footer text-end"><button class="btn btn-sm btn-primary"><i class="bi bi-save"></i> 저장</button></div>
+    </form>
+  </div>
+
   <div class="col-12" id="brand">
     <div class="card"><div class="card-header">증명서 도장 · 로고 <span class="help">재직증명서·경력증명서의 대표이사 이름 옆(도장)과 왼쪽 위(로고)에 들어갑니다</span></div>
       <div class="card-body row g-3">
         {% if brand_msg %}<div class="col-12"><div class="alert {{ 'alert-success' if brand_ok else 'alert-danger' }} py-2 mb-0" role="alert">
           <i class="bi {{ 'bi-check-circle' if brand_ok else 'bi-exclamation-triangle' }}"></i> {{ brand_msg }}</div></div>{% endif %}
-        {% for k, b in brand.items() %}
+        {% for cid, bset in ([('1', brand), ('2', brand2)] if co.enabled() else [('1', brand)]) %}
+        {% if co.enabled() %}<div class="col-12 fw-semibold"><span class="co-badge co-{{ cid }}">{{ co.short(cid) }}</span></div>{% endif %}
+        {% for k, b in bset.items() %}
         <div class="col-md-6"><div class="border rounded p-2 h-100">
           <div class="fw-semibold small mb-2">{{ b.label }}
             {% if b.has %}<span class="badge text-bg-success">올림</span>{% else %}<span class="badge text-bg-light border">아직 없음</span>{% endif %}</div>
-          {% if b.has %}<div class="mb-2 p-2 bg-light rounded text-center"><img src="/hr/api/doc-asset/{{ k }}" alt="{{ b.label }}" style="max-height:90px;max-width:100%"></div>{% endif %}
+          {% if b.has %}<div class="mb-2 p-2 bg-light rounded text-center"><img src="/hr/api/doc-asset/{{ k }}{{ '?c=2' if cid == '2' }}" alt="{{ b.label }}" style="max-height:90px;max-width:100%"></div>{% endif %}
           <form method="post" action="/settings/brand/{{ k }}" enctype="multipart/form-data" class="d-flex gap-2">
+            <input type="hidden" name="c" value="{{ cid }}">
             <input class="form-control form-control-sm" type="file" name="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/gif" required>
             <button class="btn btn-sm btn-primary text-nowrap"><i class="bi bi-save"></i> 올려서 저장</button></form>
           <div class="help mt-1">① [파일 선택]으로 그림을 고르고 ② [올려서 저장]을 누르면 바로 저장됩니다. 저장되면 이 칸에 미리보기가 나옵니다.</div>
           {% if b.has %}<form method="post" action="/settings/brand/{{ k }}" class="mt-1" data-confirm="{{ b.label }} 그림을 지울까요?">
+            <input type="hidden" name="c" value="{{ cid }}">
             <button class="btn btn-sm btn-link text-danger px-0" name="remove" value="1">그림 지우기</button></form>{% endif %}
         </div></div>
+        {% endfor %}
         {% endfor %}
         <div class="col-12 help">PNG·JPG 등 그림 파일, 4MB 이하(큰 그림은 자동으로 줄여 저장). 도장은 흰 종이에 찍어 스캔한 그림도 됩니다. 흰 바탕은 자동으로 투명하게 바꿉니다. 그림은 서버 DB에 암호화해 보관하고,
           인사 담당 이상만 볼 수 있습니다. 올린 뒤 새로 만드는 PDF부터 들어가며, 이미 폴더에 저장한 PDF는 바뀌지 않습니다.
@@ -104,6 +134,18 @@
       </div>
     </form>
     <form id="mailTest" method="post" action="/settings/mail/test"></form>
+  </div>
+
+  <div class="col-12" id="archive">
+    <div class="card"><div class="card-header">문서 보관함 (NAS) <span class="help">각 메뉴에서 붙인 서류·사진이 메뉴별 폴더에 자동으로 저장되는 곳</span></div>
+      <div class="card-body small">
+        <div>보관함 위치: <code>{{ arch.root }}</code>
+          {% if arch.ok %}<span class="badge text-bg-success">쓸 수 있음</span>{% else %}<span class="badge text-bg-danger">닿지 않음</span>{% endif %}
+          {% if not arch.nas %}<span class="badge text-bg-warning">NAS 미설정 · 서버 안에 임시 보관 중</span>{% endif %}</div>
+        <div class="mt-1">지금까지 붙인 서류 <b>{{ arch.count }}개</b> · {{ arch.mb }}MB</div>
+        <div class="help mt-2">폴더 구조: <b>회사 \ 모듈(인사관리·총무관리) \ 메뉴 \ 대상(직원·차량번호·계약명 등) \ 날짜_파일이름</b>.
+          위치는 서버 설정 파일(config/bms.toml 의 archive_root)에서 정합니다. NAS 폴더에서 파일을 직접 옮기거나 고치면 BMS에서 열 때 "바뀌었다"고 알려 줍니다(올릴 때의 지문과 견줍니다).</div>
+      </div></div>
   </div>
 
   <div class="col-12">

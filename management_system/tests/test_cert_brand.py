@@ -42,7 +42,7 @@ def clients():
 
 @pytest.fixture
 def root(monkeypatch, tmp_path):
-    monkeypatch.setattr(storage, "render_pdf", lambda content, title: b"%PDF-1.7 " + content.encode()[:60])
+    monkeypatch.setattr(storage, "render_pdf", lambda content, title, co="1": b"%PDF-1.7 " + content.encode()[:60])
     monkeypatch.setattr(settings, "employee_root", str(tmp_path))
     return tmp_path
 

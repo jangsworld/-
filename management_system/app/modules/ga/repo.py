@@ -3,6 +3,7 @@ import re
 
 from app.common import today, to_date
 from app.db import query, query_one, execute, audit, get_behaviors
+from app import company as company_mod
 from app.security.crypto import enc
 from app.modules.ga.constants import ASSET_BEHAVIORS, ASSET_CATEGORIES, DEFAULT_EVENT_RULES, ODOMETER_SUSPECT_KM
 
@@ -10,11 +11,11 @@ DRIVER_TAG = re.compile(r"\s*\[카택스 운전자: (.+?)\]")   # 임직원과 �
 
 # 테이블별 저장 가능 필드 / 정수 필드 / 암호화 필드
 TABLES = {
-    "ga_assets": (["asset_no", "category", "name", "model", "serial_no", "vendor", "acquired_date", "cost",
+    "ga_assets": (["company", "asset_no", "category", "name", "model", "serial_no", "vendor", "acquired_date", "cost",
                    "useful_years", "location", "status", "holder_id", "warranty_end", "disposed_date", "memo", "cost_vat", "photo"],
                   {"cost", "useful_years", "holder_id"}, set()),
     "ga_asset_history": (["event_date", "event_type", "holder_id", "cost", "cost_vat", "note"], {"holder_id", "cost"}, set()),
-    "ga_vehicles": (["plate_no", "model", "model_year", "fuel", "ownership", "acquired_date", "lease_end",
+    "ga_vehicles": (["company", "plate_no", "model", "model_year", "fuel", "ownership", "acquired_date", "lease_end",
                      "monthly_cost", "insurer", "insurance_end", "inspection_due", "manager_id", "status",
                      "odometer_start", "memo"],
                     {"model_year", "monthly_cost", "manager_id", "odometer_start"}, set()),
@@ -23,11 +24,11 @@ TABLES = {
                         {"vehicle_id", "driver_id", "km_start", "km_end", "fuel_cost", "toll_cost"}, {"destination"}),
     "ga_vehicle_maint": (["vehicle_id", "maint_date", "category", "detail", "km", "cost", "cost_vat", "vendor"],
                          {"vehicle_id", "km", "cost"}, set()),
-    "ga_docs": (["direction", "doc_no", "doc_date", "counterpart", "title", "department", "handler_id", "method",
+    "ga_docs": (["company", "direction", "doc_no", "doc_date", "counterpart", "title", "department", "handler_id", "method",
                  "status", "due_date", "retention", "note"], {"handler_id"}, set()),
-    "ga_seal_logs": (["use_date", "seal_type", "purpose", "submit_to", "copies", "requester_id", "status",
+    "ga_seal_logs": (["company", "use_date", "seal_type", "purpose", "submit_to", "copies", "requester_id", "status",
                       "approver", "approved_at", "note"], {"copies", "requester_id"}, set()),
-    "ga_contracts": (["category", "title", "counterparty", "contract_no", "start_date", "end_date", "amount", "amount_vat",
+    "ga_contracts": (["company", "category", "title", "counterparty", "contract_no", "start_date", "end_date", "amount", "amount_vat",
                       "pay_cycle", "deposit", "auto_renew", "notice_days", "manager_id", "status", "memo", "folder_name"],
                      {"amount", "deposit", "auto_renew", "notice_days", "manager_id"}, set()),
     "ga_events": (["employee_id", "category", "relation", "event_date", "amount", "leave_days", "flower",
@@ -65,6 +66,11 @@ def save(table: str, rid: int | None, data: dict, quiet: bool = False) -> int:
         if f in encrypted:
             v = enc(v)
         d[f] = v
+    if "company" in fields:                                 # 회사 칸: 새로 넣을 때는 폼 값 → 지금 회사 탭 → 본사, 고칠 때 비어 있으면 그대로 둠
+        if rid and d.get("company") not in company_mod.IDS:
+            d.pop("company", None)
+        elif not rid:
+            d["company"] = company_mod.pick(d.get("company"))
     if rid:
         sets = ", ".join(f"{k}=?" for k in d)
         execute(f"UPDATE {table} SET {sets} WHERE id=?", list(d.values()) + [rid])
@@ -109,7 +115,7 @@ def next_asset_no(category: str, acquired: str | None) -> str:
 
 def list_assets(category="", status="", holder_id=None, q="") -> list[dict]:
     sql = ("SELECT a.*, e.name holder_name, e.department holder_dept, e.resign_date holder_resign "
-           "FROM ga_assets a LEFT JOIN employees e ON e.id=a.holder_id WHERE 1=1")
+           "FROM ga_assets a LEFT JOIN employees e ON e.id=a.holder_id WHERE 1=1" + company_mod.sql("a"))
     p = []
     if category:
         sql += " AND a.category=?"; p.append(category)
@@ -193,12 +199,12 @@ def rebuild_asset_state(asset_id: int):
 # ── 차량 ────────────────────────────────────────────────────────────────
 def list_vehicles() -> list[dict]:
     return query("SELECT v.*, e.name manager_name FROM ga_vehicles v LEFT JOIN employees e ON e.id=v.manager_id "
-                 "ORDER BY v.status, v.plate_no")
+                 "WHERE 1=1" + company_mod.sql("v") + " ORDER BY v.status, v.plate_no")
 
 
 def vehicle_logs(vehicle_id=None, year=None, month=None) -> list[dict]:
     sql = ("SELECT l.*, e.name driver_name, e.department driver_dept, v.plate_no FROM ga_vehicle_logs l "
-           "JOIN ga_vehicles v ON v.id=l.vehicle_id LEFT JOIN employees e ON e.id=l.driver_id WHERE 1=1")
+           "JOIN ga_vehicles v ON v.id=l.vehicle_id LEFT JOIN employees e ON e.id=l.driver_id WHERE 1=1" + ("" if vehicle_id else company_mod.sql("v")))
     p = []
     if vehicle_id:
         sql += " AND l.vehicle_id=?"; p.append(vehicle_id)
@@ -231,7 +237,7 @@ def last_odometer(vehicle_id: int) -> int:
 
 
 def vehicle_maint(vehicle_id=None, year=None) -> list[dict]:
-    sql = "SELECT m.*, v.plate_no FROM ga_vehicle_maint m JOIN ga_vehicles v ON v.id=m.vehicle_id WHERE 1=1"
+    sql = "SELECT m.*, v.plate_no FROM ga_vehicle_maint m JOIN ga_vehicles v ON v.id=m.vehicle_id WHERE 1=1" + ("" if vehicle_id else company_mod.sql("v"))
     p = []
     if vehicle_id:
         sql += " AND m.vehicle_id=?"; p.append(vehicle_id)
@@ -250,7 +256,7 @@ def next_doc_no(direction: str, doc_date: str | None, prefix: str) -> str:
 
 
 def list_docs(direction="", year=None, q="", status="") -> list[dict]:
-    sql = "SELECT d.*, e.name handler_name FROM ga_docs d LEFT JOIN employees e ON e.id=d.handler_id WHERE 1=1"
+    sql = "SELECT d.*, e.name handler_name FROM ga_docs d LEFT JOIN employees e ON e.id=d.handler_id WHERE 1=1" + company_mod.sql("d")
     p = []
     if direction:
         sql += " AND d.direction=?"; p.append(direction)
@@ -265,7 +271,7 @@ def list_docs(direction="", year=None, q="", status="") -> list[dict]:
 
 def list_seals(year=None, status="") -> list[dict]:
     sql = ("SELECT s.*, e.name requester_name, e.department requester_dept FROM ga_seal_logs s "
-           "LEFT JOIN employees e ON e.id=s.requester_id WHERE 1=1")
+           "LEFT JOIN employees e ON e.id=s.requester_id WHERE 1=1" + company_mod.sql("s"))
     p = []
     if year:
         sql += " AND substr(s.use_date,1,4)=?"; p.append(str(year))
@@ -276,7 +282,7 @@ def list_seals(year=None, status="") -> list[dict]:
 
 # ── 계약 ────────────────────────────────────────────────────────────────
 def list_contracts(category="", status="") -> list[dict]:
-    sql = "SELECT c.*, e.name manager_name FROM ga_contracts c LEFT JOIN employees e ON e.id=c.manager_id WHERE 1=1"
+    sql = "SELECT c.*, e.name manager_name FROM ga_contracts c LEFT JOIN employees e ON e.id=c.manager_id WHERE 1=1" + company_mod.sql("c")
     p = []
     if category:
         sql += " AND c.category=?"; p.append(category)
@@ -300,7 +306,7 @@ def event_rules() -> list[dict]:
 
 def list_events(year=None, status="", employee_id=None) -> list[dict]:
     sql = ("SELECT v.*, e.name, e.emp_no, e.department, e.rank FROM ga_events v "
-           "JOIN employees e ON e.id=v.employee_id WHERE 1=1")
+           "JOIN employees e ON e.id=v.employee_id WHERE 1=1" + ("" if employee_id else company_mod.sql("e")))
     p = []
     if year:
         sql += " AND substr(v.event_date,1,4)=?"; p.append(str(year))

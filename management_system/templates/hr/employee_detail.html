@@ -7,7 +7,7 @@
   <div class="card-body d-flex flex-wrap gap-3 align-items-center">
     <div class="avatar">{{ e.name[0] }}</div>
     <div>
-      <div class="fs-5 fw-bold">{{ e.name }} <span class="st st-{{ e.status }} align-middle">{{ e.status }}</span></div>
+      <div class="fs-5 fw-bold">{{ e.name }} <span class="st st-{{ e.status }} align-middle">{{ e.status }}</span>{% if co.enabled() %} <span class="co-badge co-{{ co.norm(e.company) }} align-middle">{{ co.label(e.company) }}</span>{% endif %}</div>
       <div class="text-muted">{{ e.emp_no }} · {{ e.department or '-' }} · {{ e.rank or '-' }}{% if e.title %} / {{ e.title }}{% endif %} · {{ e.employment_type }}</div>
       <div class="small text-muted">입사 {{ e.hire_date }} · 근속 {{ e.hire_date|service(e.resign_date) }}{% if e.resign_date %} · 퇴사 {{ e.resign_date }}{% endif %}</div>
       {% if dual_now is defined and dual_now %}<div class="small mt-1"><a href="/hr/dual?state=진행중" class="badge text-bg-warning text-decoration-none"><i class="bi bi-building-add"></i> 이중가입 중 · {{ dual_now.workplace }}</a></div>{% endif %}
@@ -20,6 +20,7 @@
     </div>{% endif %}
     {% if perms.write %}<div class="d-flex gap-2 {{ '' if perms.salary else 'ms-auto' }}">
       <a class="btn btn-sm btn-outline-primary" href="/hr/contracts/new?employee_id={{ e.id }}"><i class="bi bi-file-earmark-plus"></i> 계약서 작성</a>
+      <a class="btn btn-sm btn-outline-secondary" href="/files/hr.employees/{{ e.id }}"><i class="bi bi-paperclip"></i> 서류{% set _n = att_counts('hr.employees').get(e.id) %}{% if _n %} <span class="badge text-bg-secondary">{{ _n }}</span>{% endif %}</a>
       <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#certModal"><i class="bi bi-patch-check"></i> 증명서</button>
       {% if perms.salary %}<a class="btn btn-sm btn-outline-secondary" href="/hr/employees/{{ e.id }}/print" target="_blank" title="기본정보·발령·상벌·교육을 한 장으로 인쇄합니다"><i class="bi bi-printer"></i> 카드 인쇄</a>
       {% if recent_hire %}<a class="btn btn-sm btn-outline-secondary" href="/hr/onboard/{{ e.id }}" title="입사 안내문을 보내고, 단계별 진행표로 챙깁니다"><i class="bi bi-box-arrow-in-right"></i> 입사 안내</a>{% endif %}{% endif %}

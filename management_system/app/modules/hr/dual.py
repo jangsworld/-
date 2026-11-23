@@ -7,6 +7,7 @@ import json
 
 from app.common import days_until, to_date, today
 from app.db import audit, execute, query, query_one
+from app import company
 from app.security.crypto import enc
 
 REASONS = ["발주처 요구", "상주 인력 등록", "기술자 배치", "공동수급(컨소시엄)", "기타"]
@@ -50,10 +51,12 @@ def _decorate(r: dict) -> dict:
 
 def rows(state: str = "", employee_id: int | None = None) -> list[dict]:
     sql = ("SELECT d.*, e.name, e.emp_no, e.department, e.rank FROM dual_enrollments d "
-           "JOIN employees e ON e.id=d.employee_id")
+           "JOIN employees e ON e.id=d.employee_id WHERE 1=1")
     p = []
+    if not employee_id:
+        sql += company.sql("e")
     if employee_id:
-        sql += " WHERE d.employee_id=?"
+        sql += " AND d.employee_id=?"
         p.append(employee_id)
     out = [_decorate(r) for r in query(sql + " ORDER BY d.start_date DESC, d.id DESC", p)]
     if state == "정리필요":

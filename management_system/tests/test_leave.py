@@ -45,7 +45,7 @@ def mail(monkeypatch, tmp_path):
     fake = FakeMail()
     monkeypatch.setattr(mailer, "configured", lambda: True)
     monkeypatch.setattr(mailer, "send", fake)
-    monkeypatch.setattr(storage, "render_pdf", lambda content, title: b"%PDF-1.7 " + content.encode()[:60])
+    monkeypatch.setattr(storage, "render_pdf", lambda content, title, co="1": b"%PDF-1.7 " + content.encode()[:60])
     monkeypatch.setattr(settings, "employee_root", str(tmp_path))
     return fake
 

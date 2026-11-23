@@ -193,6 +193,11 @@ async def inspection_finalize(request: Request, vid: int, iid: int):
     err, created = fleet.finalize(iid, verdicts, notes, f.get("responsible_id"), request.state.user["display_name"])
     if err:
         return _redirect(f"/ga/vehicles/{vid}/inspections/{iid}", err)
+    try:                                   # 확정한 점검 사진을 문서 보관함(NAS)으로. 실패해도 확정은 그대로 (6시간마다 다시 시도)
+        from app import archive
+        await run_in_threadpool(archive.export_vehicle_photos, iid)
+    except Exception:                      # noqa: BLE001
+        pass
     msg = "점검을 확정했습니다" + (f". 새 파손 {len(created)}건을 사고·파손 기록에 올렸습니다 — 수리비·책임을 정해 주세요" if created else " (이상 없음)")
     return _redirect(f"/ga/vehicles/{vid}/inspections/{iid}", msg)
 

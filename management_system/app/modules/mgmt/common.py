@@ -4,6 +4,7 @@ from datetime import date
 
 from app.common import to_date
 from app.db import query
+from app import company
 from app.modules.hr import repo as hr_repo
 
 
@@ -23,7 +24,7 @@ def in_service(emp: dict, start: date, end: date) -> bool:
 
 def employees_in_year(year: int) -> list[dict]:
     s, e = date(year, 1, 1), date(year, 12, 31)
-    return [r for r in query("SELECT * FROM employees ORDER BY department, emp_no, name") if in_service(r, s, e)]
+    return [r for r in query("SELECT * FROM employees WHERE 1=1" + company.sql("") + " ORDER BY department, emp_no, name") if in_service(r, s, e)]
 
 
 def months_in_year(emp: dict, year: int) -> int:

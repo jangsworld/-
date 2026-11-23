@@ -45,6 +45,8 @@
     <div class="row g-3">
       {{ inp('name', '성명', req=True) }}
       {{ inp('emp_no', '사번', ph='비우면 자동 부여') }}
+      {% if co.enabled() %}<div class="col-md-3"><label class="form-label small">회사 <span class="text-danger">*</span></label>
+        <select class="form-select form-select-sm" name="company">{% for c in co.companies() %}<option value="{{ c.id }}" {% if co.norm(e.company) == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></div>{% endif %}
       <div class="col-md-3"><label class="form-label small">주민등록번호</label>
         <input class="form-control form-control-sm {{ 'draft-check' if src.get('rrn') and src.rrn.ocr }}" name="rrn" autocomplete="off" inputmode="numeric" pattern="\d{6}-?\d{7}" maxlength="14"
                title="주민등록번호 13자리를 넣어 주세요" placeholder="{{ e.rrn_masked or '숫자 13자리 (- 자동)' }}">

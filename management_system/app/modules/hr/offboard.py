@@ -15,6 +15,7 @@ from html import escape
 from app import mailer
 from app.common import to_date, today
 from app.db import audit, batch, current_actor, execute, get_settings, query, query_one, set_setting
+from app import company
 from app.modules.hr import richtext
 from app.security.crypto import enc
 
@@ -208,7 +209,7 @@ def values(emp: dict, ob: dict, sender: str) -> dict:
     """안내문의 {이름} 같은 자리에 들어갈 값."""
     return {"이름": emp.get("name") or "", "퇴직일": _kdate(ob.get("last_day")) or "(퇴직일 미정)",
             "인수인계기한": _kdate(ob.get("handover_due")) or "퇴직일 전까지", "인수자": ob.get("successor") or "부서장이 지정",
-            "담당자": sender or "경영관리팀 인사담당자", "회사명": get_settings().get("company_name", "")}
+            "담당자": sender or "경영관리팀 인사담당자", "회사명": company.name_for(emp)}
 
 
 def fill(text: str, emp: dict, ob: dict | None, sender: str, html: bool = False) -> str:
@@ -320,7 +321,7 @@ def send(emp_id: int, to: str, how: str, subject: str, body: str) -> tuple[bool,
 
 def rows() -> list[dict]:
     out = query("SELECT o.*, e.name, e.emp_no, e.department, e.rank, e.resign_date FROM " + T_MAIN + " o "
-                "JOIN employees e ON e.id=o.employee_id ORDER BY (o.closed_at IS NOT NULL), o.last_day")
+                "JOIN employees e ON e.id=o.employee_id WHERE 1=1" + company.sql("e") + " ORDER BY (o.closed_at IS NOT NULL), o.last_day")
     done, ks = {}, keys()
     for r in query("SELECT employee_id, key FROM " + T_CHECKS + ""):
         if r["key"] in ks:

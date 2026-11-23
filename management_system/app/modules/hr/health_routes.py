@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.common import templates, today
 from app.db import audit, query
+from app import company
 from app.modules.hr import health
 
 router = APIRouter(prefix="/hr/health")
@@ -34,7 +35,7 @@ def page(request: Request, year: int | None = None, department: str = "", q: str
     return templates.TemplateResponse(request, "hr/health.html", {
         "year": y, "years": list(range(t.year + 1, t.year - 4, -1)), "ov": ov, "rows": rows,
         "f": {"department": department, "q": q.strip(), "show": show},
-        "depts": [r["department"] for r in query("SELECT DISTINCT department FROM employees WHERE department<>'' ORDER BY department")],
+        "depts": [r["department"] for r in query("SELECT DISTINCT department FROM employees WHERE department<>''" + company.sql("") + " ORDER BY department")],
         "kinds": health.KINDS, "cycles": health.CYCLES, "default_cycle": health.default_cycle(),
         "today_iso": t.isoformat(), "active_menu": "hr.health", "msg": request.query_params.get("msg", ""),
     })

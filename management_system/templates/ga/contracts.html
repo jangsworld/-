@@ -1,8 +1,9 @@
 {% extends "base.html" %}
-{% from "ga/_macros.html" import field, modal, del_btn, dday %}
+{% from "ga/_macros.html" import field, modal, del_btn, dday, cofield, cobadge, att %}
 {% block title %}계약·임대차{% endblock %}
 {% block page_title %}<i class="bi bi-file-earmark-check me-2"></i>계약 · 임대차 관리{% endblock %}
 {% block content %}
+{% set _ac_ga_contracts = att_counts('ga.contracts') %}
 <div class="row g-3 mb-3">
   <div class="col-6 col-md"><div class="card kpi h-100"><div class="kpi-label">유효 계약</div><div class="kpi-value">{{ sum.count }}건</div><div class="kpi-sub">만료·통보 임박 {{ sum.soon }}건</div></div></div>
   <div class="col-6 col-md"><div class="card kpi h-100"><div class="kpi-label">월 고정비(환산)</div><div class="kpi-value">{{ sum.monthly|man_won }}원</div><div class="kpi-sub">연 {{ sum.yearly|man_won }}원</div></div></div>
@@ -55,13 +56,14 @@
       <td class="small text-nowrap">{{ c.notice_date or '' }} {% if c.status == '유효' %}{{ dday(c.notice_dday) }}{% endif %}</td>
       <td class="text-nowrap"><span class="badge {{ {'유효':'text-bg-success','만료임박':'text-bg-warning','통보임박':'text-bg-danger','통보경과':'text-bg-warning','만료':'text-bg-danger','자동갱신':'text-bg-info','갱신확정':'text-bg-info'}.get(c.phase, 'text-bg-secondary') }}">{{ c.phase }}</span></td>
       <td class="small text-nowrap">{{ c.manager_name or '' }}</td>
-      <td class="text-nowrap">{% if can_write %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#contractModal" data-fill='{{ c|tojson }}'><i class="bi bi-pencil"></i></button>{{ del_btn('contracts', c.id, '/ga/contracts') }}{% endif %}</td></tr>
+      <td class="text-nowrap">{{ att('ga.contracts', c.id, _ac_ga_contracts) }}{% if can_write %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#contractModal" data-fill='{{ c|tojson }}'><i class="bi bi-pencil"></i></button>{{ del_btn('contracts', c.id, '/ga/contracts') }}{% endif %}</td></tr>
     {% else %}<tr><td colspan="13" class="text-center text-muted p-4">계약이 없습니다</td></tr>{% endfor %}</tbody>
   </table></div>
   <div class="card-footer help"><b>관리 포인트</b> · 자동갱신 계약은 <b>통보기한(만료 N일 전)</b>을 놓치면 원치 않게 1년 연장됩니다 · 임대차는 계약갱신요구·차임 증감 협의 시점을 미리 확인 · 보증금은 반환 시점까지 자산으로 관리합니다. 자동갱신 계약은 만료일이 지나면 같은 기간으로 자동 연장 표시됩니다.</div>
 </div>
 {% if can_write %}
 {% call modal('contractModal', '계약', '/ga/contracts/save') %}
+  {{ cofield() }}
   {{ field('category', '구분', opts=categories, blank=False) }}{{ field('title', '계약명', req=True, col='col-md-8', ph='본사 사무실 임대차, 복합기 렌탈 등') }}
   {{ field('counterparty', '상대방', req=True) }}{{ field('contract_no', '계약번호') }}{{ field('manager_id', '담당자', opts=emp_opts) }}
   {{ field('start_date', '시작일', 'date') }}{{ field('end_date', '종료일', 'date') }}{{ field('status', '상태', opts=statuses, blank=False) }}
@@ -70,6 +72,7 @@
   {{ field('memo', '비고', 'textarea', col='col-12') }}
 {% endcall %}
 {% call modal('draftModal', '계약서 초안 확인 ·', '/ga/contract-drafts/confirm') %}
+  {{ cofield() }}
   <input type="hidden" name="draft_id" value="">
   <div class="col-12 help mb-1">계약서에서 읽은 값입니다. 원본과 다르면 고친 뒤 저장하세요. 저장하면 계약 목록에 등록되고, 계약 줄에서 폴더 서류를 바로 열 수 있습니다.</div>
   {{ field('category', '구분', opts=categories, blank=False) }}{{ field('title', '계약명', req=True, col='col-md-8') }}

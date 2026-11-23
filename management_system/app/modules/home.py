@@ -108,4 +108,5 @@ def build(role: str) -> dict:
         s["counts"] = {lv: sum(1 for a in s["alerts"] if a["level"] == lv) for lv in LEVELS}
     kpi["urgent"] = sum(s["counts"]["danger"] for s in sections)
     kpi["soon"] = sum(s["counts"]["warning"] for s in sections)
-    return {"kpi": kpi, "sections": sections, "today": today(), "hr": hr_view, "ga": ga_view}
+    return {"kpi": kpi, "sections": sections, "today": today(), "hr": hr_view, "ga": ga_view,
+            "co_sum": _safe(lambda: hr_services.company_summary(staff), [])}

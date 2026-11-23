@@ -27,6 +27,11 @@ from app.modules.hr import repo, services
 from app.security.crypto import enc
 
 log = logging.getLogger("bms")
+def _co_name(emp_id) -> str:
+    from app import company as co_mod
+    return co_mod.name_for(emp_id)
+
+
 router = APIRouter(prefix="/sign")
 
 COOKIE = "bms_sign"
@@ -71,7 +76,8 @@ def create_request(doc: dict, emp: dict, base: str) -> tuple[str, bool, str]:
         (doc["id"], _hash(token), enc(token), enc(emp["email"]), content_hash(doc["content"]), expires, _now()),
     )
     repo.update_document(doc["id"], status="서명대기")
-    company = get_settings().get("company_name", "")
+    from app import company as co_mod
+    company = co_mod.name_for(emp)
     mailed, error = False, ""
     if mailer.configured():
         body = (f"{emp['name']}님, 안녕하세요.\n\n{company}에서 '{doc['title']}' 전자서명을 요청드립니다.\n"
@@ -193,7 +199,7 @@ def _finish(req: dict, png: str, ip: str, agent: str) -> tuple[bool, str]:
         stored = repo.get_document(doc["id"])
         try:
             pdf = storage.read_verified(stored["pdf_path"], stored["pdf_sha256"])
-            mailer.send(req["email"], f"[{get_settings().get('company_name', '')}] 체결된 계약서 사본",
+            mailer.send(req["email"], f"[{_co_name(doc.get('employee_id'))}] 체결된 계약서 사본",
                         f"{doc['name']}님, 서명이 완료되어 근로기준법 제17조에 따라 계약서 사본을 보내드립니다.",
                         [(f"{doc['category']}_{doc['name']}.pdf", pdf)])
             delivered = True

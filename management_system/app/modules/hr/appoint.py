@@ -10,6 +10,7 @@ import threading
 
 from app.common import to_date, today
 from app.db import audit, batch, dept_scope, execute, get_codes, get_settings, query, query_one
+from app import company
 
 log = logging.getLogger("bms.appoint")
 
@@ -35,7 +36,7 @@ def field_of(row: dict) -> str:
 
 def rows(date_from: str = "", date_to: str = "", department: str = "", appt_type: str = "", batch_title: str = "",
          q: str = "", limit: int = 1000) -> list[dict]:
-    sql = ("SELECT a.*, e.name, e.emp_no, e.department, e.rank FROM appointments a JOIN employees e ON e.id=a.employee_id WHERE 1=1")
+    sql = ("SELECT a.*, e.name, e.emp_no, e.department, e.rank FROM appointments a JOIN employees e ON e.id=a.employee_id WHERE 1=1" + company.sql("e"))
     p: list = []
     if date_from:
         sql += " AND a.appt_date >= ?"
@@ -181,6 +182,8 @@ def notice_html(rs: list[dict], title: str) -> str:
     """인사발령 통지 문서 본문."""
     esc = html.escape
     s = get_settings()
+    cos = {company.of_employee(r.get("employee_id")) for r in rs} if company.enabled(s) else {"1"}
+    ci = company.info(cos.pop() if len(cos) == 1 else "1", s)      # 한 회사 직원뿐이면 그 회사 이름으로
     dates = sorted({r["appt_date"] for r in rs})
     when = dates[0] if len(dates) == 1 else f"{dates[0]} ~ {dates[-1]}"
     body = "".join(
@@ -194,8 +197,8 @@ def notice_html(rs: list[dict], title: str) -> str:
             "<thead><tr style='background:#f0f0f0'><th>번호</th><th>성명</th><th>구분</th><th>변경 전</th><th>변경 후</th><th>발령일</th></tr></thead>"
             f"<tbody>{body}</tbody></table>"
             f"<p style='text-align:center;margin-top:16mm'>{esc(today().strftime('%Y년 %m월 %d일'))}</p>"
-            f"<p style='text-align:center;font-size:15pt;font-weight:bold;margin-top:8mm'>{esc(s.get('company_name') or '')}</p>"
-            f"<p style='text-align:center'>대표이사 {esc(s.get('ceo_name') or '')}</p>")
+            f"<p style='text-align:center;font-size:15pt;font-weight:bold;margin-top:8mm'>{esc(ci['company_name'])}</p>"
+            f"<p style='text-align:center'>대표이사 {esc(ci['ceo_name'])}</p>")
 
 
 # ── 예정 발령 자동 적용 ──

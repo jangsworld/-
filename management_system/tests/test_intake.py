@@ -306,7 +306,7 @@ def mail(monkeypatch):
 
 @pytest.fixture
 def fake_pdf(monkeypatch):
-    monkeypatch.setattr(storage, "render_pdf", lambda content, title: b"%PDF-1.7 " + content.encode()[:40])
+    monkeypatch.setattr(storage, "render_pdf", lambda content, title, co="1": b"%PDF-1.7 " + content.encode()[:40])
 
 
 def _signable(client):

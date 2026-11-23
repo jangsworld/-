@@ -3,6 +3,7 @@
 {% block title %}회사 관리 만기{% endblock %}
 {% block page_title %}<i class="bi bi-hourglass-split me-2"></i>회사 관리 만기{% endblock %}
 {% block content %}
+{% set _ac_item = att_counts('ga.company') %}
 <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
   <form method="get" class="d-flex gap-1">
     <select class="form-select form-select-sm" name="category" data-autosubmit><option value="">전체 구분</option>{% for x in categories %}<option {{ 'selected' if category == x }}>{{ x }}</option>{% endfor %}</select>
@@ -18,7 +19,7 @@
 {% for r in rows %}<tr class="{{ 'table-warning' if r.alert }}"><td>{{ r.category }}</td><td class="fw-semibold">{{ r.name }}{% if r.emp_insurance %} <a class="badge text-bg-primary text-decoration-none" href="/hr/insurances" title="재직 직원 인사기록카드에 반영됩니다. 눌러서 반영 대상을 봅니다">임직원 상해공제</a>{% endif %}{% if r.alert_email %} <i class="bi bi-envelope text-muted" title="만기 알림 메일: {{ r.alert_email }}"></i>{% endif %}</td><td class="small">{{ r.number or '' }}</td><td class="small">{{ r.agency or '' }}</td>
   <td class="small">{{ r.start_date or '' }}</td><td>{{ r.expire_date or '-' }}</td><td>{{ g.dday(r.dday, r.alert_days or 60) if r.status in ('유효', '갱신중') }}</td><td>{{ r.cycle }}</td><td class="small">{{ r.owner or '' }}</td>
   <td><span class="badge {{ 'text-bg-success' if r.status == '유효' else ('text-bg-info' if r.status == '갱신중' else 'text-bg-secondary') }}">{{ r.status }}</span></td><td class="small">{{ r.note or '' }}</td>
-  <td class="text-nowrap">{% if can_write %}<button class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#itemModal" data-fill='{{ r|tojson }}'>수정</button>
+  <td class="text-nowrap">{% if can_write %}{{ g.att('ga.company', r.id, _ac_item) }}<button class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#itemModal" data-fill='{{ r|tojson }}'>수정</button>
     {% if r.expire_date %}<button class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#renewModal" data-renew="{{ r.id }}" data-name="{{ r.name }}" data-old="{{ r.expire_date }}" data-next="{{ next_expire.get(r.id) }}">갱신</button>{% endif %}
     <form method="post" action="/ga/company/{{ r.id }}/delete" class="d-inline" data-confirm="'{{ r.name }}'을(를) 삭제할까요? 갱신 이력도 지워집니다."><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="12" class="text-muted text-center py-4">등록된 항목이 없습니다. 예: 건설업 등록증, 중소기업 확인서, ISO 인증, 화재보험, 임원 임기(등기), 법인카드 유효기간</td></tr>{% endfor %}
@@ -33,6 +34,8 @@
   <input type="hidden" name="id" value="">
   <div class="modal-header"><h6 class="modal-title">회사 관리 항목 <span data-mode-title>등록</span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body row g-2">
+    {% if co.enabled() %}<div class="col-md-4"><label class="form-label small">회사 <span class="text-danger">*</span></label>
+      <select class="form-select form-select-sm" name="company">{% for c in co.companies() %}<option value="{{ c.id }}" {% if co.pick('') == c.id %}selected{% endif %}>{{ c.short }}</option>{% endfor %}</select></div>{% endif %}
     <div class="col-md-4"><label class="form-label small">구분</label><select class="form-select form-select-sm" name="category">{% for x in categories %}<option>{{ x }}</option>{% endfor %}</select></div>
     <div class="col-md-8"><label class="form-label small">이름 <span class="text-danger">*</span></label><input class="form-control form-control-sm" name="name" list="exNames" required></div>
     <div class="col-md-4"><label class="form-label small">번호 (등록·증권·인증 번호)</label><input class="form-control form-control-sm" name="number"></div>

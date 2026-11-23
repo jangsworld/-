@@ -88,7 +88,7 @@ def values(emp: dict, ob: dict, sender: str) -> dict:
     day = _m._kdate(ob.get("last_day") or emp.get("hire_date"))
     return {"이름": emp.get("name") or "", "입사일": day or "(입사일 미정)", "부서": emp.get("department") or "(부서 미정)",
             "서류제출기한": _m._kdate(ob.get("handover_due")) or "입사일까지", "안내담당": ob.get("successor") or "부서 담당자",
-            "담당자": sender or "경영관리팀 인사담당자", "회사명": _m.get_settings().get("company_name", "")}
+            "담당자": sender or "경영관리팀 인사담당자", "회사명": _m.company.name_for(emp)}
 
 
 def dates(ob: dict | None) -> dict:

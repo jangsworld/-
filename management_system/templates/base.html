@@ -66,6 +66,13 @@
       {% endif %}
     </header>
     <main class="content">
+      {% set _ct = co.tabs(request.url.path, request.query_params) if (current_user and request.url.path in CO_TAB_PATHS) else {'show': False} %}
+      {% if _ct.show %}
+      <div class="co-tabs no-print" role="tablist" aria-label="회사 선택">
+        <span class="co-tabs-label"><i class="bi bi-buildings"></i> 회사</span>
+        {% for t in _ct['items'] %}<a class="co-tab {% if t.active %}active{% endif %}" href="{{ t.url }}">{{ t.name }}</a>{% endfor %}
+      </div>
+      {% endif %}
       {% block content %}{% endblock %}
     </main>
   </div>

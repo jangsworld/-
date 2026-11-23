@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Stre
 from app.common import templates, today, sanitize_html, add_months, days_until, to_date
 from app.db import batch, execute, get_codes, get_settings, set_setting, audit
 from app import brand, mailer
+from app import company as co_mod
 from app.config import settings as cfg
 from app.modules.hr import intake, repo, rrn as rrn_util, services, signing
 from app.modules.hr.constants import (
@@ -101,7 +102,8 @@ def dashboard(request: Request):
             ecount_wait = len(ecount.pending())
         except Exception:
             ecount_wait = None
-    return _render(request, "hr/dashboard.html", {"d": d, "leave_notice": notice, "ecount_wait": ecount_wait},
+    return _render(request, "hr/dashboard.html", {"d": d, "leave_notice": notice, "ecount_wait": ecount_wait,
+                                                  "co_sum": services.company_summary(request.state.user["role"] in ("admin", "hr"))},
                    "hr.dashboard")
 
 
@@ -120,10 +122,30 @@ def employees(request: Request, q: str = "", department: str = "", employment_ty
     return _render(request, "hr/employees.html", {
         "rows": rows, "f": {"q": q, "department": department, "employment_type": employment_type,
                             "status": status},
-        "drafts": [_draft_row(d) for d in repo.list_drafts("확인필요")] if is_staff else [],
-        "intake": {"enabled": bool(cfg.employee_root), **intake.state},
+        "drafts": [_draft_row(d) for d in repo.list_drafts("확인필요")] if (is_staff and cfg.employee_drafts) else [],
+        "intake": {**intake.state, "enabled": bool(cfg.employee_root) and cfg.employee_drafts},
+        "ecount_wait": _ecount_wait() if is_staff else None,
         **codes,
     }, "hr.employees")
+
+
+def _ecount_wait() -> int | None:
+    from app.modules.hr import ecount
+    try:
+        return len(ecount.pending())
+    except Exception:                                  # 숫자 계산 실패가 화면을 막지 않도록
+        return None
+
+
+@router.post("/employees/company")
+async def employees_company(request: Request):
+    """고른 직원의 회사를 한꺼번에 바꿈 (인사 담당 이상)."""
+    f = await request.form()
+    ids = [int(x) for x in f.getlist("ids") if str(x).isdigit()]
+    if not ids or str(f.get("company")) not in co_mod.IDS or not co_mod.enabled():
+        return _redirect("/hr/employees", "직원과 회사를 고르세요")
+    n = repo.set_company(ids, str(f.get("company")))
+    return _redirect("/hr/employees", f"{n}명을 {co_mod.short(str(f.get('company')))}(으)로 옮겼습니다")
 
 
 CSV_COLUMNS = [
@@ -265,7 +287,7 @@ def import_employees_csv(text: str, filename: str = "") -> str:
 @router.get("/employees/new", response_class=HTMLResponse)
 def employee_new(request: Request):
     return _render(request, "hr/employee_form.html", {
-        "e": {"employment_type": "정규직", "hire_date": today().isoformat(), "emp_no": repo.next_emp_no()},
+        "e": {"employment_type": "정규직", "hire_date": today().isoformat(), "emp_no": repo.next_emp_no(), "company": co_mod.pick(None)},
         "is_new": True, "quals": {}, **_codes(),
     }, "hr.employees")
 
@@ -448,7 +470,7 @@ def employee_detail(request: Request, emp_id: int, tab: str = "info"):
         "reward_categories": _reward_categories(),
         "work_specials": WORK_SPECIALS,
         "expunge_months": DISCIPLINE_EXPUNGE_MONTHS,
-        "cert_templates": repo.list_templates("certificate", active_only=True),
+        "cert_templates": repo.list_templates("certificate", active_only=True, co=co_mod.norm(e.get("company")) if co_mod.enabled() else None),
         "qualifications": repo.get_qualifications(emp_id), "qualification_kinds": QUALIFICATION_KINDS,
         "rrn_masked": repo.rrn_masked(emp_id) if request.state.user["role"] in ("admin", "hr") else "",
         "assets": __import__("app.modules.ga.repo", fromlist=["x"]).list_assets(holder_id=emp_id),
@@ -689,7 +711,8 @@ def contract_new(request: Request, employee_id: int | None = None, category: str
     emps = repo.list_employees(status="재직(전체)")
     emp = repo.get_employee(employee_id) if employee_id else None
     cat = category or (services.suggest_template_category(emp) if emp else "정규직")
-    tpls = repo.list_templates("contract", active_only=True)
+    emp_co = co_mod.norm(emp.get("company")) if (emp and co_mod.enabled()) else None
+    tpls = repo.list_templates("contract", active_only=True, co=emp_co or (co_mod.cur() if co_mod.cur() in co_mod.IDS else None))
     params = services.default_contract_params(emp or {}, cat)
     return _render(request, "hr/contract_new.html", {
         "emps": emps, "emp": emp, "category": cat, "templates_": tpls, "p": params,
@@ -722,6 +745,8 @@ async def contract_create(request: Request):
     tpl = repo.get_template(int(f["template_id"]))
     if not tpl:
         return _redirect("/hr/contracts/new", "템플릿을 선택해주세요")
+    if not repo.template_fits(tpl, emp):
+        return _redirect(f"/hr/contracts/new?employee_id={emp['id']}", f"이 템플릿은 {co_mod.short(tpl['company'])} 전용입니다. {co_mod.label(emp.get('company'))} 직원에게 맞는 템플릿을 고르세요")
     params = {k: str(v) for k, v in f.items() if k not in ("employee_id", "template_id")}
     # 여기서는 저장하지 않는다: 에디터에서 [저장]을 눌러야 계약서가 만들어진다 (열어만 보고 나가면 아무것도 남지 않음)
     sal = str(params.get("annual_salary") or "")
@@ -746,7 +771,7 @@ async def contract_create_save(request: Request):
         tpl = repo.get_template(int(body.get("template_id")))
     except (TypeError, ValueError):
         emp = tpl = None
-    if not emp or not tpl or tpl.get("doc_group", "contract") != "contract":
+    if not emp or not tpl or tpl.get("doc_group", "contract") != "contract" or not repo.template_fits(tpl, emp):
         raise HTTPException(400, "직원 또는 템플릿을 찾을 수 없습니다")
     raw = body.get("params") if isinstance(body.get("params"), dict) else {}
     params = {str(k)[:60]: str(v)[:2000] for k, v in list(raw.items())[:60] if k not in ("employee_id", "template_id")}
@@ -829,7 +854,12 @@ async def employee_paper_contract(request: Request, emp_id: int):
 
 
 def _contract_bulk(ids: list[int]) -> int:
-    tpls = {t["category"]: t for t in repo.list_templates("contract", active_only=True)}
+    by_co = {}
+    for c in co_mod.IDS:                                  # 회사 전용 템플릿이 있으면 그것을, 없으면 공통을
+        m = {}
+        for t in repo.list_templates("contract", active_only=True, co=c if co_mod.enabled() else None):
+            m.setdefault(t["category"], t)
+        by_co[c] = m
     n = 0
     with batch():
         for emp_id in ids:
@@ -837,6 +867,7 @@ def _contract_bulk(ids: list[int]) -> int:
             if not emp:
                 continue
             cat = services.suggest_template_category(emp)
+            tpls = by_co[co_mod.norm(emp.get("company"))]
             tpl = tpls.get(cat) or tpls.get("정규직")
             if not tpl:
                 continue
@@ -888,6 +919,7 @@ def document_editor(request: Request, doc_id: int):
         "pdf_where": " \\ ".join(re.split(r"[\\/]+", d["pdf_path"])[-2:]) if d.get("pdf_path") else "",
         "delete_block": repo.cert_delete_block(d) if d["doc_group"] == "certificate" else "",
         "pdf_stale": bool(d.get("pdf_path")) and (d.get("pdf_saved_at") or "") < (d.get("updated_at") or ""),
+        "doc_co": co_mod.of_employee(d.get("employee_id")),
     }, {"contract": "hr.contracts", "leave": "hr.leave"}.get(d["doc_group"], "hr.certificates"))
 
 
@@ -1012,7 +1044,7 @@ def email_document(doc_id: int, target: str = "employee", manual_to: str = "", n
     pdf = None
     if d["doc_group"] == "certificate":                   # 증명서: 지금 내용으로 PDF 를 만들어 보내기만 함 (폴더에 저장하지 않음)
         try:
-            pdf = storage.render_pdf(d["content"], d["title"])
+            pdf = storage.render_pdf(d["content"], d["title"], co_mod.of_employee(d.get("employee_id")))
         except storage.StorageError as ex:
             return False, str(ex)
     elif not d.get("pdf_path") or (d.get("pdf_saved_at") or "") < (d.get("updated_at") or ""):
@@ -1020,7 +1052,7 @@ def email_document(doc_id: int, target: str = "employee", manual_to: str = "", n
         if not ok:
             return False, m
         d = repo.get_document(doc_id)
-    company = get_settings().get("company_name", "")
+    company = co_mod.name_for(d.get("employee_id"))
     note = (note or "").strip()[:1000]
     body = f"{d['name']}님, 요청하신 {d['category']}를 첨부해 보내드립니다."
     if d.get("doc_no"):
@@ -1105,9 +1137,9 @@ def document_delete(doc_id: int):
 
 
 @router.get("/api/doc-asset/{kind}")
-def doc_asset(kind: str):
-    """증명서 화면에 도장·로고를 보여 주는 주소. 인사 담당 이상만 (/hr/api 규칙)."""
-    got = brand.get(kind)
+def doc_asset(kind: str, c: str = "1"):
+    """증명서 화면에 도장·로고를 보여 주는 주소. 인사 담당 이상만 (/hr/api 규칙). c: 회사."""
+    got = brand.get(kind, c)
     if not got:
         raise HTTPException(404, "그림이 없습니다")
     return Response(got[0], media_type=got[1], headers={"Cache-Control": "private, max-age=300"})
@@ -1116,7 +1148,7 @@ def doc_asset(kind: str):
 # ── 템플릿 관리 ──
 @router.get("/templates", response_class=HTMLResponse)
 def template_list(request: Request):
-    return _render(request, "hr/templates.html", {"tpls": repo.list_templates()}, "hr.templates")
+    return _render(request, "hr/templates.html", {"tpls": repo.list_templates(co=co_mod.cur() if co_mod.cur() in co_mod.IDS else None)}, "hr.templates")
 
 
 @router.get("/templates/{tid}", response_class=HTMLResponse)
@@ -1137,7 +1169,7 @@ def template_edit(request: Request, tid: int):
 async def template_save(request: Request):
     b = await request.json()
     tid = repo.save_template(int(b.get("id") or 0) or None, b["doc_group"], b["category"], b["name"],
-                             sanitize_html(b["content"]), 1 if b.get("is_active", True) else 0)
+                             sanitize_html(b["content"]), 1 if b.get("is_active", True) else 0, str(b.get("company") or ""))
     return {"ok": True, "id": tid, "message": "템플릿이 저장되었습니다"}
 
 
@@ -1211,7 +1243,7 @@ def certificates(request: Request, q: str = ""):
     return _render(request, "hr/certificates.html", {
         "docs": repo.list_documents("certificate", q=q), "q": q,
         "emps": repo.list_employees(status=""),
-        "tpls": repo.list_templates("certificate", active_only=True),
+        "tpls": repo.list_templates("certificate", active_only=True, co=co_mod.cur() if co_mod.cur() in co_mod.IDS else None),
         "mail_ready": mailer.configured(),
     }, "hr.certificates")
 
@@ -1221,6 +1253,8 @@ async def certificate_create(request: Request):
     f = dict(await request.form())
     emp = _emp_or_404(int(f["employee_id"]))
     tpl = repo.get_template(int(f["template_id"]))
+    if not tpl or not repo.template_fits(tpl, emp):
+        return _redirect("/hr/certificates", f"이 증명서 양식은 {co_mod.short((tpl or {}).get('company') or '1')} 전용입니다. 직원의 회사에 맞는 양식을 고르세요" if tpl else "증명서 종류를 고르세요")
     params = {"purpose": f.get("purpose", ""), "doc_no": repo.next_cert_no(), "job_duty": emp.get("job_duty")}
     content = services.render_template(tpl["content"], services.build_context(emp, params))
     doc_id = repo.create_document(
@@ -1481,8 +1515,8 @@ def insurance_bulk_page(request: Request):
     linked = repo.query_one("SELECT id, name FROM ga_company_items WHERE emp_insurance='1' AND status IN ('유효','갱신중') "
                             "ORDER BY expire_date DESC LIMIT 1")
     t = today().isoformat()
-    emps = [e for e in repo.query("SELECT id, emp_no, name, department, rank, hire_date, resign_date FROM employees "
-                                  "ORDER BY department, emp_no, name") if not e.get("resign_date") or e["resign_date"] >= t]
+    emps = [e for e in repo.query("SELECT id, emp_no, name, department, rank, hire_date, resign_date FROM employees WHERE 1=1" + co_mod.sql("") +
+                                  " ORDER BY department, emp_no, name") if not e.get("resign_date") or e["resign_date"] >= t]
     latest = {}
     for i in repo.list_insurances():            # 만기 늦은 순 → 직원별 첫 줄이 가장 최근
         latest.setdefault(i["employee_id"], i)

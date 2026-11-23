@@ -101,8 +101,17 @@ document.addEventListener('click', (e) => {
     if (e.target.closest('[data-toggle-sidebar]')) document.getElementById('sidebar').classList.toggle('open');
     return;
   }
+  if (e.target.closest('[data-nolink]')) return;          // 고르기 칸: 눌러도 상세로 넘어가지 않음
   const row = e.target.closest('[data-href]');
   if (row) location.href = row.dataset.href;
+});
+// 머리글의 '모두 고르기' (data-check-group="이름" → data-group="이름" 인 보이는 칸 전부)
+document.addEventListener('change', (e) => {
+  const all = e.target.closest('input[data-check-group]');
+  if (!all) return;
+  document.querySelectorAll('input[data-group="' + all.dataset.checkGroup + '"]').forEach(cb => {
+    if (cb.offsetParent !== null) cb.checked = all.checked;
+  });
 });
 document.querySelectorAll('[data-autosubmit]').forEach(el => el.addEventListener('change', () => { keepScroll(); el.form.submit(); }));
 
@@ -154,6 +163,7 @@ document.addEventListener('click', (e) => {
     if (!(el.name in data)) { if (el.name === 'id') el.value = ''; return; }
     const v = data[el.name];
     if (el.type === 'checkbox') el.checked = !!v && v !== '0';
+    else if (el.name === 'company' && el.tagName === 'SELECT') el.value = String(v || '') === '2' ? '2' : '1';   // 비어 있는 옛 자료는 본사
     else el.value = v === null || v === undefined ? '' : v;
   });
   m.querySelectorAll('[data-mode-title]').forEach((t) => { t.textContent = data.id ? '수정' : '등록'; });

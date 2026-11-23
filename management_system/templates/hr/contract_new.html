@@ -8,13 +8,15 @@
       <div class="col-12"><label class="form-label small">임직원</label>
         <select data-search class="form-select form-select-sm" name="employee_id" id="empSel" required>
           <option value="">선택</option>
-          {% for x in emps %}<option value="{{ x.id }}" {% if emp and emp.id == x.id %}selected{% endif %}>{{ x.name }} · {{ x.department or '' }} · {{ x.employment_type }}</option>{% endfor %}
+          {% for x in emps %}<option value="{{ x.id }}" {% if emp and emp.id == x.id %}selected{% endif %}>{{ x.name }} · {% if co.enabled() %}{{ co.label(x.company) }} · {% endif %}{{ x.department or '' }} · {{ x.employment_type }}</option>{% endfor %}
         </select></div>
       <div class="col-12"><label class="form-label small">계약서 템플릿</label>
         <select class="form-select form-select-sm" name="template_id" id="tplSel" required>
-          {% for t in templates_ %}<option value="{{ t.id }}" data-cat="{{ t.category }}" {% if t.category == category %}selected{% endif %}>[{{ t.category }}] {{ t.name }}</option>{% endfor %}
+          {% for t in templates_ %}<option value="{{ t.id }}" data-cat="{{ t.category }}" {% if t.category == category %}selected{% endif %}>[{{ t.category }}] {{ t.name }}{% if co.enabled() and t.company %} ({{ co.short(t.company) }} 전용){% endif %}</option>{% endfor %}
         </select>
         <div class="help mt-1" id="suggestHint">{% if emp %}고용형태({{ emp.employment_type }})에 맞는 <b>{{ category }}</b> 템플릿이 자동 선택되었습니다.{% endif %}</div></div>
+      {% if co.enabled() and emp %}<div class="col-12 small">계약 회사: <span class="co-badge co-{{ co.norm(emp.company) }}">{{ co.name(co.norm(emp.company)) }}</span>
+        <span class="text-muted">— 회사명·대표자·주소·도장·로고가 이 회사 것으로 들어갑니다</span></div>{% endif %}
       <div class="col-12 help"><i class="bi bi-lightbulb"></i> 회사정보(회사명·대표자·주소)는 <a href="/settings">설정</a>, 임직원 정보는 인사기록카드에서 자동으로 채워집니다.</div>
     </div></div>
   </div>

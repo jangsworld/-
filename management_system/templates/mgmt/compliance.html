@@ -55,6 +55,8 @@
   <input type="hidden" name="id" value="">
   <div class="modal-header"><h6 class="modal-title">의무 일정 <span data-mode-title>등록</span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body row g-2">
+    {% if co.enabled() %}<div class="col-md-4"><label class="form-label small">회사 <span class="text-danger">*</span></label>
+      <select class="form-select form-select-sm" name="company">{% for c in co.companies() %}<option value="{{ c.id }}" {% if co.pick('') == c.id %}selected{% endif %}>{{ c.short }}</option>{% endfor %}</select></div>{% endif %}
     <div class="col-12"><label class="form-label small">일정</label><input class="form-control form-control-sm" name="title" required></div>
     <div class="col-md-4"><label class="form-label small">구분</label><select class="form-select form-select-sm" name="category">{% for x in categories %}<option>{{ x }}</option>{% endfor %}</select></div>
     <div class="col-md-4"><label class="form-label small">주기</label><select class="form-select form-select-sm" name="cycle">{% for x in cycles %}<option>{{ x }}</option>{% endfor %}</select></div>

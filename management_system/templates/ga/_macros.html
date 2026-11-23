@@ -29,3 +29,17 @@
 {% macro dday(d, warn=30) -%}
 {%- if d is not none -%}{%- if d < 0 -%}<span class="badge text-bg-danger">D+{{ -d }}</span>{%- elif d <= warn -%}<span class="badge text-bg-warning">D-{{ d }}</span>{%- else -%}<span class="small text-muted">D-{{ d }}</span>{%- endif -%}{%- endif -%}
 {%- endmacro %}
+
+
+{# 회사 칸 (자회사를 켰을 때만). 새로 등록할 때는 지금 보고 있는 회사 탭이 기본값 #}
+{% macro cofield(col='col-md-4') -%}
+{% if co.enabled() %}<div class="{{ col }}"><label class="form-label small">회사 <span class="text-danger">*</span></label>
+  <select class="form-select form-select-sm" name="company">{% for c in co.companies() %}<option value="{{ c.id }}" {% if co.pick('') == c.id %}selected{% endif %}>{{ c.short }}</option>{% endfor %}</select></div>{% endif %}
+{%- endmacro %}
+
+{% macro cobadge(v) -%}{% if co.enabled() %}<span class="co-badge co-{{ co.norm(v) }}">{{ co.label(v) }}</span>{% endif %}{%- endmacro %}
+
+{# 붙인 서류 링크: 개수를 미리 센 표(counts)를 넘기면 숫자가 보임 #}
+{% macro att(menu, id, counts=None, label='') -%}
+<a class="btn btn-sm btn-link p-0 me-1 text-nowrap" href="/files/{{ menu }}/{{ id }}" title="붙인 서류"><i class="bi bi-paperclip"></i>{{ label }}{% if counts and counts.get(id) %}<span class="badge text-bg-secondary">{{ counts.get(id) }}</span>{% endif %}</a>
+{%- endmacro %}

@@ -4,6 +4,7 @@ import io
 
 from app.common import to_date, today
 from app.db import audit, batch, get_codes, query, query_one
+from app import company
 from app.modules.hr import repo, services
 
 MIN_YEAR, MAX_AMOUNT = 1990, 10**11
@@ -83,7 +84,7 @@ def view(emp_id: int) -> dict | None:
         r["marks"] = [] if r["step"] else marks.get(r["year"], [])
     # 이전·다음 직원 (임직원 현황·개인별 연봉 목록과 같은 순서: 입사일·사번, 재직자)
     t = today().isoformat()
-    order = [e["id"] for e in query("SELECT id, resign_date FROM employees ORDER BY hire_date, emp_no, id")
+    order = [e["id"] for e in query("SELECT id, resign_date FROM employees WHERE 1=1" + company.sql("") + " ORDER BY hire_date, emp_no, id")
              if not e.get("resign_date") or e["resign_date"] >= t or e["id"] == emp_id]
     i = order.index(emp_id) if emp_id in order else -1
     return {"e": emp, "rows": rows, "summary": summary, "has_steps": bool(steps), "reasons": get_codes("SALARY_REASON"),
@@ -279,7 +280,7 @@ def parse_amount(v) -> int | None:
 def template_csv() -> str:
     """일괄 올리기 양식: 재직자 × 연도. 이미 등록된 금액은 채워서 내려줍니다."""
     t = today()
-    emps = [e for e in query("SELECT id, emp_no, name, department, hire_date, resign_date FROM employees ORDER BY department, name")
+    emps = [e for e in query("SELECT id, emp_no, name, department, hire_date, resign_date FROM employees WHERE 1=1" + company.sql("") + " ORDER BY department, name")
             if not e.get("resign_date") or e["resign_date"] >= t.isoformat()]
     have: dict = {}
     for s in repo.all_salaries():

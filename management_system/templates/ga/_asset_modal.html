@@ -1,5 +1,6 @@
-{% from "ga/_macros.html" import field, modal %}
+{% from "ga/_macros.html" import field, modal, cofield %}
 {% call modal('assetModal', '자산', '/ga/assets/save', enctype='multipart/form-data') %}
+  {{ cofield() }}
   {{ field('category', '분류', opts=categories.keys()|list, req=True, blank=False) }}
   {{ field('name', '품명', req=True, col='col-md-8', ph='노트북, 책상, 복합기 등') }}
   {{ field('model', '모델명') }}{{ field('serial_no', '시리얼번호') }}{{ field('vendor', '구입처') }}

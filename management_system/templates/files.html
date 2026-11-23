@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}붙인 서류 - {{ t.title }}{% endblock %}
+{% block page_title %}<a href="{{ t.back }}" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> <i class="bi bi-paperclip me-1"></i>붙인 서류 <span class="text-muted small">{{ info[1] }} · {{ t.title }}</span>{% endblock %}
+{% block content %}
+<div class="card mb-3">
+  <div class="card-header">서류 올리기 <span class="help">{{ info[4] }}</span></div>
+  <div class="card-body">
+    <form method="post" action="/files/{{ menu }}/{{ ref_id }}/upload" enctype="multipart/form-data" class="row g-2 align-items-end" data-busy="보관함에 저장하는 중…">
+      <div class="col-md-5"><label class="form-label small">파일 (여러 개를 한꺼번에 고를 수 있습니다)</label>
+        <input class="form-control form-control-sm" type="file" name="files" multiple required
+               accept=".pdf,.jpg,.jpeg,.png,.webp,.hwp,.hwpx,.doc,.docx,.xls,.xlsx,.pptx"></div>
+      <div class="col-md-5"><label class="form-label small">메모 (선택)</label>
+        <input class="form-control form-control-sm" name="note" maxlength="200" placeholder="예: 납부 영수증, 수리 전 사진"></div>
+      <div class="col-md-2"><button class="btn btn-sm btn-primary w-100"><i class="bi bi-cloud-arrow-up"></i> 올려서 저장</button></div>
+    </form>
+    <div class="help mt-2"><i class="bi bi-folder2-open"></i> 저장되는 폴더: <b>BMS시스템 \ {{ folder }}</b><br>
+      PDF·사진(JPG·PNG)·한글·워드·엑셀·파워포인트, 한 개에 {{ max_mb }}MB 이하. 올리는 즉시 위 폴더에 날짜가 붙은 이름으로 저장됩니다.</div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header">붙인 서류 <span class="badge text-bg-secondary ms-1">{{ rows|length }}개</span></div>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+    <thead><tr><th>파일</th><th>메모</th><th class="num">크기</th><th>올린 때</th><th>올린 사람</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><a href="/files/get/{{ r.id }}" {% if r.inline %}target="_blank" rel="noopener"{% endif %} class="fw-semibold">
+          <i class="bi {{ 'bi-file-earmark-pdf' if r.mime == 'application/pdf' else ('bi-image' if r.mime.startswith('image/') else 'bi-file-earmark') }}"></i> {{ r.orig_name }}</a></td>
+        <td class="small">{{ r.note or '' }}</td>
+        <td class="num small">{{ '%.1f'|format(r.size / 1024 / 1024) ~ 'MB' if r.size >= 1048576 else (r.size // 1024) ~ 'KB' }}</td>
+        <td class="small text-muted">{{ r.uploaded_at[:16] }}</td><td class="small">{{ r.uploaded_by or '' }}</td>
+        <td class="text-end text-nowrap"><a class="btn btn-sm btn-link p-0 me-2" href="/files/get/{{ r.id }}?dl=1">내려받기</a>
+          <form method="post" action="/files/del/{{ r.id }}" class="d-inline" data-confirm="'{{ r.orig_name }}' 을(를) 지울까요?&#10;&#10;파일은 없애지 않고 보관함의 '_삭제함' 폴더로 옮깁니다.">
+            <button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-trash"></i></button></form></td>
+      </tr>
+    {% else %}<tr><td colspan="6" class="text-center text-muted p-4">아직 붙인 서류가 없습니다</td></tr>{% endfor %}
+    </tbody></table></div>
+</div>
+{% endblock %}

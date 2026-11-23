@@ -8,6 +8,7 @@
   <ul class="nav nav-pills">{% for y in years %}<li class="nav-item"><a class="nav-link py-1 {% if y == year %}active{% endif %}" href="?year={{ y }}">{{ y }}년</a></li>{% endfor %}</ul>
   <div class="ms-auto d-flex gap-2">
     <a class="btn btn-sm btn-outline-secondary" href="/ga/vehicles/labels?ids={{ v.id }}"><i class="bi bi-qr-code"></i> QR 라벨</a>
+    {% if can_write %}<a class="btn btn-sm btn-outline-secondary" href="/files/ga.vehicles/{{ v.id }}"><i class="bi bi-paperclip"></i> 차량 서류{% set _n = att_counts('ga.vehicles').get(v.id) %}{% if _n %} <span class="badge text-bg-secondary">{{ _n }}</span>{% endif %}</a>{% endif %}
     <a class="btn btn-sm btn-outline-secondary" href="/ga/vehicles/{{ v.id }}/logbook.csv?year={{ year }}"><i class="bi bi-download"></i> {{ year }}년 운행기록부</a>
     {% if can_write %}<button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#inspModal" data-fill="{}"><i class="bi bi-camera"></i> 사진 점검</button>
     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#vehicleModal" data-fill='{{ v|tojson }}'><i class="bi bi-pencil"></i> 차량정보</button>
@@ -68,12 +69,12 @@
   <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex align-items-center">사고·파손{% if can_write %}<button class="btn btn-sm btn-link ms-auto p-0" data-bs-toggle="modal" data-bs-target="#damageModal" data-fill="{}"><i class="bi bi-plus"></i> 등록</button>{% endif %}</div>
     <ul class="list-group list-group-flush small">{% for d in damage_rows %}<li class="list-group-item d-flex gap-2">
       <span class="text-muted">{{ d.occur_date }}</span><span>{{ d.kind }} {{ d.part or '' }}</span><span class="text-truncate">{{ d.driver_name or '' }}</span>
-      <span class="ms-auto text-nowrap">{{ d.status }}</span>{% if can_write %}<button class="btn btn-sm btn-link p-0" data-bs-toggle="modal" data-bs-target="#damageModal" data-fill='{{ d|tojson }}'><i class="bi bi-pencil"></i></button>{% endif %}</li>
+      <span class="ms-auto text-nowrap">{{ d.status }}</span>{% if can_write %}<a class="btn btn-sm btn-link p-0" href="/files/ga.damages/{{ d.id }}" title="사진·견적서·영수증"><i class="bi bi-paperclip"></i></a><button class="btn btn-sm btn-link p-0" data-bs-toggle="modal" data-bs-target="#damageModal" data-fill='{{ d|tojson }}'><i class="bi bi-pencil"></i></button>{% endif %}</li>
     {% else %}<li class="list-group-item text-muted">기록 없음</li>{% endfor %}</ul></div></div>
   <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex align-items-center">과태료{% if can_write %}<button class="btn btn-sm btn-link ms-auto p-0" data-bs-toggle="modal" data-bs-target="#fineModal" data-fill="{}"><i class="bi bi-plus"></i> 등록</button>{% endif %}</div>
     <ul class="list-group list-group-flush small">{% for f in fine_rows %}<li class="list-group-item d-flex gap-2">
       <span class="text-muted">{{ f.violation_at[:10] }}</span><span>{{ f.kind }}</span><span>{{ f.driver_name or '확인 필요' }}</span>
-      <span class="ms-auto text-nowrap">{{ f.amount|won }}원 · {{ f.status }}</span>{% if can_write %}<button class="btn btn-sm btn-link p-0" data-bs-toggle="modal" data-bs-target="#fineModal" data-fill='{{ f|tojson }}'><i class="bi bi-pencil"></i></button>{% endif %}</li>
+      <span class="ms-auto text-nowrap">{{ f.amount|won }}원 · {{ f.status }}</span>{% if can_write %}<a class="btn btn-sm btn-link p-0" href="/files/ga.fines/{{ f.id }}" title="고지서·영수증"><i class="bi bi-paperclip"></i></a><button class="btn btn-sm btn-link p-0" data-bs-toggle="modal" data-bs-target="#fineModal" data-fill='{{ f|tojson }}'><i class="bi bi-pencil"></i></button>{% endif %}</li>
     {% else %}<li class="list-group-item text-muted">기록 없음</li>{% endfor %}</ul></div></div>
 </div>
 {% if can_write %}

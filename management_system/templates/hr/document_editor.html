@@ -2,7 +2,7 @@
 {% block title %}{{ d.title }}{% endblock %}
 {% block page_title %}<a href="{{ ('/hr/employees/' ~ d.employee_id ~ '?tab=contract') if draft else '/hr/contracts' if d.doc_group == 'contract' else ('/hr/leave/' ~ d.employee_id) if d.doc_group == 'leave' else '/hr/certificates' }}" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> {{ d.title }}{% endblock %}
 {% block content %}
-<style>{{ brand_css()|safe }}</style>{# 도장·로고 자리. 정해진 글자로만 만들어지는 CSS #}
+<style>{{ brand_css(False, doc_co)|safe }}</style>{# 도장·로고 자리. 정해진 글자로만 만들어지는 CSS #}
 <div class="row g-3">
   <div class="col-xl-9 print-col">
     {% if draft %}<div class="alert alert-info py-2 small no-print"><i class="bi bi-eye"></i> <b>미리보기입니다. 아직 저장되지 않았습니다.</b>

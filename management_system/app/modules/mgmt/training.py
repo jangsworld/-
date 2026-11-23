@@ -4,6 +4,7 @@ from datetime import date
 
 from app.common import to_date, today
 from app.db import audit, batch, execute, query, query_one
+from app import company
 from app.modules.mgmt.common import employees_in_year
 from app.modules.mgmt.constants import TRAINING_CYCLES, TRAINING_TARGETS
 
@@ -108,7 +109,7 @@ def matrix(year: int, department: str = "") -> dict:
 
 def records(year: int | None = None, course_id: int | None = None, employee_id: int | None = None) -> list[dict]:
     sql = ("SELECT r.*, c.name course, e.name, e.department FROM training_records r JOIN training_courses c ON c.id=r.course_id "
-           "JOIN employees e ON e.id=r.employee_id WHERE 1=1")
+           "JOIN employees e ON e.id=r.employee_id WHERE 1=1" + ("" if employee_id else company.sql("e")))
     p = []
     if year:
         sql += " AND substr(r.edu_date,1,4)=?"

@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app import mailer
 from app.common import templates, today
 from app.db import get_settings, query
+from app import company
 from app.modules.hr import offboard, onboard, repo, richtext
 
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
@@ -64,7 +65,7 @@ def make_router(kind: str, flow) -> APIRouter:
     @router.get("", response_class=HTMLResponse)
     def page(request: Request):
         t = today().isoformat()
-        emps = [e for e in query("SELECT id, name, emp_no, department, rank, hire_date, resign_date FROM employees ORDER BY name")
+        emps = [e for e in query("SELECT id, name, emp_no, department, rank, hire_date, resign_date FROM employees WHERE 1=1" + company.sql("") + " ORDER BY name")
                 if not e.get("resign_date") or e["resign_date"] >= t]
         if kind == "onboard":                       # 입사: 최근에 들어왔거나 들어올 사람이 위로
             emps.sort(key=lambda e: e.get("hire_date") or "", reverse=True)
@@ -109,7 +110,7 @@ def make_router(kind: str, flow) -> APIRouter:
             "mail_ready": mailer.configured(), "email_ok": bool(_EMAIL_RE.match(email)), "email_masked": _mask(email),
             "mails": [{**m, "to_masked": _mask(m.get("to_addr") or ""),
                        "body_html": richtext.clean(m.get("body") or "") if m.get("fmt") == "html" else ""} for m in flow.mails(emp_id)],
-            "today_iso": today().isoformat(), "co_name": get_settings().get("company_name", ""), "sender": sender,
+            "today_iso": today().isoformat(), "co_name": company.name_for(e), "sender": sender,
             "day_value": day or "", "last_day_k": flow._kdate(day), "due_k": flow._kdate((ob or {}).get("handover_due")),
             "base": base, "L": L, "kind": kind, "active_menu": menu, "msg": request.query_params.get("msg", ""),
         })

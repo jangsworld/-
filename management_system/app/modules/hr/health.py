@@ -8,6 +8,7 @@
 """
 from app.common import to_date, today
 from app.db import audit, batch, current_actor, execute, get_settings, query, query_one, set_setting
+from app import company
 from app.security.crypto import enc
 
 KINDS = ("일반", "특수", "배치 전", "채용", "종합")
@@ -51,7 +52,7 @@ def set_cycle(emp_ids: list[int], cycle: str) -> int:
 
 
 def records(year: int | None = None, employee_id: int | None = None) -> list[dict]:
-    sql = ("SELECT h.*, e.name, e.department, e.rank FROM health_checks h JOIN employees e ON e.id=h.employee_id WHERE 1=1")
+    sql = ("SELECT h.*, e.name, e.department, e.rank FROM health_checks h JOIN employees e ON e.id=h.employee_id WHERE 1=1" + ("" if employee_id else company.sql("e")))
     p = []
     if year:
         sql += " AND substr(h.check_date,1,4)=?"
@@ -113,7 +114,7 @@ def overview(year: int, department: str = "", q: str = "") -> dict:
         by.setdefault((r["employee_id"], r["check_date"][:4]), []).append(r)
     rows = []
     for e in query("SELECT id, emp_no, name, department, rank, hire_date, resign_date FROM employees "
-                   "WHERE hire_date<=? AND (resign_date IS NULL OR resign_date='' OR resign_date>?) ORDER BY department, name",
+                   "WHERE hire_date<=? AND (resign_date IS NULL OR resign_date='' OR resign_date>?)" + company.sql("") + " ORDER BY department, name",
                    (f"{year}-12-31", today().isoformat() if year >= today().year else f"{year}-12-31")):
         if scope is not None and (e["department"] or "") not in scope:
             continue

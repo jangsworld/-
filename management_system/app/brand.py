@@ -13,6 +13,7 @@ import io
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from app import company
 from app.db import audit, batch, get_settings, set_setting
 from app.security.crypto import enc
 
@@ -29,11 +30,11 @@ _BOX = {
 }
 
 
-def get(kind: str) -> tuple[bytes, str] | None:
-    """(그림, 종류) 또는 None."""
+def get(kind: str, co: str = "1") -> tuple[bytes, str] | None:
+    """(그림, 종류) 또는 None. co: 회사 ('1' 본사 / '2' 자회사)."""
     if kind not in KINDS:
         return None
-    mime, _, b64 = (get_settings().get(f"doc_{kind}") or "").partition(";")
+    mime, _, b64 = (get_settings().get(company.key(f"doc_{kind}", company.norm(co))) or "").partition(";")
     if not b64 or mime not in ("image/png", "image/jpeg"):
         return None
     try:
@@ -51,7 +52,7 @@ def _clear_paper(img: Image.Image) -> Image.Image:
     return img
 
 
-def save(kind: str, raw: bytes) -> str:
+def save(kind: str, raw: bytes, co: str = "1") -> str:
     """잘못된 파일이면 이유를 돌려주고 저장하지 않습니다."""
     if kind not in KINDS:
         return "알 수 없는 종류입니다"
@@ -76,29 +77,30 @@ def save(kind: str, raw: bytes) -> str:
     img.save(buf, "PNG", optimize=True)
     out = buf.getvalue()
     with batch():
-        set_setting(f"doc_{kind}", enc("image/png;" + base64.b64encode(out).decode()))
-        audit("system", "설정 변경", KINDS[kind], f"그림 올림 {len(out) // 1024}KB")
+        set_setting(company.key(f"doc_{kind}", company.norm(co)), enc("image/png;" + base64.b64encode(out).decode()))
+        audit("system", "설정 변경", KINDS[kind], f"그림 올림 {len(out) // 1024}KB" + (" (자회사)" if company.norm(co) == "2" else ""))
     return ""
 
 
-def remove(kind: str):
+def remove(kind: str, co: str = "1"):
     if kind in KINDS:
         with batch():
-            set_setting(f"doc_{kind}", "")
+            set_setting(company.key(f"doc_{kind}", company.norm(co)), "")
             audit("system", "설정 변경", KINDS[kind], "그림 지움")
 
 
-def css(embed: bool = False) -> str:
+def css(embed: bool = False, co: str = "1") -> str:
     """도장·로고 자리에 그림을 그리는 CSS. embed=True 는 PDF 용(그림을 CSS 안에 넣음), False 는 화면용(주소)."""
     out = []
     for kind in KINDS:
-        got = get(kind)
+        co = company.norm(co)
+        got = get(kind, co)
         if not got:
             continue
         raw, mime = got
         if embed:
             url = f"data:{mime};base64,{base64.b64encode(raw).decode()}"
         else:
-            url = f"/hr/api/doc-asset/{kind}?v={hashlib.sha256(raw).hexdigest()[:10]}"
+            url = f"/hr/api/doc-asset/{kind}?" + ("c=2&" if co == "2" else "") + f"v={hashlib.sha256(raw).hexdigest()[:10]}"
         out.append(_BOX[kind] % url)
     return "".join(out)

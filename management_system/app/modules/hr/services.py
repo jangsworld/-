@@ -10,6 +10,7 @@ from app.common import (
     korean_amount, won, days_until,
 )
 from app.db import audit, execute, get_settings, query
+from app import company
 from app.modules.hr import repo
 from app.modules.hr.constants import (
     EMPLOYMENT_TO_CONTRACT, LEAVE_CATEGORIES, REDUCE_CATEGORIES,
@@ -64,12 +65,14 @@ def build_context(emp: dict, params: dict, settings: dict | None = None) -> dict
         y, m = service_period(sd, ed + timedelta(days=1))
         period = f"{y}년 {m}개월" if y else f"{m}개월"
     sy, sm = service_period(emp.get("hire_date"), emp.get("resign_date"))
+    from app import company
+    ci = company.info(company.norm(emp.get("company")) if company.enabled(s) else "1", s)   # 직원이 속한 회사의 정보
     return {
-        "회사명": s.get("company_name", ""),
-        "대표자": s.get("ceo_name", ""),
-        "회사주소": s.get("company_address", ""),
-        "사업자번호": s.get("business_no", ""),
-        "회사전화": s.get("company_phone", ""),
+        "회사명": ci["company_name"],
+        "대표자": ci["ceo_name"],
+        "회사주소": ci["company_address"],
+        "사업자번호": ci["business_no"],
+        "회사전화": ci["company_phone"],
         "성명": emp.get("name", ""),
         "사번": emp.get("emp_no", ""),
         "생년월일": _kdate(emp.get("birth_date")),
@@ -170,7 +173,7 @@ def _in_service(emp: dict, year: int) -> bool:
 
 def salary_overview(year: int) -> dict:
     # 임직원 현황과 같은 순서: 재직자 먼저, 입사일 순, 사번 순
-    emps = query("SELECT * FROM employees ORDER BY CASE WHEN resign_date IS NULL OR resign_date='' THEN 0 ELSE 1 END, hire_date, emp_no")
+    emps = query("SELECT * FROM employees WHERE 1=1" + company.sql("") + " ORDER BY CASE WHEN resign_date IS NULL OR resign_date='' THEN 0 ELSE 1 END, hire_date, emp_no")
     sals = repo.all_salaries()
     by_emp = defaultdict(dict)
     for s in sals:
@@ -409,6 +412,39 @@ def dashboard() -> dict:
         "recent_rewards": repo.list_rewards()[:5],
         "active_specials": [s for s in repo.list_specials() if s["status"] in ("진행중", "예정")][:8],
     }
+
+
+def company_summary(with_salary: bool = True) -> list[dict]:
+    """회사별 한 줄 요약 (통합 · 본사 · 자회사): 재직·남녀·휴직·이달 입퇴사·평균 근속, 권한이 있으면 평균 연봉·연봉 합계.
+    자회사를 켜지 않았으면 빈 목록. 화면의 회사 탭과 상관없이 언제나 세 줄을 모두 계산합니다."""
+    if not company.enabled():
+        return []
+    tok = company.scope.set("all")
+    try:
+        emps = repo.list_employees()
+    finally:
+        company.scope.reset(tok)
+    month_key = today().strftime("%Y-%m")
+
+    def line(cid: str, name: str, rows: list[dict]) -> dict:
+        active = [e for e in rows if e["status"] in ("재직", "휴직", "단축근무")]
+        sal = [e["annual_salary"] for e in active if e["annual_salary"]]
+        ten = [service_years_float(e["hire_date"]) for e in active]
+        out = {"id": cid, "name": name, "active": len(active),
+               "male": sum(1 for e in active if e.get("gender") == "남"), "female": sum(1 for e in active if e.get("gender") == "여"),
+               "on_leave": sum(1 for e in active if e["status"] == "휴직"),
+               "hires_month": sum(1 for e in rows if (e["hire_date"] or "").startswith(month_key)),
+               "resign_month": sum(1 for e in rows if (e["resign_date"] or "").startswith(month_key)),
+               "avg_tenure": sum(ten) / len(ten) if ten else 0,
+               "contract_missing": sum(1 for e in active if not e["has_contract"])}
+        if with_salary:
+            out.update(avg_salary=sum(sal) / len(sal) if sal else 0, payroll=sum(sal))
+        return out
+
+    out = [line("all", "통합", emps)]
+    for c in company.companies():
+        out.append(line(c["id"], c["short"], [e for e in emps if company.norm(e.get("company")) == c["id"]]))
+    return out
 
 
 def build_alerts(emps: list[dict], alert_days: int = 60) -> list[dict]:

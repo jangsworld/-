@@ -15,6 +15,7 @@ from app import mailer
 from app.common import templates, to_date, today
 from app.config import settings
 from app.db import audit, batch, current_actor, execute, get_settings, query, query_one
+from app import company as co_mod
 from app.modules.hr import leave, repo, services
 from app.modules.hr.signing import _hash, _now, base_url
 from app.security.crypto import enc
@@ -66,7 +67,7 @@ def leave_home(request: Request, year: int | None = None, department: str = ""):
     t = today()
     stage = ("1차 촉진 기간" if sch["first_from"] <= t <= sch["first_to"] else
              "2차 지정 기간" if sch["first_to"] < t <= sch["second_by"] else "")
-    depts = [r["department"] for r in query("SELECT DISTINCT department FROM employees WHERE department<>'' ORDER BY department")]
+    depts = [r["department"] for r in query("SELECT DISTINCT department FROM employees WHERE department<>''" + co_mod.sql("") + " ORDER BY department")]
     return _render(request, "hr/leave.html", {
         "year": year, "rows": rows, "department": department, "depts": depts, "months": months,
         "last_month": (t.month if year == t.year else 12), "sch": sch, "stage": stage,
@@ -74,7 +75,7 @@ def leave_home(request: Request, year: int | None = None, department: str = ""):
         "unmatched": leave.unmatched(), "imports": query("SELECT * FROM leave_imports ORDER BY id DESC LIMIT 8"),
         "mail_ready": mailer.configured(), "years": list(range(t.year + 1, t.year - 4, -1)),
         "notice": leave.stage_notice(year) if year == t.year else None,
-        "employees": query("SELECT id, name, emp_no, department, resign_date FROM employees ORDER BY name"),
+        "employees": query("SELECT id, name, emp_no, department, resign_date FROM employees WHERE 1=1" + co_mod.sql("") + " ORDER BY name"),
         "totals": {"granted": sum(r["granted"] for r in rows), "used": sum(r["used"] for r in rows),
                    "remaining": sum(r["remaining"] for r in rows)},
     })
@@ -228,6 +229,7 @@ def send_first(emp_ids: list[int], year: int, base: str, days_override: dict | N
             continue
         token = secrets.token_urlsafe(32)
         link = f"{base}/leave-plan/{token}"
+        company = co_mod.name_for(emp)                      # 통보서·메일의 회사명은 그 직원의 회사
         content = _notice_html(s, year, deadline, company, days)
         with batch():
             execute("UPDATE leave_promotions SET status='취소' WHERE employee_id=? AND year=? AND round=1 "
@@ -376,7 +378,7 @@ def parse_date_text(text: str, year: int) -> tuple[list[tuple[str, str]], str]:
 def designate_one(emp: dict, year: int, rows: list[tuple[str, str]]) -> tuple[bool, str]:
     """2차: 회사가 사용 시기를 지정해 통보 (통보서 PDF + 메일)."""
     total = sum(leave.PARTS[p] for _, p in rows)
-    company = get_settings().get("company_name", "")
+    company = co_mod.name_for(emp)
     esc = html.escape
     lines = "".join(f"<tr><td>{d}</td><td>{p}</td></tr>" for d, p in rows)
     content = (
@@ -561,7 +563,7 @@ def _save_reply(p: dict, rows: list, ip: str) -> str:
         audit("hr", "연차 사용계획 회신", f"emp#{emp['id']}", f"{year}년 {len(rows)}일({_fmt(total)}일)")
     _make_doc(emp, "연차사용계획", f"{year}년 연차 사용 시기 통보(회신) - {emp['name']}", content)
     if mailer.configured() and emp.get("email"):
-        company = get_settings().get("company_name", "")
+        company = co_mod.name_for(emp)
         try:
             mailer.send(emp["email"], f"[{company}] 연차 사용 계획이 접수되었습니다",
                         f"{emp['name']}님, 아래 날짜로 연차 사용 계획이 접수되었습니다.\n\n" +

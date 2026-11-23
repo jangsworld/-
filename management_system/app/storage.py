@@ -60,22 +60,22 @@ def target_path(doc: dict) -> str:
     return path
 
 
-def _paper_css() -> str:
+def _paper_css(co: str = "1") -> str:
     with open(os.path.join(APP_DIR, "static", "css", "app.css"), encoding="utf-8") as f:
         css = f.read()
     from app import brand
     from app.common import doc_font_css
-    return css + brand.css(embed=True) + "\nbody{background:#fff;margin:0}.paper{box-shadow:none;margin:0;padding:0;width:auto;min-height:auto}" \
+    return css + brand.css(embed=True, co=co) + "\nbody{background:#fff;margin:0}.paper{box-shadow:none;margin:0;padding:0;width:auto;min-height:auto}" \
                  ".ph-missing{background:none;color:#111}.sign-table{page-break-inside:avoid}"                  "@page{size:A4;margin:20mm}html,body{height:auto;min-height:0}" + doc_font_css()    # app.css 의 인쇄용 @page 여백 0 이 PDF 여백을 지우지 않게 맨 뒤에서 다시 정함
 
 
-def render_pdf(content_html: str, title: str) -> bytes:
+def render_pdf(content_html: str, title: str, co: str = "1") -> bytes:
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as ex:
         raise StorageError("PDF 변환 모듈(playwright)이 설치되어 있지 않습니다: pip install playwright") from ex
     html = (f"<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>{_safe(title)}</title>"
-            f"<style>{_paper_css()}</style></head><body><div class='paper'>{content_html}</div></body></html>")
+            f"<style>{_paper_css(co)}</style></head><body><div class='paper'>{content_html}</div></body></html>")
     opts = {}
     if settings.pdf_browser_path:
         opts["executable_path"] = settings.pdf_browser_path
@@ -100,7 +100,8 @@ def render_pdf(content_html: str, title: str) -> bytes:
 
 def save_document_pdf(doc: dict) -> tuple[str, str]:
     """문서를 PDF로 변환해 NAS에 저장. (경로, sha256) 반환."""
-    pdf = render_pdf(doc["content"], doc["title"])
+    from app import company
+    pdf = render_pdf(doc["content"], doc["title"], company.of_employee(doc.get("employee_id")))
     path = target_path(doc)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)

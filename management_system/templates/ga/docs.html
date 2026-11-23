@@ -1,8 +1,9 @@
 {% extends "base.html" %}
-{% from "ga/_macros.html" import field, modal, del_btn, dday %}
+{% from "ga/_macros.html" import field, modal, del_btn, dday, cofield, cobadge, att %}
 {% block title %}문서수발·관인{% endblock %}
 {% block page_title %}<i class="bi bi-envelope-paper me-2"></i>문서 수발 · 관인 대장{% endblock %}
 {% block content %}
+{% set _ac_ga_docs = att_counts('ga.docs') %}
 <ul class="nav nav-tabs mb-3">
   <li class="nav-item"><a class="nav-link {% if tab != 'seal' %}active{% endif %}" href="?tab=docs&year={{ f.year }}">문서 수발 대장 <span class="badge text-bg-light border">{{ rows|length }}</span></a></li>
   <li class="nav-item"><a class="nav-link {% if tab == 'seal' %}active{% endif %}" href="?tab=seal&year={{ f.year }}">관인(인감) 사용 대장 {% if seal_stat['신청'] %}<span class="badge text-bg-danger">{{ seal_stat['신청'] }}</span>{% endif %}</a></li>
@@ -27,13 +28,14 @@
       <td class="small">{{ d.department or '' }} {{ d.handler_name or '' }}</td><td class="small">{{ d.method or '' }}</td>
       <td><span class="badge {{ 'text-bg-danger' if d.status == '회신필요' else ('text-bg-success' if d.status == '완료' else 'text-bg-light border') }}">{{ d.status }}</span></td>
       <td class="small">{{ d.due_date or '' }} {% if d.status != '완료' %}{{ dday(d.due_dday, 7) }}{% endif %}</td><td class="small">{{ d.retention or '' }}</td>
-      <td class="text-nowrap">{% if can_write %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#docModal" data-fill='{{ d|tojson }}'><i class="bi bi-pencil"></i></button>{{ del_btn('docs', d.id, '/ga/docs') }}{% endif %}</td></tr>
+      <td class="text-nowrap">{{ att('ga.docs', d.id, _ac_ga_docs) }}{% if can_write %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#docModal" data-fill='{{ d|tojson }}'><i class="bi bi-pencil"></i></button>{{ del_btn('docs', d.id, '/ga/docs') }}{% endif %}</td></tr>
     {% else %}<tr><td colspan="11" class="text-center text-muted p-4">등록된 문서가 없습니다</td></tr>{% endfor %}</tbody>
   </table></div>
   <div class="card-footer help">문서번호는 연도별 자동 채번(발신 <code>{{ next_out.rsplit('-', 2)[0] }}-연도-0001</code>, 수신 <code>수신-연도-0001</code>)되어 결번·중복을 막습니다. 접두어는 설정에서 변경할 수 있습니다.</div>
 </div>
 {% if can_write %}
 {% call modal('docModal', '문서', '/ga/docs/save') %}
+  {{ cofield() }}
   {{ field('direction', '구분', opts=['수신', '발신'], blank=False, col='col-md-3') }}
   {{ field('doc_date', '일자', 'date', value=today().isoformat(), req=True, col='col-md-3') }}
   {{ field('counterpart', '발신처 / 수신처', req=True, col='col-md-6', ph='서울특별시청 회계과') }}
@@ -67,6 +69,7 @@
 </div>
 {% if can_write %}
 {% call modal('sealModal', '관인 사용 신청', '/ga/seals/save') %}
+  {{ cofield() }}
   {{ field('use_date', '사용(예정)일', 'date', value=today().isoformat(), req=True) }}{{ field('seal_type', '인장 종류', opts=seal_types, blank=False) }}
   {{ field('copies', '매수', 'number', value=1) }}{{ field('purpose', '용도', req=True, col='col-md-8', ph='○○ 용역 계약서 날인') }}
   {{ field('submit_to', '제출처') }}{{ field('requester_id', '신청자', opts=emp_opts, req=True) }}{{ field('note', '비고', col='col-md-8') }}

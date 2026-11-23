@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 
 from app.common import templates, today
 from app.db import audit, query
+from app import company
 from app.modules.hr import dual
 
 router = APIRouter(prefix="/hr/dual")
@@ -32,7 +33,7 @@ def dual_page(request: Request, state: str = "", emp: int = 0, open: int = 0):
     return templates.TemplateResponse(request, "hr/dual.html", {
         "rows": rows, "sum": dual.summary(everything), "state": state, "states": STATES, "open_emp": emp, "open_id": open,
         "reasons": dual.REASONS, "insurances": dual.INSURANCES, "pay_types": dual.PAY_TYPES, "today_iso": t,
-        "emps": [e for e in query("SELECT id, name, emp_no, department, resign_date FROM employees ORDER BY name")
+        "emps": [e for e in query("SELECT id, name, emp_no, department, resign_date FROM employees WHERE 1=1" + company.sql("") + " ORDER BY name")
                  if not e.get("resign_date") or e["resign_date"] >= t],
         "active_menu": "hr.dual", "msg": request.query_params.get("msg", ""),
     })

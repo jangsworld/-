@@ -2,6 +2,7 @@
 {% block title %}총괄 대시보드{% endblock %}
 {% block page_title %}<i class="bi bi-speedometer me-2"></i>총괄 대시보드{% endblock %}
 {% block content %}
+{% set co_sum = d.co_sum %}{% include "_co_summary.html" %}
 {% set k = d.kpi %}
 <div class="row g-3 mb-3">
   {% macro kpi(label, value, sub, icon, href='', cls='') %}

@@ -1,0 +1,20 @@
+{# 회사별 요약: 통합 · 본사 · 자회사 한눈에 (자회사를 켰을 때만) #}
+{% if co_sum %}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center"><span><i class="bi bi-buildings me-1"></i>회사별 인원 현황</span>
+    <span class="help ms-auto">줄을 누르면 그 회사만 봅니다</span></div>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+    <thead><tr><th>회사</th><th class="num">재직</th><th class="num">남</th><th class="num">여</th><th class="num">휴직</th>
+      <th class="num">이달 입사</th><th class="num">이달 퇴사</th><th class="num">평균 근속</th>
+      {% if perms.salary %}<th class="num">평균 연봉</th><th class="num">연봉 합계(연)</th><th class="num">계약서 미체결</th>{% endif %}</tr></thead>
+    <tbody>{% for r in co_sum %}
+      <tr data-href="?co={{ r.id }}" class="{{ 'fw-semibold table-light' if r.id == 'all' }}">
+        <td>{% if r.id == 'all' %}{{ r.name }}{% else %}<span class="co-badge co-{{ r.id }}">{{ r.name }}</span>{% endif %}</td>
+        <td class="num">{{ r.active }}명</td><td class="num">{{ r.male }}</td><td class="num">{{ r.female }}</td><td class="num">{{ r.on_leave }}</td>
+        <td class="num">{{ r.hires_month }}</td><td class="num">{{ r.resign_month }}</td><td class="num">{{ '%.1f'|format(r.avg_tenure) }}년</td>
+        {% if perms.salary %}<td class="num">{{ r.avg_salary|man_won }}원</td><td class="num">{{ '%.2f'|format(r.payroll / 100000000) }}억</td>
+        <td class="num">{% if r.contract_missing %}<span class="text-danger">{{ r.contract_missing }}</span>{% else %}0{% endif %}</td>{% endif %}
+      </tr>{% endfor %}
+    </tbody></table></div>
+</div>
+{% endif %}

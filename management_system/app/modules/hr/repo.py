@@ -8,13 +8,15 @@ from app.security.crypto import enc
 from app.modules.hr import rrn as rrn_util
 from app.modules.hr.constants import LEAVE_CATEGORIES, REDUCE_CATEGORIES
 
+from app import company
+
 EMPLOYEE_FIELDS = [
     "emp_no", "name", "birth_date", "gender", "phone", "email", "address",
     "emergency_contact", "emergency_relation", "emergency_name", "department", "rank", "title", "job_duty",
     "employment_type", "hire_route", "work_location", "hire_date", "probation_end",
     "resign_date", "resign_reason", "bank_name", "bank_account",
     "education", "edu_level", "edu_school", "edu_major", "edu_grad_year",
-    "certificates", "memo", "folder_name",
+    "certificates", "memo", "folder_name", "company",
 ]
 
 # AES-256-GCM 으로 암호화 저장되는 개인정보 항목
@@ -51,7 +53,7 @@ def _special_status(s: dict, ref=None) -> str:
 def active_specials(ref=None) -> list[dict]:
     rows = query(
         "SELECT ws.*, e.name, e.department, e.emp_no FROM work_specials ws "
-        "JOIN employees e ON e.id = ws.employee_id"
+        "JOIN employees e ON e.id = ws.employee_id WHERE 1=1" + company.sql("e")
     )
     return [r for r in rows if _special_status(r, ref) == "진행중"]
 
@@ -78,7 +80,7 @@ def employee_status(emp: dict, status_map=None) -> str:
 
 
 def list_employees(q="", department="", employment_type="", status="", search_pii=True) -> list[dict]:
-    sql = "SELECT * FROM employees WHERE 1=1"
+    sql = "SELECT * FROM employees WHERE 1=1" + company.sql("")
     params = []
     if department:
         from app.db import dept_scope  # 상위 부서를 고르면 하위 부서 직원까지
@@ -149,6 +151,8 @@ def _clean(data: dict) -> dict:
         from app.modules.hr.intake import valid_folder_name
         if not valid_folder_name(str(data["folder_name"]).strip()):
             raise ValueError("폴더 이름에는 경로를 넣을 수 없습니다")
+    if "company" in data:                                   # 회사: '1' 본사 / '2' 자회사 (그 밖의 값은 본사)
+        data["company"] = company.pick(data["company"], "1")
     out = {}
     for f in EMPLOYEE_FIELDS:
         if f in data:
@@ -163,6 +167,7 @@ def _clean(data: dict) -> dict:
 
 def create_employee(data: dict) -> int:
     d = _clean(data)
+    d.setdefault("company", company.pick(None))            # 고르지 않았으면 지금 보고 있는 회사 탭
     if not d.get("emp_no"):
         d["emp_no"] = next_emp_no(d.get("hire_date"))
     cols = ", ".join(d.keys())
@@ -198,6 +203,18 @@ def employment_types_in_use() -> list[str]:
     return [r["employment_type"] for r in query("SELECT DISTINCT employment_type FROM employees")]
 
 
+def set_company(emp_ids: list[int], co: str) -> int:
+    """고른 직원의 회사를 한꺼번에 바꿈."""
+    co = company.pick(co, "1")
+    n = 0
+    for eid in emp_ids:
+        execute("UPDATE employees SET company=?, updated_at=datetime('now','localtime') WHERE id=?", (co, eid))
+        n += 1
+    if n:
+        audit("hr", "임직원 회사 변경", f"{n}명", company.short(co))
+    return n
+
+
 # 주민등록번호는 이 세 함수로만 다룹니다. 화면·문서·CSV 에는 생년월일을 사용합니다.
 def set_rrn(emp_id: int, rrn: str):
     execute("INSERT INTO employee_rrn(employee_id, rrn) VALUES (?,?) ON CONFLICT(employee_id) DO UPDATE SET "
@@ -218,7 +235,7 @@ def list_technicians(kind: str = "") -> list[dict]:
     """보유자격 등록자 (퇴사자 제외)."""
     sql = ("SELECT q.*, e.name, e.emp_no, e.department, e.rank FROM employee_qualifications q "
            "JOIN employees e ON e.id=q.employee_id WHERE (e.resign_date IS NULL OR e.resign_date='' "
-           "OR e.resign_date > date('now','localtime'))")
+           "OR e.resign_date > date('now','localtime'))" + company.sql("e"))
     params = []
     if kind:
         sql += " AND q.kind=?"
@@ -328,6 +345,8 @@ def list_appointments(emp_id: int | None = None, limit: int | None = None) -> li
     if emp_id:
         sql += " WHERE a.employee_id=?"
         params.append(emp_id)
+    else:
+        sql += " WHERE 1=1" + company.sql("e")
     sql += " ORDER BY a.appt_date DESC, a.id DESC"
     if limit:
         sql += f" LIMIT {int(limit)}"
@@ -377,7 +396,7 @@ def salary_years() -> list[int]:
 def all_salaries() -> list[dict]:
     return query(
         "SELECT s.*, e.name, e.department, e.rank, e.emp_no, e.employment_type FROM salaries s "
-        "JOIN employees e ON e.id=s.employee_id ORDER BY s.year, e.emp_no"
+        "JOIN employees e ON e.id=s.employee_id WHERE 1=1" + company.sql("e") + " ORDER BY s.year, e.emp_no"
     )
 
 
@@ -455,32 +474,44 @@ def salary_segments(year: int) -> dict[int, list[tuple[str, int]]]:
 # ════════════════════════════════════════════════════════════════════════
 # 문서 템플릿 / 근로계약서 / 증명서
 # ════════════════════════════════════════════════════════════════════════
-def list_templates(doc_group: str | None = None, active_only=False) -> list[dict]:
+def list_templates(doc_group: str | None = None, active_only=False, co: str | None = None) -> list[dict]:
+    """co 를 주면 두 회사 공통 템플릿 + 그 회사 전용 템플릿만 (전용이 앞에 오게)."""
     sql = "SELECT * FROM doc_templates WHERE 1=1"
     params = []
+    if co in company.IDS:
+        sql += " AND (company IS NULL OR company='' OR company=?)"
+        params.append(co)
     if doc_group:
         sql += " AND doc_group=?"
         params.append(doc_group)
     if active_only:
         sql += " AND is_active=1"
-    return query(sql + " ORDER BY doc_group, id", params)
+    return query(sql + " ORDER BY doc_group, CASE WHEN company IS NULL OR company='' THEN 1 ELSE 0 END, id", params)
+
+
+def template_fits(tpl: dict | None, emp: dict | None) -> bool:
+    """회사 전용 템플릿은 그 회사 직원에게만."""
+    c = (tpl or {}).get("company") or ""
+    return not c or not company.enabled() or c == company.norm((emp or {}).get("company"))
 
 
 def get_template(tid: int) -> dict | None:
     return query_one("SELECT * FROM doc_templates WHERE id=?", (tid,))
 
 
-def save_template(tid, doc_group, category, name, content, is_active=1) -> int:
+def save_template(tid, doc_group, category, name, content, is_active=1, co: str = "") -> int:
+    """co: '' 두 회사 공통 / '1' 본사 전용 / '2' 자회사 전용."""
+    co = co if (co in company.IDS and company.enabled()) else None
     if tid:
         execute(
-            "UPDATE doc_templates SET doc_group=?, category=?, name=?, content=?, is_active=?, "
+            "UPDATE doc_templates SET doc_group=?, category=?, name=?, content=?, is_active=?, company=?, "
             "updated_at=datetime('now','localtime') WHERE id=?",
-            (doc_group, category, name, content, int(is_active), tid),
+            (doc_group, category, name, content, int(is_active), co, tid),
         )
         return tid
     return execute(
-        "INSERT INTO doc_templates(doc_group, category, name, content, is_active) VALUES (?,?,?,?,?)",
-        (doc_group, category, name, content, int(is_active)),
+        "INSERT INTO doc_templates(doc_group, category, name, content, is_active, company) VALUES (?,?,?,?,?,?)",
+        (doc_group, category, name, content, int(is_active), co),
     )
 
 
@@ -492,9 +523,11 @@ def list_documents(doc_group="contract", employee_id=None, status="", category="
     sql = ("SELECT d.id, d.doc_group, d.employee_id, d.template_id, d.category, d.title, d.doc_no, "
            "d.purpose, d.start_date, d.end_date, d.annual_salary, d.weekly_hours, d.status, "
            "d.signed_date, d.created_at, d.updated_at, d.emailed_at, d.cancel_reason, d.canceled_at, d.pdf_saved_at, e.name, e.emp_no, e.department, e.rank, "
-           "e.employment_type, e.resign_date FROM hr_documents d JOIN employees e ON e.id=d.employee_id "
+           "e.employment_type, e.resign_date, e.company FROM hr_documents d JOIN employees e ON e.id=d.employee_id "
            "WHERE d.doc_group=?")
     params = [doc_group]
+    if not employee_id:
+        sql += company.sql("e")
     if employee_id:
         sql += " AND d.employee_id=?"
         params.append(employee_id)
@@ -628,7 +661,7 @@ REWARD_FIELDS = ["employee_id", "kind", "category", "action_date", "reason", "am
 
 def list_rewards(kind="", year=None, employee_id=None) -> list[dict]:
     sql = ("SELECT r.*, e.name, e.emp_no, e.department, e.rank FROM rewards r "
-           "JOIN employees e ON e.id=r.employee_id WHERE 1=1")
+           "JOIN employees e ON e.id=r.employee_id WHERE 1=1" + ("" if employee_id else company.sql("e")))
     params = []
     if kind:
         sql += " AND r.kind=?"
@@ -668,7 +701,7 @@ SPECIAL_FIELDS = ["employee_id", "category", "start_date", "end_date", "actual_e
 
 def list_specials(category="", status="", employee_id=None) -> list[dict]:
     sql = ("SELECT ws.*, e.name, e.emp_no, e.department, e.rank, e.gender FROM work_specials ws "
-           "JOIN employees e ON e.id=ws.employee_id WHERE 1=1")
+           "JOIN employees e ON e.id=ws.employee_id WHERE 1=1" + ("" if employee_id else company.sql("e")))
     params = []
     if category:
         sql += " AND ws.category=?"
@@ -711,6 +744,8 @@ def list_insurances(employee_id=None) -> list[dict]:
     if employee_id:
         sql += " WHERE i.employee_id=?"
         params.append(employee_id)
+    else:
+        sql += " WHERE 1=1" + company.sql("e")
     return query(sql + " ORDER BY COALESCE(i.end_date, '9999') DESC, i.id DESC", params)
 
 

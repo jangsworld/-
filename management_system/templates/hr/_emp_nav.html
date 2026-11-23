@@ -1,0 +1,6 @@
+{# 임직원 현황 안의 탭: 임직원 목록 / 이카운트 연동 #}
+<ul class="nav nav-tabs mb-3 no-print">
+  <li class="nav-item"><a class="nav-link {{ 'active' if emp_nav == 'list' }}" href="/hr/employees"><i class="bi bi-people"></i> 임직원 목록</a></li>
+  {% if perms.salary %}<li class="nav-item"><a class="nav-link {{ 'active' if emp_nav == 'ecount' }}" href="/hr/ecount"><i class="bi bi-arrow-left-right"></i> 이카운트 연동
+    {% if ecount_wait %}<span class="badge text-bg-danger">{{ ecount_wait }}</span>{% endif %}</a></li>{% endif %}
+</ul>

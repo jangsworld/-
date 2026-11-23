@@ -15,6 +15,7 @@ from datetime import date, timedelta
 
 from app.common import add_months, add_years, to_date, today
 from app.db import audit, batch, current_actor, execute, query, query_one
+from app import company
 
 LEAVE_TYPES = ("연차",)             # 휴가 종류 이름에 이 말이 들어간 것만 연차 사용으로 봄 (연차, 연차(반차) 등)
 PARTS = {"종일": 1.0, "오전": 0.5, "오후": 0.5}
@@ -460,8 +461,8 @@ def summary(emp: dict, year: int) -> dict:
 def overview(year: int, department: str = "") -> list[dict]:
     """그 해 재직한 직원 (그 해 이전에 퇴사한 사람 제외)."""
     emps = query("SELECT id, emp_no, name, department, rank, hire_date, resign_date, employment_type FROM employees "
-                 "WHERE hire_date<=? AND (resign_date IS NULL OR resign_date='' OR resign_date>=?) "
-                 "ORDER BY department, hire_date, emp_no", (f"{year}-12-31", f"{year}-01-01"))
+                 "WHERE hire_date<=? AND (resign_date IS NULL OR resign_date='' OR resign_date>=?)" + company.sql("") +
+                 " ORDER BY department, hire_date, emp_no", (f"{year}-12-31", f"{year}-01-01"))
     if department:
         emps = [e for e in emps if e["department"] == department]
     return [summary(e, year) for e in emps]

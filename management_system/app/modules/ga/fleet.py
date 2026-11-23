@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 
 from app.common import add_months, days_until, today, to_date, vat_split
 from app.db import audit, execute, query, query_one
+from app import company
 from app.modules.ga import photos, repo
 
 SLOTS = [("front", "앞"), ("rear", "뒤"), ("left", "왼쪽 옆"), ("right", "오른쪽 옆"),
@@ -180,6 +181,7 @@ def inspections(vehicle_id: int | None = None, status: str = "") -> list[dict]:
            "(SELECT COUNT(*) FROM ga_vehicle_photos p WHERE p.inspection_id=i.id AND p.verdict='새파손') new_damage "
            "FROM ga_vehicle_inspections i JOIN ga_vehicles v ON v.id=i.vehicle_id "
            "LEFT JOIN employees f ON f.id=i.from_emp_id LEFT JOIN employees t ON t.id=i.to_emp_id WHERE 1=1")
+    sql += company.sql("v") if " v ON " in sql and not vehicle_id else ""
     p = []
     if vehicle_id:
         sql += " AND i.vehicle_id=?"; p.append(vehicle_id)
@@ -395,7 +397,7 @@ def photo_belongs(pid: int, vehicle_id: int | None = None) -> dict | None:
 # ── 사고·파손 ───────────────────────────────────────────────────────────
 def damages(vehicle_id: int | None = None, status: str = "", year: str = "") -> list[dict]:
     sql = ("SELECT d.*, v.plate_no, v.model, e.name driver_name, e.department driver_dept FROM ga_vehicle_damages d "
-           "JOIN ga_vehicles v ON v.id=d.vehicle_id LEFT JOIN employees e ON e.id=d.driver_id WHERE 1=1")
+           "JOIN ga_vehicles v ON v.id=d.vehicle_id LEFT JOIN employees e ON e.id=d.driver_id WHERE 1=1" + company.sql("v"))
     p = []
     if vehicle_id:
         sql += " AND d.vehicle_id=?"; p.append(vehicle_id)
@@ -433,7 +435,7 @@ def save_damage(f: dict, by: str) -> int:
 # ── 과태료 ──────────────────────────────────────────────────────────────
 def fines(vehicle_id: int | None = None, status: str = "", year: str = "") -> list[dict]:
     sql = ("SELECT f.*, v.plate_no, v.model, e.name driver_name, e.department driver_dept FROM ga_vehicle_fines f "
-           "JOIN ga_vehicles v ON v.id=f.vehicle_id LEFT JOIN employees e ON e.id=f.driver_id WHERE 1=1")
+           "JOIN ga_vehicles v ON v.id=f.vehicle_id LEFT JOIN employees e ON e.id=f.driver_id WHERE 1=1" + company.sql("v"))
     p = []
     if vehicle_id:
         sql += " AND f.vehicle_id=?"; p.append(vehicle_id)
