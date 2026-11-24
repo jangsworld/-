@@ -104,3 +104,24 @@ def css(embed: bool = False, co: str = "1") -> str:
             url = f"/hr/api/doc-asset/{kind}?" + ("c=2&" if co == "2" else "") + f"v={hashlib.sha256(raw).hexdigest()[:10]}"
         out.append(_BOX[kind] % url)
     return "".join(out)
+
+
+def mail_logo(co: str = "1") -> tuple[bytes, str] | None:
+    """메일 머리에 넣는 로고: 둘레의 흰 여백·투명한 곳을 잘라 내고 작게(너비 360픽셀 이하) 줄인 PNG. 없으면 None."""
+    got = get("logo", co)
+    if not got:
+        return None
+    try:
+        with Image.open(io.BytesIO(got[0])) as src:
+            img = src.convert("RGBA")
+        flat = Image.new("RGB", img.size, (255, 255, 255))
+        flat.paste(img, mask=img.getchannel("A"))
+        box = flat.convert("L").point(lambda v: 255 if v < 245 else 0).getbbox()
+        if box:
+            flat = flat.crop(box)
+        flat.thumbnail((360, 200), Image.LANCZOS)        # 메일에서는 너비 180 으로 보임(선명하게 2배)
+        buf = io.BytesIO()
+        flat.save(buf, "PNG", optimize=True)
+        return buf.getvalue(), "image/png"
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError, Image.DecompressionBombError):
+        return None

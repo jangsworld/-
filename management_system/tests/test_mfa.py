@@ -75,11 +75,38 @@ def test_code_mail_format(mail):
     code = _code(mail)
     assert subject == f"[BMS시스템] 로그인 인증번호 {code}"
     assert kw["from_name"] == "BMS시스템" and kw["plain"] is True
-    assert body.startswith("mf_fmt님, 로그인 인증번호는") and "3분 안에 입력해 주세요" in body and "접속 위치:" in body
+    assert body.startswith("BMS시스템 — 로그인 시도에 인증이 필요합니다") and "3분 안에 입력해 주세요. 한 번만" in body
+    assert "mf_fmt님 계정으로 새 로그인 시도" in body and "(한국 시간)" in body and "- IP 주소:" in body and "- 기기:" in body
+    assert "- 브라우저:" in body and "http" not in body
     h = kw["html"]
-    assert f">{code}</p>" in h and "font-weight:700" in h and "letter-spacing" in h
-    assert "#c62828" in h and "본인이 로그인한 것이 아니면 비밀번호를 바꾸고 관리자에게 알려 주세요." in h
-    assert h.index("로그인 인증번호는") < h.index(code) < h.index("입니다.") < h.index("본인이") < h.index("접속 위치")
+    assert f">{code}</div>" in h and "font-weight:bold" in h and "letter-spacing" in h and "#1f3a5f" in h
+    assert "#c0392b" in h and "이 번호를 누구에게도 알려 주지 말고" in h
+    assert (h.index("로그인 시도에 인증이 필요합니다") < h.index("새 로그인 시도가 있습니다") < h.index(code) < h.index("한 번만 쓸 수")
+            < h.index("로그인 시도 정보") < h.index("본인이") < h.index("이 메일을 받는 이유"))
+    assert "<a " not in h and "href" not in h and "http" not in h and "<script" not in h      # 누르는 링크·바깥 그림 없음
+
+
+def test_code_mail_safe_values():
+    """이름·IP 는 이스케이프·길이 제한, 브라우저 원문은 흔한 형식일 때만. 로고는 메일 안 그림(cid)으로만."""
+    from app.security import mfa
+    evil = 'Mozilla/5.0 <img src=x onerror=alert(1)> Chrome/120.0 Windows NT 10.0'
+    text, h = mfa.code_mail('<b>홍길동</b>', "123456", '1.2.3.4"><script>x</script>' + "9" * 200, "2026-11-24 09:00:00",
+                            username="hong", ua=evil, org="회사<이름>", logo=True)
+    assert "<script" not in h and "onerror" not in h and "<b>홍" not in h and "&lt;b&gt;홍길동" in h
+    assert "Chrome 120 · Windows" in h and "표시하지 않음" in h and "9" * 60 not in h
+    assert 'src="cid:bmslogo"' in h and "http" not in h and "회사&lt;이름&gt;" in h
+    _t, h2 = mfa.code_mail("홍길동", "123456", "1.2.3.4", "2026-11-24 09:00:00")
+    assert "cid:" not in h2 and "<img" not in h2 and "BMS시스템" in h2
+    good = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36"
+    assert mfa.browser_text(good) == good and mfa.device_label(good) == "Chrome 157 · Windows"
+    for bad in ("", "curl/8.0", "Mozilla/5.0 (compatible; bot; +http://evil.example/x)", "Mozilla/5.0 www.evil.kr",
+                "Mozilla/5.0 evil.example", "Mozilla/5.0 " + "a" * 400, "Mozilla/5.0 한글"):
+        assert mfa.browser_text(bad) == "표시하지 않음", bad
+    assert mfa.device_label("") == "알 수 없음"
+    assert mfa.device_label("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Version/17.0 Mobile/15E148 Safari/604.1") == "Safari 17 · iPhone"
+    assert mfa.device_label(good + " Edg/157.0.0.0") == "Edge 157 · Windows"
+    assert mfa.ip_label("10.1.2.3") == "10.1.2.3 (사내)" and mfa.ip_label("203.0.113.7") == "203.0.113.7 (외부)"
+    assert mfa.ip_label("100.64.0.12") == "100.64.0.12 (전용망)" and len(mfa.ip_label("x" * 99)) <= 45
 
 
 def test_mailer_html_plain(monkeypatch):
@@ -104,6 +131,14 @@ def test_mailer_html_plain(monkeypatch):
         assert "BMS" in m["From"] and m["Cc"] is None
         assert m.get_body(("plain",)).get_content().strip() == "본문"
         assert "<p>본문</p>" in m.get_body(("html",)).get_content()
+        png = b"\x89PNG\r\n\x1a\n" + b"0" * 20
+        mailer.send("u@example.test", "제목", "본문", html='<img src="cid:logo1">', plain=True, inline=[("logo1", png, "image/png")])
+        m = sent["msg"]
+        assert m.get_body(("plain",)).get_content().strip() == "본문"
+        assert 'cid:logo1' in m.get_body(("html",)).get_content()
+        imgs = [p for p in m.walk() if p.get_content_type() == "image/png"]
+        assert len(imgs) == 1 and imgs[0]["Content-ID"] == "<logo1>" and imgs[0].get_content() == png
+        assert not list(m.iter_attachments())                                  # 첨부 목록에는 보이지 않음(본문 안 그림)
     finally:
         for k, v in before.items():
             set_setting(k, v or "")
@@ -301,3 +336,28 @@ def test_code_countdown_3min(mail):
         assert re.search(r">0[23]:\d\d<", page)
         assert "BMS시스템" in page and "경영관리업무시스템" not in page
     execute("DELETE FROM sessions WHERE user_id=?", (uid,))
+
+
+def test_code_mail_logo_attached(mail):
+    """환경설정에 올린 로고가 있으면 여백을 잘라 메일 안 그림(cid)으로 붙고, 없으면 회사 이름 글자."""
+    import io
+    from PIL import Image
+    from app import brand
+    before = get_settings().get("doc_logo")
+    big = Image.new("RGB", (600, 400), "white")
+    big.paste(Image.new("RGB", (300, 60), (30, 60, 150)), (150, 170))            # 흰 여백이 넓은 로고
+    buf = io.BytesIO(); big.save(buf, "PNG")
+    assert brand.save("logo", buf.getvalue()) == ""
+    try:
+        got = brand.mail_logo()
+        w, h = Image.open(io.BytesIO(got[0])).size
+        assert got[1] == "image/png" and w <= 360 and w / h > 4                    # 여백이 잘려 가로로 긴 그림
+        uid = _user("mf_logo", "mf.logo@example.test")
+        with TestClient(app) as c:
+            c.post("/login", data={"username": "mf_logo", "password": PW}, headers={**O, "user-agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/130 Safari/537"}, follow_redirects=False)
+        execute("DELETE FROM sessions WHERE user_id=?", (uid,))
+        kw = mail[-1][3]
+        assert 'src="cid:bmslogo"' in kw["html"] and "Chrome 130 · Windows" in kw["html"]
+        assert kw["inline"] and kw["inline"][0][0] == "bmslogo" and kw["inline"][0][1] == got[0]
+    finally:
+        set_setting("doc_logo", before or "")

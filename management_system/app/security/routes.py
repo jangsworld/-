@@ -92,7 +92,7 @@ async def login(request: Request):
     msg = ""
     if method == "email":
         try:
-            to, sent = mfa.send_code(user, request.state.ip)      # 유효한 번호가 있으면 다시 보내지 않음
+            to, sent = mfa.send_code(user, request.state.ip, ua=request.headers.get("user-agent", ""))      # 유효한 번호가 있으면 다시 보내지 않음
             msg = f"{to} 로 인증번호를 보냈습니다" if sent else "이미 보낸 인증번호가 아직 유효합니다. 메일함을 확인해 주세요"
         except mfa.MfaError as ex:
             msg = str(ex)
@@ -156,7 +156,7 @@ async def login_2fa_send(request: Request):
     if sess["mfa_passed"]:
         return _go(nxt)
     try:
-        to, _ = mfa.send_code(user, request.state.ip, force=True)
+        to, _ = mfa.send_code(user, request.state.ip, force=True, ua=request.headers.get("user-agent", ""))
         msg = f"{to} 로 인증번호를 다시 보냈습니다"
     except mfa.MfaError as ex:
         msg = str(ex)

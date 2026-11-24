@@ -48,8 +48,11 @@ def _password() -> str:
 
 
 def send(to: str, subject: str, body: str, attachments: list[tuple[str, bytes]] | None = None,
-         html: str | None = None, from_name: str | None = None, plain: bool = False):
-    """plain=True: 참조·서명 없이 받는 사람에게만 (로그인 인증번호 등)."""
+         html: str | None = None, from_name: str | None = None, plain: bool = False,
+         inline: list[tuple[str, bytes, str]] | None = None):
+    """plain=True: 참조·서명 없이 받는 사람에게만 (로그인 인증번호 등).
+    inline: HTML 본문 안에 넣는 그림 [(cid, 그림, 'image/png')]. 본문에서는 <img src="cid:이름"> 으로 씀
+    (바깥 주소의 그림을 불러오지 않으므로 메일 프로그램이 막지 않고, 열람 추적도 되지 않음)."""
     c = config()
     if not c["host"] or not c["from"]:
         raise MailError("메일 서버가 설정되지 않았습니다")
@@ -64,6 +67,10 @@ def send(to: str, subject: str, body: str, attachments: list[tuple[str, bytes]] 
     msg.set_content(f"{body}\n\n{c['signature']}" if c["signature"] and not plain else body)
     if html:
         msg.add_alternative(html, subtype="html")
+        for cid, data, mime in inline or []:
+            if mime in ("image/png", "image/jpeg"):
+                msg.get_payload()[-1].add_related(data, maintype="image", subtype=mime.split("/")[1],
+                                                  cid=f"<{cid}>", disposition="inline")
     for name, data in attachments or []:
         msg.add_attachment(data, maintype="application", subtype="pdf", filename=name)
     ctx = ssl.create_default_context()
