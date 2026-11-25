@@ -19,7 +19,7 @@ from app.db import audit, init_db, get_settings, set_setting, DEFAULT_SETTINGS, 
 from app.modules import MODULES
 from app import brand, mailer
 from app import company as company_mod
-from app import archive
+from app import archive, archive_ops
 from app import files as files_mod
 from app.files import router as files_router
 from app.modules.ga import cartax, company as company_alerts, contract_intake
@@ -242,7 +242,7 @@ def settings_page(request: Request):
         "brand2": {k: {"label": v, "has": bool(brand.get(k, "2"))} for k, v in brand.KINDS.items()},
         "co2": {**company_mod.info("2"), "company_short": get_settings().get("co2_company_short", ""),
                 "company_short_1": get_settings().get("company_short", "")},
-        "arch": archive.status(),
+        "arch": archive.status(), "arch_auto": archive_ops.auto_on(), "arch_hold": archive_ops.held(),
         "brand_msg": request.query_params.get("bmsg", ""), "brand_ok": request.query_params.get("bok") == "1",
         "active_menu": "settings", "msg": request.query_params.get("msg", ""),
         "cfg": {"포트": settings.port, "HTTPS": "사용" if settings.https else "미사용(내부 테스트용)",
@@ -350,6 +350,17 @@ async def settings_save(request: Request):
             set_setting(k, str(form[k]).strip()[:200])
     audit("system", "설정 변경", "회사정보", "")
     return RedirectResponse("/settings?msg=" + quote("설정이 저장되었습니다"), status_code=303)
+
+
+@app.post("/settings/archive-auto")
+async def settings_archive_auto(request: Request):
+    """NAS 에 직접 넣은 파일을 자동으로 대장에 올릴지 (관리자만: /settings 규칙)."""
+    on = "1" if (await request.form()).get("on") == "1" else "0"
+    set_setting("archive_auto", on)
+    if on == "1":
+        archive_ops.release()
+    audit("system", "설정 변경", "NAS 파일 자동으로 대장에 올리기", "켬" if on == "1" else "끔")
+    return RedirectResponse("/settings?msg=" + quote("NAS 파일 자동 올리기를 " + ("켰습니다" if on == "1" else "껐습니다")), status_code=303)
 
 
 @app.post("/settings/brand/{kind}")

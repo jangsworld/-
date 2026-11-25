@@ -350,3 +350,31 @@ a.fx-name { color: #1d2b3a; text-decoration: none; } a.fx-name:hover { text-deco
   .fx-icons .fx-item { width: 31%; }
   .fx-icons .fx-act { display: block; }
 }
+
+/* 탐색기 동작: 고르기, 끌어다 놓기, 오른쪽 단추 메뉴, 물음 창, 미리보기 */
+.fx-tools { padding: .5rem .9rem; border-bottom: 1px solid #e3e7ed; }
+.fx-note { max-width: 260px; }
+.fx-item { cursor: default; position: relative; }
+.fx-folder { cursor: pointer; }
+.fx-item.fx-on { background: #dcebff; border-color: #9cc3f2; }
+.fx-drop { outline: 2px dashed #2b7de0; outline-offset: -2px; background: #eaf3ff !important; }
+.fx-lost { opacity: .6; }
+.fx-thumb { width: 84px; height: 62px; object-fit: cover; border-radius: 4px; border: 1px solid #dfe5ec; background: #fff; }
+.fx-icons .fx-sel { position: absolute; left: 4px; top: 2px; opacity: 0; z-index: 1; }
+.fx-icons .fx-item:hover .fx-sel, .fx-icons .fx-sel:checked, .fx-icons .fx-sel:focus-visible { opacity: 1; }
+.fx-list .fx-item { padding-left: 2.1rem; }
+.fx-list .fx-sel { position: absolute; left: .6rem; top: 50%; transform: translateY(-50%); margin: 0; }
+.fx-head.fx-on { padding-left: 2.8rem; }
+.fx-menu { position: fixed; z-index: 2000; min-width: 170px; background: #fff; border: 1px solid #cfd6de; border-radius: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.18); padding: .25rem; }
+.fx-menu button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: .35rem .7rem; font-size: .88rem; border-radius: 4px; }
+.fx-menu button:hover { background: #eaf3ff; }
+.fx-dlg { border: 0; border-radius: 10px; padding: 1.1rem 1.2rem; width: min(400px, 92vw); box-shadow: 0 12px 40px rgba(0,0,0,.3); }
+.fx-dlg::backdrop, .fx-view::backdrop { background: rgba(20,30,45,.55); }
+.fx-view { border: 0; border-radius: 10px; padding: 0; width: min(1100px, 96vw); height: 94vh; max-height: 94vh; overflow: hidden; background: #2b3138; }
+.fx-view[open] { display: flex; flex-direction: column; }
+.fx-view-bar { display: flex; align-items: center; gap: .4rem; padding: .5rem .8rem; color: #fff; background: #1f3a5f; }
+.fx-view-bar b { font-size: .92rem; min-width: 0; }
+.fx-view-body { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.fx-view-body img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.fx-view-body iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+@media (hover: none), (max-width: 700px) { .fx-icons .fx-sel { opacity: .75; } .fx-note { max-width: none; width: 100%; } }

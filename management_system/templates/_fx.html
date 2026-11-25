@@ -1,0 +1,60 @@
+{% set _root = fp.folder.split(' \\ ')[-1] %}{% set _fid = 'fxAdopt-' ~ fp.menu|replace('.', '-') ~ '-' ~ fp.ref_id %}
+<div class="card fx" data-fx data-root="{{ _root }}" data-total="{{ fp.rows|length }}" data-new="{{ fp.waiting|length }}">
+  <div class="card-header d-flex flex-wrap align-items-center gap-2">
+    <button type="button" class="btn btn-sm btn-light border" data-fx-up title="위 폴더로" disabled><i class="bi bi-arrow-up"></i></button>
+    <button type="button" class="btn btn-sm btn-light border" data-fx-refresh title="새로 고침"><i class="bi bi-arrow-clockwise"></i></button>
+    <nav class="fx-path" data-fx-path><i class="bi bi-folder2-open text-warning"></i> <span class="text-muted">{{ fp.folder.split(' \\ ')[:-1]|join(' › ') }} ›</span> <a href="#" data-fx-go=""><b>{{ _root }}</b></a></nav>
+    <span class="badge text-bg-secondary">서류 {{ fp.rows|length }}개</span>
+    <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="보기 방식">
+      <button type="button" class="btn btn-outline-secondary active" data-fx-view="icons" title="큰 아이콘"><i class="bi bi-grid-3x3-gap"></i></button>
+      <button type="button" class="btn btn-outline-secondary" data-fx-view="list" title="자세히"><i class="bi bi-list-ul"></i></button></div>
+  </div>
+  <div class="fx-tools d-flex flex-wrap align-items-center gap-2">
+    <label class="btn btn-sm btn-primary mb-0"><i class="bi bi-cloud-arrow-up"></i> 서류 올리기<input type="file" multiple hidden data-fx-pick accept=".pdf,.jpg,.jpeg,.png,.webp,.hwp,.hwpx,.doc,.docx,.xls,.xlsx,.pptx"></label>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-fx-act="mkdir"><i class="bi bi-folder-plus"></i> 새 폴더</button>
+    <span class="vr"></span>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-fx-act="rename" disabled><i class="bi bi-input-cursor-text"></i> 이름 바꾸기</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-fx-act="move" disabled><i class="bi bi-folder-symlink"></i> 옮기기</button>
+    <button type="button" class="btn btn-sm btn-outline-danger" data-fx-act="trash" disabled><i class="bi bi-trash"></i> 지우기</button>
+    <span class="small text-muted" data-fx-sel></span>
+    <input class="form-control form-control-sm ms-auto fx-note" data-fx-note maxlength="200" placeholder="올릴 서류에 붙일 메모 (선택)">
+  </div>
+  {% if fp.waiting %}
+  <form id="{{ _fid }}" method="post" action="/files/{{ fp.menu }}/{{ fp.ref_id }}/adopt" class="fx-new d-flex flex-wrap align-items-center gap-2">
+    {% if fp.next %}<input type="hidden" name="next" value="{{ fp.next }}">{% endif %}
+    <span><i class="bi bi-folder-symlink"></i> 폴더에 있는데 대장에 없는 파일 <b>{{ fp.waiting|length }}개</b></span>
+    <span class="help">{% if fp.auto %}NAS에 넣은 파일은 2~3분 안에 자동으로 올라갑니다. 기다리지 않고 지금 올리려면 단추를 누르세요{% else %}NAS 폴더에 직접 넣어 둔 파일입니다. 여러 건이 폴더를 같이 쓰므로, 이 건의 것을 골라 올려 주세요{% endif %}</span>
+    <button class="btn btn-sm btn-primary ms-auto text-nowrap"><i class="bi bi-check2-square"></i> 고른 파일 대장에 올리기</button>
+  </form>
+  {% endif %}
+  <div class="fx-head"><span>이름</span><span>올린 때</span><span>종류</span><span class="text-end">크기</span><span>메모 · 올린 사람</span><span></span></div>
+  <div class="fx-body fx-icons" data-fx-body>
+    {% for d in fp.folders %}
+    <div class="fx-item fx-folder" data-fx-open="{{ d.path }}" data-path="{{ d.path }}" data-parent="{{ d.parent }}" data-name="{{ d.name }}" data-count="{{ d.count }}" tabindex="0" role="button" title="{{ d.name }} (파일 {{ d.count }}개)">
+      <input type="checkbox" class="form-check-input fx-sel" aria-label="{{ d.name }} 고르기">
+      <span class="fx-ico"><i class="bi bi-folder-fill"></i>{% if d.new %}<span class="fx-dot" title="새 파일 {{ d.new }}개"></span>{% endif %}</span>
+      <span class="fx-name"><i class="bi bi-folder-fill fx-mini"></i>{{ d.name }}</span><span class="fx-c">{% if d.new %}<span class="badge text-bg-warning">새 파일 {{ d.new }}</span>{% endif %}</span>
+      <span class="fx-c">파일 폴더</span><span class="fx-c text-end">{{ d.count }}개</span><span class="fx-c"></span><span class="fx-c"></span></div>
+    {% endfor %}
+    {% for e in fp.entries %}
+    <div class="fx-item fx-file {{ 'fx-isnew' if e.new }} {{ 'fx-lost' if e.lost }}" data-dir="{{ e.dir }}" data-name="{{ e.name }}" {% if e.id %}data-id="{{ e.id }}" draggable="true"{% if e.changed %} data-changed="1"{% endif %}{% if e.view and not e.lost %} data-view="{{ e.view }}"{% endif %}{% endif %} title="{{ e.name }}{% if e.note %} — {{ e.note }}{% endif %}">
+      {% if e.new %}
+      <label class="fx-ico"><i class="bi {{ e.icon }} fx-{{ e.tone }}"></i><input type="checkbox" class="form-check-input fx-check" name="names" value="{{ e.path }}" form="{{ _fid }}" checked></label>
+      <span class="fx-name"><i class="bi {{ e.icon }} fx-{{ e.tone }} fx-mini"></i>{{ e.name }} <span class="badge text-bg-warning">새 파일</span></span>
+      <span class="fx-c text-muted">대장에 없음</span>
+      {% else %}
+      <input type="checkbox" class="form-check-input fx-sel" aria-label="{{ e.name }} 고르기">
+      <a class="fx-ico" href="/files/get/{{ e.id }}" draggable="false" tabindex="-1">{% if e.thumb %}<img src="/files/thumb/{{ e.id }}" alt="" loading="lazy" draggable="false" class="fx-thumb" data-fx-thumb><i class="bi {{ e.icon }} fx-{{ e.tone }}" hidden></i>{% else %}<i class="bi {{ e.icon }} fx-{{ e.tone }}"></i>{% endif %}</a>
+      <a class="fx-name" href="/files/get/{{ e.id }}" draggable="false"><i class="bi {{ e.icon }} fx-{{ e.tone }} fx-mini"></i>{{ e.name }}{% if e.lost %} <span class="badge text-bg-danger" title="보관함 폴더에서 지워졌거나 다른 곳으로 옮겨졌습니다">파일 없음</span>{% elif e.changed %} <span class="badge text-bg-warning" title="NAS에서 고친 파일입니다. 잠시 뒤 자동으로 반영됩니다">고쳐짐</span>{% endif %}</a>
+      <span class="fx-c">{{ e.date }}{% if e.edited %}<br><span class="text-primary">NAS에서 고침 {{ e.edited }}</span>{% endif %}</span>
+      {% endif %}
+      <span class="fx-c">{{ e.kind }}</span>
+      <span class="fx-c text-end">{{ '%.1f'|format(e.size / 1024 / 1024) ~ 'MB' if e.size >= 1048576 else (e.size // 1024) ~ 'KB' }}</span>
+      <span class="fx-c text-truncate">{{ e.note }}{% if e.by %}{{ ' · ' if e.note }}{{ e.by }}{% endif %}</span>
+      <span class="fx-c fx-act text-nowrap">{% if e.id %}<a href="/files/get/{{ e.id }}?dl=1" title="내려받기"><i class="bi bi-download"></i></a>{% endif %}</span>
+    </div>
+    {% endfor %}
+    <div class="fx-empty text-muted" data-fx-empty {% if fp.entries or fp.folders %}hidden{% endif %}>이 폴더는 비어 있습니다 · 파일을 여기로 끌어다 놓으면 올라갑니다</div>
+  </div>
+  <div class="card-footer help"><span data-fx-status></span><br>파일을 이 창에 끌어다 놓으면 지금 보는 폴더에 올라갑니다(폴더째도 됩니다) · 파일을 폴더 위로 끌면 옮겨집니다 · 마우스 오른쪽 단추로 메뉴 · PDF·사진·한글·워드·엑셀·파워포인트, 한 개에 {{ fp.max_mb }}MB 이하 · 저장되는 곳: ##BMS시스템 \ {{ fp.folder }}</div>
+</div>

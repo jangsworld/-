@@ -18,3 +18,12 @@
   </ul>
 </div>
 {% endif %}
+{% if pending.hold %}<div class="alert alert-danger py-2 small"><i class="bi bi-exclamation-octagon"></i> {{ pending.hold }}에 NAS 서류가 짧은 시간에 너무 많이 바뀌어 <b>자동 반영을 멈췄습니다</b>. 관리자에게 알려 NAS에 이상이 없는지 확인해 주세요.</div>{% endif %}
+{% if pending.recent %}
+<details class="card mb-3" id="recentCard"><summary class="card-header"><i class="bi bi-inbox"></i> 최근 3일 동안 NAS에서 새로 들어온 서류 <b>{{ pending.recent|length }}건</b> <span class="help">자동으로 대장에 올라간 것입니다. 누르면 펼쳐집니다</span></summary>
+  <ul class="list-group list-group-flush small">
+    {% for p in pending.recent %}<li class="list-group-item py-1 d-flex align-items-center gap-2"><a class="fw-semibold text-decoration-none text-nowrap" href="{{ p.url }}">{{ p.title }}</a>
+      <span class="badge text-bg-info">{{ p.n }}개</span><span class="text-muted text-truncate">{{ p.name }}{% if p.n > 1 %} 외 {{ p.n - 1 }}개{% endif %}</span><span class="text-muted ms-auto text-nowrap">{{ p.at }}</span>
+      <a class="btn btn-sm btn-outline-primary text-nowrap" href="{{ p.url }}">바로가기</a></li>{% endfor %}
+  </ul></details>
+{% endif %}

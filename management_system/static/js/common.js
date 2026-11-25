@@ -518,43 +518,253 @@ document.querySelectorAll('select[data-search]').forEach((sel) => {
   if (form) form.addEventListener('reset', () => { box.value = ''; sel.replaceChildren(...all); });
 });
 
-// ── 서류 탐색기: 폴더를 누르면 안으로, 위로 가기, 경로 표시, 큰 아이콘/자세히 보기 ──
+// ── 서류 탐색기: 폴더 이동, 올리기(끌어다 놓기), 새 폴더, 옮기기, 이름 바꾸기, 지우기, 새로 고침, 미리보기 ──
 (() => {
-  const esc = (t) => { const d = document.createElement('span'); d.textContent = t; return d.innerHTML; };
-  document.querySelectorAll('[data-fx]').forEach((box) => {
-    const body = box.querySelector('[data-fx-body]'), path = box.querySelector('[data-fx-path]'), up = box.querySelector('[data-fx-up]');
-    const head = box.querySelector('.fx-head'), status = box.querySelector('[data-fx-status]'), empty = box.querySelector('[data-fx-empty]');
-    const prefix = path.querySelector('span') ? path.querySelector('span').outerHTML : '';
-    let cur = '';
+  const wraps = document.querySelectorAll('[data-fxwrap]');
+  if (!wraps.length) return;
+  const token = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
+  const el = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text !== undefined) x.textContent = text; return x; };
+  const icon = (name) => el('i', 'bi ' + name);
+  const EXT = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'hwp', 'hwpx', 'doc', 'docx', 'xls', 'xlsx', 'pptx'];
+
+  // 작은 물음 창 (이름 넣기 / 폴더 고르기)
+  const ask = (title, field, okText) => new Promise((done) => {
+    const d = el('dialog', 'fx-dlg'), f = el('form'); f.method = 'dialog';
+    f.append(el('h6', 'mb-2', title), field);
+    const row = el('div', 'd-flex gap-2 justify-content-end mt-3'), no = el('button', 'btn btn-sm btn-outline-secondary', '취소'), ok = el('button', 'btn btn-sm btn-primary', okText);
+    no.type = 'button'; no.addEventListener('click', () => d.close('no'));
+    ok.value = 'ok'; row.append(no, ok); f.append(row); d.append(f); document.body.append(d);
+    d.addEventListener('close', () => { const v = d.returnValue === 'ok' ? field.value : null; d.remove(); done(v); });
+    d.showModal(); field.focus(); if (field.select) field.select();
+  });
+
+  // 미리보기 창
+  const preview = (list, at) => {
+    const d = el('dialog', 'fx-view'), bar = el('div', 'fx-view-bar'), name = el('b', 'text-truncate'), body = el('div', 'fx-view-body');
+    const btn = (ic, title, fn) => { const b = el('button', 'btn btn-sm btn-outline-light'); b.type = 'button'; b.title = title; b.append(icon(ic)); b.addEventListener('click', fn); return b; };
+    const open = el('a', 'btn btn-sm btn-outline-light text-nowrap', '새 창'), down = el('a', 'btn btn-sm btn-outline-light'); open.target = '_blank'; open.rel = 'noopener'; down.title = '내려받기'; down.append(icon('bi-download'));
+    const show = (n) => {
+      at = (n + list.length) % list.length;
+      const it = list[at], url = '/files/get/' + it.id;
+      name.textContent = it.name + (list.length > 1 ? '  (' + (at + 1) + '/' + list.length + ')' : '');
+      open.href = url; down.href = url + '?dl=1';
+      let v;
+      if (it.view === 'img') { v = el('img'); v.alt = it.name; v.src = url; } else { v = el('iframe'); v.title = it.name; v.src = url + '#view=FitH'; }
+      body.replaceChildren(v);
+    };
+    const prev = btn('bi-chevron-left', '이전', () => show(at - 1)), next = btn('bi-chevron-right', '다음', () => show(at + 1));
+    prev.hidden = next.hidden = list.length < 2;
+    bar.append(name, el('span', 'ms-auto'), prev, next, open, down, btn('bi-x-lg', '닫기 (Esc)', () => d.close()));
+    d.append(bar, body); document.body.append(d);
+    d.addEventListener('keydown', (e) => { if (e.key === 'ArrowLeft' && list.length > 1) show(at - 1); if (e.key === 'ArrowRight' && list.length > 1) show(at + 1); });
+    d.addEventListener('click', (e) => { if (e.target === d) d.close(); });
+    d.addEventListener('close', () => { body.replaceChildren(); d.remove(); });
+    d.showModal(); show(at);
+  };
+
+  wraps.forEach((wrap) => {
+    const url = wrap.dataset.url, next = wrap.dataset.next;
+    let cur = '', busy = false, menu = null;
+    const $ = (q) => wrap.querySelector(q), $$ = (q) => [...wrap.querySelectorAll(q)];
+    const fail = (m) => { toast(m); };
+
+    const selected = () => $$('.fx-item:not([hidden]) .fx-sel:checked').map((c) => c.closest('.fx-item'));
+    const tools = () => {
+      const sel = selected(), files = sel.filter((x) => x.dataset.id), dirs = sel.filter((x) => x.dataset.path);
+      $$('.fx-item').forEach((x) => x.classList.toggle('fx-on', !!x.querySelector('.fx-sel:checked')));
+      $('[data-fx-act=rename]').disabled = sel.length !== 1;
+      $('[data-fx-act=move]').disabled = !files.length || dirs.length > 0;
+      $('[data-fx-act=trash]').disabled = !sel.length || dirs.length > 1 || (dirs.length === 1 && files.length > 0);
+      $('[data-fx-sel]').textContent = sel.length ? sel.length + '개 고름' : '';
+    };
     const show = (dir) => {
+      if (dir && !$$('.fx-folder').some((x) => x.dataset.path === dir)) dir = '';
       cur = dir;
       let folders = 0, files = 0;
-      body.querySelectorAll('.fx-folder').forEach((el) => { el.hidden = el.dataset.parent !== cur; if (!el.hidden) folders++; });
-      body.querySelectorAll('.fx-file').forEach((el) => { el.hidden = el.dataset.dir !== cur; if (!el.hidden) files++; });
-      empty.hidden = folders + files > 0;
-      up.disabled = !cur;
-      const parts = cur ? cur.split('/') : [];
-      let html = '<i class="bi bi-folder2-open text-warning"></i> ' + prefix + ' <a href="#" data-fx-go="">' + (cur ? esc(box.dataset.root) : '<b>' + esc(box.dataset.root) + '</b>') + '</a>';
-      parts.forEach((p, i) => { const to = parts.slice(0, i + 1).join('/'); html += ' › <a href="#" data-fx-go="' + esc(to).replace(/"/g, '&quot;') + '">' + (i === parts.length - 1 ? '<b>' + esc(p) + '</b>' : esc(p)) + '</a>'; });
-      path.innerHTML = html;
-      if (status) status.textContent = '폴더 ' + folders + '개 · 파일 ' + files + '개' + (cur ? '' : ' · 폴더를 누르면 안으로 들어갑니다');
+      $$('.fx-sel').forEach((c) => { c.checked = false; });
+      $$('.fx-folder').forEach((x) => { x.hidden = x.dataset.parent !== cur; if (!x.hidden) folders++; });
+      $$('.fx-file').forEach((x) => { x.hidden = x.dataset.dir !== cur; if (!x.hidden) files++; });
+      $('[data-fx-empty]').hidden = folders + files > 0;
+      $('[data-fx-up]').disabled = !cur;
+      const path = $('[data-fx-path]'), head = path.querySelector('span'), parts = cur ? cur.split('/') : [];
+      path.replaceChildren(icon('bi-folder2-open text-warning'), ' ', head, ' ');
+      [['', $('[data-fx]').dataset.root], ...parts.map((p, i) => [parts.slice(0, i + 1).join('/'), p])].forEach(([to, label], i, all) => {
+        if (i) path.append(' › ');
+        const a = el('a'); a.href = '#'; a.dataset.fxGo = to; a.append(i === all.length - 1 ? el('b', '', label) : label); path.append(a);
+      });
+      $('[data-fx-status]').textContent = '폴더 ' + folders + '개 · 파일 ' + files + '개';
+      tools();
     };
-    const view = (mode) => {
+    const view = (mode, keep) => {
+      const body = $('[data-fx-body]');
       body.classList.toggle('fx-icons', mode !== 'list'); body.classList.toggle('fx-list', mode === 'list');
-      head.classList.toggle('fx-on', mode === 'list');
-      box.querySelectorAll('[data-fx-view]').forEach((b) => b.classList.toggle('active', b.dataset.fxView === mode));
-      try { localStorage.setItem('bms_fx_view', mode); } catch (_) {}
+      $('.fx-head').classList.toggle('fx-on', mode === 'list');
+      $$('[data-fx-view]').forEach((b) => b.classList.toggle('active', b.dataset.fxView === mode));
+      if (keep) { try { localStorage.setItem('bms_fx_view', mode); } catch (_) {} }
     };
-    box.addEventListener('click', (e) => {
-      const go = e.target.closest('[data-fx-go]');
+    const init = () => {
+      let m = 'icons'; try { m = localStorage.getItem('bms_fx_view') || 'icons'; } catch (_) {}
+      view(m === 'list' ? 'list' : 'icons');
+      $$('[data-fx-thumb]').forEach((im) => im.addEventListener('error', () => { im.hidden = true; im.nextElementSibling.hidden = false; }));
+      show(cur);
+    };
+    const refresh = async (msg) => {
+      const r = await fetch(url + '/panel' + (next ? '?next=' + encodeURIComponent(next) : ''), { headers: { 'X-FX': '1' } });
+      if (!r.ok || r.redirected) { fail('화면을 새로 고치지 못했습니다. 다시 로그인해 주세요'); return; }
+      const note = $('[data-fx-note]').value;
+      wrap.innerHTML = await r.text();
+      $('[data-fx-note]').value = note;
+      init();
+      document.querySelectorAll('a[href$="#files"] > .badge').forEach((b) => {      // 화면 위 '서류 N' 단추의 숫자도 맞춤
+        const isNew = b.classList.contains('text-bg-warning'), n = $('[data-fx]').dataset[isNew ? 'new' : 'total'];
+        b.textContent = isNew ? '새 파일 ' + n : n; if (isNew) b.hidden = n === '0';
+      });
+      if (msg) toast(msg);
+    };
+    const run = async (body) => {
+      if (busy) return;
+      busy = true;
+      try {
+        const r = await postJSON(url + '/op', body);
+        await refresh(r.msg);
+      } catch (_) { fail('처리하지 못했습니다. 새로 고침 뒤 다시 해 주세요'); } finally { busy = false; }
+    };
+    const upload = async (list) => {            // [{file, dir}]
+      if (busy || !list.length) return;
+      busy = true;
+      const note = $('[data-fx-note]').value, st = $('[data-fx-status]'), errs = [];
+      let ok = 0;
+      for (let i = 0; i < list.length; i++) {
+        const { file, dir } = list[i];
+        st.textContent = '올리는 중… ' + (i + 1) + '/' + list.length + '  ' + file.name;
+        const ext = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+        if (!EXT.includes(ext)) { errs.push(file.name + ': 올릴 수 없는 종류'); continue; }
+        if (file.size > Number(wrap.dataset.max) * 1048576) { errs.push(file.name + ': ' + wrap.dataset.max + 'MB 넘음'); continue; }
+        const fd = new FormData(); fd.append('dir', dir); fd.append('note', note); fd.append('files', file);
+        try {
+          const r = await fetch(url + '/upload', { method: 'POST', headers: { 'X-FX': '1', 'X-CSRF-Token': token() }, body: fd });
+          if (!r.ok || r.redirected) throw new Error();
+          const j = await r.json();
+          if (j.ok) ok++; else errs.push(j.msg.replace(/^ ?·? ?저장하지 못한 파일 — /, ''));
+        } catch (_) { errs.push(file.name + ': 올리지 못함'); }
+      }
+      busy = false;
+      $('[data-fx-note]').value = '';
+      await refresh(ok ? ok + '개를 올렸습니다' : '');
+      if (errs.length) alert('올리지 못한 파일이 있습니다.\n\n' + errs.slice(0, 15).join('\n') + (errs.length > 15 ? '\n… 외 ' + (errs.length - 15) + '개' : ''));
+    };
+    // 탐색기에서 끌어온 것: 폴더면 안의 파일까지
+    const walk = async (entry, dir, out) => {
+      if (out.length >= 300) return;
+      if (entry.isFile) { out.push({ file: await new Promise((a, b) => entry.file(a, b)), dir }); return; }
+      const rd = entry.createReader();
+      for (;;) { const some = await new Promise((a, b) => rd.readEntries(a, b)); if (!some.length) break; for (const x of some) await walk(x, (dir ? dir + '/' : '') + entry.name, out); }
+    };
+    const dropped = async (dt, dir) => {
+      const entries = [...dt.items].map((x) => x.webkitGetAsEntry && x.webkitGetAsEntry()).filter(Boolean), plain = [...dt.files], out = [];
+      if (!entries.length) return upload(plain.map((file) => ({ file, dir })));
+      try { for (const x of entries) await walk(x, dir, out); } catch (_) { return fail('끌어온 파일을 읽지 못했습니다'); }
+      return upload(out);
+    };
+
+    const act = {
+      mkdir: async () => { const i = el('input', 'form-control form-control-sm'); i.maxLength = 60; i.value = '새 폴더'; const v = await ask('새 폴더 이름', i, '만들기'); if (v && v.trim()) run({ op: 'mkdir', dir: cur, name: v }); },
+      rename: async (sel) => {
+        const x = sel[0], i = el('input', 'form-control form-control-sm'); i.maxLength = 100;
+        const ext = x.dataset.id ? (x.dataset.name.match(/\.[^.]+$/) || [''])[0] : '';
+        i.value = ext ? x.dataset.name.slice(0, -ext.length) : x.dataset.name;
+        const v = await ask(x.dataset.id ? '파일 이름 바꾸기 (' + ext + ' 는 그대로)' : '폴더 이름 바꾸기', i, '바꾸기');
+        if (v && v.trim()) run(x.dataset.id ? { op: 'rename', ids: [x.dataset.id], name: v } : { op: 'rename_dir', dir: x.dataset.path, name: v });
+      },
+      move: async (sel) => {
+        const s = el('select', 'form-select form-select-sm');
+        [['', $('[data-fx]').dataset.root + ' (맨 위)'], ...$$('.fx-folder').map((x) => [x.dataset.path, x.dataset.path.split('/').join(' › ')])].filter(([p]) => p !== cur).forEach(([p, t]) => { const o = el('option', '', t); o.value = p; s.append(o); });
+        if (!s.options.length) { fail('옮길 폴더가 없습니다. 먼저 [새 폴더]를 만드세요'); return; }
+        const v = await ask(sel.length + '개를 어느 폴더로 옮길까요?', s, '옮기기');
+        if (v !== null) run({ op: 'move', ids: sel.map((x) => x.dataset.id), dir: v });
+      },
+      trash: (sel) => {
+        const x = sel[0], isDir = !!x.dataset.path;
+        const q = isDir ? "'" + x.dataset.name + "' 폴더를 안에 든 것까지 모두 지울까요? (파일 " + x.dataset.count + '개)' : (sel.length === 1 ? "'" + x.dataset.name + "' 을(를) 지울까요?" : sel.length + '개를 지울까요?');
+        if (confirm(q + "\n\n없애지 않고 보관함의 '_삭제함' 폴더로 옮깁니다.")) run(isDir ? { op: 'trash_dir', dir: x.dataset.path } : { op: 'trash', ids: sel.map((y) => y.dataset.id) });
+      },
+    };
+    const openFile = (x) => {
+      if (!x.dataset.view) { location.href = '/files/get/' + x.dataset.id + '?dl=1'; return; }
+      const all = $$('.fx-file:not([hidden])[data-view]');
+      preview(all.map((y) => ({ id: y.dataset.id, name: y.dataset.name, view: y.dataset.view })), all.indexOf(x));
+    };
+    const closeMenu = () => { if (menu) { menu.remove(); menu = null; } };
+
+    wrap.addEventListener('click', (e) => {
+      closeMenu();
+      const t = e.target;
+      if (t.closest('.fx-sel')) return;
+      const go = t.closest('[data-fx-go]');
       if (go) { e.preventDefault(); show(go.dataset.fxGo); return; }
-      if (e.target.closest('[data-fx-up]')) { show(cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/')) : ''); return; }
-      const v = e.target.closest('[data-fx-view]');
-      if (v) view(v.dataset.fxView);
+      if (t.closest('[data-fx-up]')) { show(cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/')) : ''); return; }
+      if (t.closest('[data-fx-refresh]')) { refresh('새로 고쳤습니다'); return; }
+      const v = t.closest('[data-fx-view]'); if (v) { view(v.dataset.fxView, true); return; }
+      const a = t.closest('[data-fx-act]'); if (a) { act[a.dataset.fxAct](selected()); return; }
+      const f = t.closest('.fx-folder'); if (f) { show(f.dataset.path); return; }
+      const link = t.closest('a.fx-name, a.fx-ico');
+      if (link) { e.preventDefault(); openFile(link.closest('.fx-item')); }
     });
-    let saved = 'icons';
-    try { saved = localStorage.getItem('bms_fx_view') || 'icons'; } catch (_) {}
-    view(saved === 'list' ? 'list' : 'icons');
-    show('');
+    wrap.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.classList.contains('fx-folder')) show(e.target.dataset.path); });
+    wrap.addEventListener('change', (e) => {
+      if (e.target.closest('.fx-sel')) tools();
+      if (e.target.closest('[data-fx-pick]')) { const l = [...e.target.files].map((file) => ({ file, dir: cur })); e.target.value = ''; upload(l); }
+    });
+    // 오른쪽 단추 메뉴
+    wrap.addEventListener('contextmenu', (e) => {
+      const body = e.target.closest('[data-fx-body]'); if (!body) return;
+      const x = e.target.closest('.fx-item'); if (x && x.classList.contains('fx-isnew')) return;
+      e.preventDefault(); closeMenu();
+      if (x && !x.querySelector('.fx-sel').checked) { $$('.fx-sel').forEach((c) => { c.checked = false; }); x.querySelector('.fx-sel').checked = true; tools(); }
+      const sel = x ? selected() : [], items = [];
+      if (x && sel.length === 1) items.push([x.dataset.path ? '열기' : (x.dataset.view ? '미리보기' : '열기 (내려받기)'), 'bi-eye', () => (x.dataset.path ? show(x.dataset.path) : openFile(x))]);
+      if (x && sel.length === 1 && x.dataset.id) items.push(['내려받기', 'bi-download', () => { location.href = '/files/get/' + x.dataset.id + '?dl=1'; }]);
+      if (x && sel.length === 1 && x.dataset.changed) items.push(['NAS에서 고친 내용 반영', 'bi-arrow-repeat', () => run({ op: 'accept', ids: [x.dataset.id] })]);
+      if (x) [['rename', '이름 바꾸기', 'bi-input-cursor-text'], ['move', '옮기기', 'bi-folder-symlink'], ['trash', '지우기', 'bi-trash']].forEach(([k, t, ic]) => { if (!$('[data-fx-act=' + k + ']').disabled) items.push([t, ic, () => act[k](sel)]); });
+      if (!x) items.push(['새 폴더', 'bi-folder-plus', act.mkdir], ['서류 올리기', 'bi-cloud-arrow-up', () => $('[data-fx-pick]').click()], ['새로 고침', 'bi-arrow-clockwise', () => refresh('새로 고쳤습니다')]);
+      menu = el('div', 'fx-menu');
+      items.forEach(([t, ic, fn]) => { const b = el('button'); b.type = 'button'; b.append(icon(ic + ' me-2'), t); b.addEventListener('click', () => { closeMenu(); fn(); }); menu.append(b); });
+      document.body.append(menu);
+      menu.style.left = Math.min(e.clientX, innerWidth - menu.offsetWidth - 8) + 'px'; menu.style.top = Math.min(e.clientY, innerHeight - menu.offsetHeight - 8) + 'px';
+    });
+    document.addEventListener('click', closeMenu); addEventListener('scroll', closeMenu, true);
+
+    // 끌어다 놓기
+    let drag = null;
+    wrap.addEventListener('dragstart', (e) => {
+      const x = e.target.closest('.fx-file[data-id]'); if (!x) return;
+      const sel = selected().filter((y) => y.dataset.id);
+      drag = sel.includes(x) ? sel.map((y) => y.dataset.id) : [x.dataset.id];
+      e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', '');
+    });
+    wrap.addEventListener('dragend', () => { drag = null; clear(); });
+    const clear = () => $$('.fx-drop').forEach((x) => x.classList.remove('fx-drop'));
+    const spot = (e) => {
+      const f = e.target.closest('.fx-folder'); if (f) return [f, f.dataset.path];
+      const g = e.target.closest('[data-fx-go]'); if (g) return [g, g.dataset.fxGo];
+      const u = e.target.closest('[data-fx-up]'); if (u && cur) return [u, cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/')) : ''];
+      return [$('[data-fx]'), cur];
+    };
+    wrap.addEventListener('dragover', (e) => {
+      const files = [...e.dataTransfer.types].includes('Files');
+      if (!drag && !files) return;
+      const [x, dir] = spot(e); clear();
+      if (drag && dir === cur) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = drag ? 'move' : 'copy'; x.classList.add('fx-drop');
+    });
+    wrap.addEventListener('dragleave', (e) => { if (!wrap.contains(e.relatedTarget)) clear(); });
+    wrap.addEventListener('drop', (e) => {
+      const [, dir] = spot(e); clear();
+      if (drag) { e.preventDefault(); const ids = drag; drag = null; if (dir !== cur) run({ op: 'move', ids, dir }); return; }
+      if (e.dataTransfer.files.length || e.dataTransfer.items.length) { e.preventDefault(); dropped(e.dataTransfer, dir); }
+    });
+    init();
   });
+  // 창 밖에 잘못 놓았을 때 브라우저가 그 파일을 열어 버리지 않게
+  ['dragover', 'drop'].forEach((n) => addEventListener(n, (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files') && !e.target.closest?.('[data-fxwrap], input[type=file]')) e.preventDefault(); }));
 })();

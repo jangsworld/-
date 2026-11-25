@@ -4,22 +4,31 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from app import archive
+from app import archive, archive_ops
 from app.common import templates
 from app.db import audit
 
 router = APIRouter(prefix="/files")
 
 
+class Rows(list):
+    recent: list = []            # 최근에 NAS 에서 자동으로 들어온 서류
+    hold: str = ""               # 대량 변경이 의심되어 자동 반영을 멈춘 때
+
+
 def pending_for(request: Request, menus) -> list[dict]:
     """화면에서 부르는 것: 이 사용자가 볼 수 있는 메뉴의 '폴더에 새로 넣은 파일' 알림. 문제가 생겨도 화면은 뜨게 빈 목록."""
     try:
         role = _role(request)
-        return archive.pending([m for m in menus if archive.allowed(m, role)])
+        ok = [m for m in menus if archive.allowed(m, role)]
+        rows = Rows(archive.pending(ok))
+        rows.recent = archive_ops.recent(ok)
+        rows.hold = archive_ops.held() if ok else ""
+        return rows
     except Exception:                                       # noqa: BLE001
-        return []
+        return Rows()
 
 
 def _role(request: Request) -> str | None:
@@ -71,11 +80,16 @@ def _explorer(menu: str, ref_id: int, rows: list[dict], waiting: list[dict]) -> 
         return FILE_LOOK.get(name.rsplit(".", 1)[-1].lower() if "." in name else "", ("bi-file-earmark-fill", "etc", "파일"))
 
     entries = []
+    lost = archive_ops.lost_ids(menu, ref_id, rows)
+    thumbs = not menu.startswith("hr.")                     # 인사 서류(신분증 사본 등)는 열람 기록이 남는 '열기'로만 봄
     for r in rows:
         icon, tone, kind = look(r["orig_name"])
         entries.append({"dir": r.get("subdir") or "", "name": r["orig_name"], "icon": icon, "tone": tone, "kind": kind, "size": r["size"],
                         "date": (r.get("uploaded_at") or "")[:16], "by": r.get("uploaded_by") or "", "note": r.get("note") or "",
-                        "id": r["id"], "inline": r["inline"], "new": False})
+                        "id": r["id"], "inline": r["inline"], "new": False, "lost": r["id"] in lost, "edited": (r.get("modified_at") or "")[5:16],
+                        "changed": r["id"] not in lost and bool(r.get("mtime")) and archive_ops.changed_path(r) is not None,
+                        "view": ("pdf" if r["mime"] == "application/pdf" else "img") if r["inline"] else "",
+                        "thumb": thumbs and r["mime"].startswith("image/") and r["id"] not in lost})
     for w in waiting:
         icon, tone, kind = look(w["file"])
         entries.append({"dir": w["sub"], "name": w["file"], "icon": icon, "tone": tone, "kind": kind, "size": w["size"], "date": "", "by": "",
@@ -104,8 +118,9 @@ def panel(menu: str, ref_id: int, nxt: str = "") -> dict | None:
     if not t:
         return None
     archive.ensure_quiet(menu, ref_id)                      # 폴더를 먼저 준비 (손으로 만든 비슷한 폴더가 있으면 그 폴더를 씀)
+    archive_ops.sync_quiet(menu, ref_id)                    # NAS 에 직접 넣은 파일을 대장에 (복사가 끝난 것만)
     rows, waiting = archive.items(menu, ref_id), archive.unregistered(menu, ref_id)
-    return {"menu": menu, "ref_id": ref_id, "rows": rows, "info": archive.MENUS[menu],
+    return {"auto": archive_ops.auto_on() and archive_ops.auto_menu(menu), "menu": menu, "ref_id": ref_id, "rows": rows, "info": archive.MENUS[menu],
             "waiting": waiting, "next": nxt, **_explorer(menu, ref_id, rows, waiting),
             "folder": " \\ ".join(archive.folder(menu, t).replace("/", "\\").split("\\")), "max_mb": archive.MAX_MB}
 
@@ -116,14 +131,27 @@ def download(request: Request, att_id: int, dl: int = 0):
     if not att or not archive.allowed(att["menu"], _role(request)):
         raise HTTPException(404, "파일을 찾을 수 없습니다")
     try:
-        data = archive.read(att)
-    except archive.ArchiveError as ex:
-        raise HTTPException(409, str(ex)) from ex
+        data = archive_ops.read_fresh(att)
+    except (archive.ArchiveError, OSError) as ex:
+        raise HTTPException(409, str(ex) if isinstance(ex, archive.ArchiveError) else "파일을 읽을 수 없습니다") from ex
     audit("files", "서류 열람", att["orig_name"], f"{att['menu']} #{att['ref_id']}")
     inline = att["mime"] in archive.INLINE and not dl
     return Response(data, media_type=att["mime"] if inline else "application/octet-stream", headers={
         "Content-Disposition": ("inline" if inline else "attachment") + "; filename*=UTF-8''" + quote(att["orig_name"]),
         "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
+
+
+@router.get("/thumb/{att_id}")
+def thumbnail(request: Request, att_id: int):
+    """사진을 작은 그림으로 (총무 메뉴만)."""
+    att = archive.get(att_id)
+    if not att or not archive.allowed(att["menu"], _role(request)) or att["menu"].startswith("hr.") or not att["mime"].startswith("image/"):
+        raise HTTPException(404, "파일을 찾을 수 없습니다")
+    try:
+        data = archive_ops.thumb(att)
+    except Exception as ex:                                 # noqa: BLE001  (깨진 사진이면 아이콘으로 보임)
+        raise HTTPException(404, "미리 볼 수 없는 사진입니다") from ex
+    return Response(data, media_type="image/jpeg", headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
 
 
 @router.post("/del/{att_id}")
@@ -132,7 +160,10 @@ async def remove(request: Request, att_id: int):
     if not att or not archive.allowed(att["menu"], _role(request)):
         raise HTTPException(404, "파일을 찾을 수 없습니다")
     nxt = str((await request.form()).get("next") or "")
-    archive.delete(att_id)
+    try:
+        await run_in_threadpool(archive.delete, att_id)
+    except archive.ArchiveError as ex:
+        return _back(att["menu"], att["ref_id"], str(ex), nxt)
     archive.pending_clear(att["menu"])
     return _back(att["menu"], att["ref_id"], "지웠습니다 (파일은 보관함의 '_삭제함' 폴더로 옮겼습니다)", nxt)
 
@@ -173,6 +204,40 @@ def page(request: Request, menu: str, ref_id: int):
     })
 
 
+@router.get("/{menu}/{ref_id}/panel", response_class=HTMLResponse)
+def panel_fragment(request: Request, menu: str, ref_id: int, next: str = ""):      # noqa: A002
+    """탐색기 부분만 다시 그림 (새로 고침 단추, 올리기·옮기기 뒤)."""
+    _guard(request, menu, ref_id)
+    return templates.TemplateResponse(request, "_fx.html", {"fp": panel(menu, ref_id, _next(next))}, headers={"Cache-Control": "no-store"})
+
+
+@router.post("/{menu}/{ref_id}/op")
+async def op(request: Request, menu: str, ref_id: int):
+    """탐색기 동작: 새 폴더(mkdir) · 옮기기(move) · 이름 바꾸기(rename, rename_dir) · 지우기(trash, trash_dir)."""
+    _guard(request, menu, ref_id)
+    try:
+        b = await request.json()
+        kind = str(b.get("op") or "")
+        ids = [int(x) for x in (b.get("ids") or [])][:200]
+        calls = {
+            "mkdir": lambda: archive_ops.mkdir(menu, ref_id, b.get("dir"), b.get("name")),
+            "move": lambda: archive_ops.move(menu, ref_id, ids, b.get("dir")),
+            "rename": lambda: archive_ops.rename_file(menu, ref_id, ids[0] if ids else 0, b.get("name")),
+            "rename_dir": lambda: archive_ops.rename_dir(menu, ref_id, b.get("dir"), b.get("name")),
+            "trash": lambda: archive_ops.trash_files(menu, ref_id, ids),
+            "accept": lambda: archive_ops.accept_edit(menu, ref_id, ids[0] if ids else 0),
+            "trash_dir": lambda: archive_ops.trash_dir(menu, ref_id, b.get("dir")),
+        }
+    except (ValueError, TypeError, AttributeError):
+        return JSONResponse({"ok": False, "msg": "잘못된 요청입니다"}, status_code=400)
+    if kind not in calls:
+        return JSONResponse({"ok": False, "msg": "알 수 없는 동작입니다"}, status_code=400)
+    try:
+        return {"ok": True, "msg": await run_in_threadpool(calls[kind])}
+    except archive.ArchiveError as ex:
+        return {"ok": False, "msg": str(ex)}
+
+
 @router.post("/{menu}/{ref_id}/adopt")
 async def adopt(request: Request, menu: str, ref_id: int):
     """폴더에 미리 넣어 둔 파일을 복사 없이 대장에 올림."""
@@ -196,19 +261,26 @@ async def upload(request: Request, menu: str, ref_id: int):
     form = await request.form()
     note = str(form.get("note") or "")
     nxt = str(form.get("next") or "")
+    ajax = request.headers.get("x-fx") == "1"               # 탐색기에서 끌어다 놓기·올리기
     ok, errs = 0, []
+    try:
+        where = archive_ops.clean_dir(menu, form.get("dir"))
+    except archive.ArchiveError as ex:
+        return {"ok": False, "msg": str(ex)} if ajax else _back(menu, ref_id, str(ex), nxt)
     for up in form.getlist("files")[:20]:
         name = getattr(up, "filename", "") or ""
         if not name:
             continue
         raw = await up.read(archive.MAX_MB * 1024 * 1024 + 1)
         try:
-            await run_in_threadpool(archive.save, menu, ref_id, name, raw, note)
+            await run_in_threadpool(archive.save, menu, ref_id, name, raw, note, where)
             ok += 1
         except archive.ArchiveError as ex:
             errs.append(f"{name}: {ex}")
     if not ok and not errs:
-        return _back(menu, ref_id, "올릴 파일을 고르세요", nxt)
+        return {"ok": False, "msg": "올릴 파일을 고르세요"} if ajax else _back(menu, ref_id, "올릴 파일을 고르세요", nxt)
     msg = (f"{ok}개를 보관함에 저장했습니다" if ok else "") + ((" · 저장하지 못한 파일 — " + " / ".join(errs)) if errs else "")
     archive.pending_clear(menu)
+    if ajax:
+        return {"ok": ok > 0 and not errs, "msg": msg.strip(" ·")}
     return _back(menu, ref_id, msg.strip(" ·"), nxt)

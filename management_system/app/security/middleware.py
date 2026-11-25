@@ -285,12 +285,13 @@ class SecurityMiddleware(BaseHTTPMiddleware):
     def _headers(request: Request, response: Response, path: str):
         n = request.state.csp_nonce
         h = response.headers
+        framed = bool(re.fullmatch(r"/files/get/\d+", path))      # 서류 미리보기 창(같은 사이트)에서만 액자 안에 열 수 있음
         h["Content-Security-Policy"] = (
             f"default-src 'self'; script-src 'self' 'nonce-{n}'; style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; "
+            "img-src 'self' data:; font-src 'self'; connect-src 'self'; " + ("frame-ancestors 'self'; " if framed else "frame-ancestors 'none'; ") +
             "form-action 'self'; base-uri 'none'; object-src 'none'"
         )
-        h["X-Frame-Options"] = "DENY"
+        h["X-Frame-Options"] = "SAMEORIGIN" if framed else "DENY"
         h["X-Content-Type-Options"] = "nosniff"
         h["Referrer-Policy"] = "same-origin"
         h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"

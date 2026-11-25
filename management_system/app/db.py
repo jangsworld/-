@@ -1053,6 +1053,8 @@ CREATE TABLE IF NOT EXISTS attachments (
     uploaded_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     deleted_at  TEXT,
     deleted_by  TEXT,
+    mtime       TEXT,                        -- 마지막으로 확인한 파일의 고친 시각(나노초). NAS 에서 고쳤는지 알아보는 데 씀
+    modified_at TEXT,                        -- NAS 에서 고친 내용을 받아들인 때
     subdir      TEXT                         -- 대상 폴더 안의 하위 폴더 (담당자가 만든 '기타서류' 등). 없으면 빈 값
 );
 CREATE INDEX IF NOT EXISTS idx_att_ref ON attachments(menu, ref_id);
@@ -1197,7 +1199,7 @@ def _company_item_defaults() -> list:
 
 # v3→v4: 기존 DB 에 없는 컬럼 추가 (CREATE TABLE IF NOT EXISTS 는 기존 테이블을 바꾸지 않음)
 ADDED_COLUMNS = {
-    "attachments": ["subdir"],
+    "attachments": ["subdir", "mtime", "modified_at"],
     "employees": ["emergency_relation", "emergency_name", "hire_route", "edu_level", "edu_school", "edu_major", "edu_grad_year", "folder_name"],
     "hr_documents": ["emailed_at", "cancel_reason", "canceled_at", "canceled_by"],   # 증명서 발급취소 사유·일시·처리자
     "codes": ["behavior"],

@@ -187,9 +187,9 @@ def test_archive_flow(client, two):
         up("../../밖.pdf", PDF)                                              # 경로 글자는 이름에서 지워짐
         rows = archive.items("ga.fines", fid)
         assert len(rows) == 2 and all(".." not in r["rel_path"] and r["rel_path"].startswith("둘째/") for r in rows)
-        # 폴더에서 파일이 바뀌면 내주지 않음
-        with open(path, "ab") as f:
-            f.write(b"x")
+        # 폴더에서 파일이 종류와 다른 내용으로 바뀌면 내주지 않음 (제대로 고친 파일은 test_explorer 에서 반영됨을 확인)
+        with open(path, "wb") as f:
+            f.write(b"ENCRYPTED")
         assert client.get(f"/files/get/{att['id']}").status_code == 409
         # 조회자는 볼 수 없음
         with TestClient(app) as v:

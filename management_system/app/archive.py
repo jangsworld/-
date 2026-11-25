@@ -28,6 +28,7 @@ from app.db import audit, current_actor, execute, query, query_one
 log = logging.getLogger("bms.archive")
 MAX_MB = 30
 TRASH = "_삭제함"
+FS_LOCK = threading.RLock()     # 보관함 안에서 옮기기·이름 바꾸기를 한 번에 하나씩
 EMPTY = "_빈폴더"             # 서류를 옮긴 뒤 비게 된 폴더를 모아 두는 곳 (지우지 않음)
 GA_STAFF = {"admin", "hr", "ga"}
 WRITERS = {"admin", "hr"}
@@ -298,7 +299,7 @@ def unregistered(menu: str, ref_id: int) -> list[dict]:
     full = os.path.normpath(os.path.join(r, rel))
     if not _inside(r, full) or not os.path.isdir(full):
         return []
-    known = {a["rel_path"] for a in query("SELECT rel_path FROM attachments WHERE rel_path LIKE ?", (rel + "/%",))}
+    known = {a["rel_path"] for a in query("SELECT rel_path FROM attachments WHERE rel_path LIKE ? AND deleted_at IS NULL", (rel + "/%",))}
     skip_top = RESERVED_SUBDIRS.get(menu, set())
     out = []
 
@@ -485,7 +486,8 @@ def pending_map(rows) -> dict:
     return {(p["menu"], i): p["n"] for p in rows for i in p["ids"]}
 
 
-def save(menu: str, ref_id: int, orig_name: str, raw: bytes, note: str = "") -> int:
+def save(menu: str, ref_id: int, orig_name: str, raw: bytes, note: str = "", subdir: str = "") -> int:
+    """subdir: 대상 폴더 안의 하위 폴더 (archive_ops.clean_dir 로 확인한 것만)."""
     t = target(menu, ref_id)
     if not t:
         raise ArchiveError("붙일 대상을 찾을 수 없습니다")
@@ -495,16 +497,17 @@ def save(menu: str, ref_id: int, orig_name: str, raw: bytes, note: str = "") -> 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     head = (t.get("prefix") + "_") if t.get("prefix") else ""
     sha = hashlib.sha256(raw).hexdigest()
-    rel = os.path.join(folder(menu, t), f"{head}{stamp}_{base}{ext}")
+    where = os.path.join(folder(menu, t), *subdir.split("/")) if subdir else folder(menu, t)
+    rel = os.path.join(where, f"{head}{stamp}_{base}{ext}")
     n = 1
     while os.path.exists(os.path.join(root(), rel)):                      # 같은 초에 같은 이름: 번호를 붙임
         n += 1
-        rel = os.path.join(folder(menu, t), f"{head}{stamp}_{base}_{n}{ext}")
+        rel = os.path.join(where, f"{head}{stamp}_{base}_{n}{ext}")
     _write(rel, raw)
-    att = execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256, note, uploaded_by) "
-                  "VALUES (?,?,?,?,?,?,?,?,?,?)",
+    att = execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256, note, uploaded_by, subdir) "
+                  "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                   (menu, int(ref_id), company.norm(t.get("company")), rel.replace("\\", "/"), _safe(os.path.basename(orig_name), 120), mime,
-                   len(raw), sha, (note or "").strip()[:200] or None, current_actor.get()[1]))
+                   len(raw), sha, (note or "").strip()[:200] or None, current_actor.get()[1], subdir or None))
     audit("files", "서류 붙임", f"{MENUS[menu][1]} {t['title']}"[:120], f"{base}{ext} {len(raw) // 1024}KB")
     return att
 
@@ -558,19 +561,34 @@ def read(att: dict) -> bytes:
     return data
 
 
+def trash_path(rel: str) -> str:
+    """'_삭제함' 안의 자리. 같은 이름이 이미 있으면 덮어쓰지 않게 시각을 붙임."""
+    dst = os.path.normpath(os.path.join(root(), TRASH, rel))
+    if not _inside(os.path.join(root(), TRASH), dst):
+        raise ArchiveError("허용되지 않은 경로")
+    base, ext = os.path.splitext(dst)
+    n = 0
+    while os.path.exists(dst):
+        n += 1
+        dst = base + "_" + datetime.now().strftime("%Y%m%d_%H%M%S") + (f"_{n}" if n > 1 else "") + ext
+    return dst
+
+
 def delete(att_id: int) -> bool:
-    """대장에서 지우고 파일은 '_삭제함' 으로 옮김."""
+    """대장에서 지우고 파일은 '_삭제함' 으로 옮김. 옮기지 못하면 대장도 그대로 두고 알림."""
     att = get(att_id)
     if not att:
         return False
     src = os.path.normpath(os.path.join(root(), att["rel_path"]))
-    dst = os.path.normpath(os.path.join(root(), TRASH, att["rel_path"]))
     try:
-        if _inside(root(), src) and _inside(root(), dst) and os.path.exists(src):
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            os.replace(src, dst)
-    except OSError:
+        with FS_LOCK:
+            if _inside(root(), src) and os.path.exists(src):
+                dst = trash_path(att["rel_path"])
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                os.replace(src, dst)
+    except OSError as ex:
         log.exception("삭제함으로 옮기지 못함")
+        raise ArchiveError("삭제함으로 옮기지 못했습니다 (다른 사람이 파일을 열어 두었거나 NAS 연결이 끊겼습니다)") from ex
     execute("UPDATE attachments SET deleted_at=datetime('now','localtime'), deleted_by=? WHERE id=?", (current_actor.get()[1], att_id))
     audit("files", "서류 삭제", att["orig_name"], f"{att['menu']} #{att['ref_id']} (삭제함으로 옮김)")
     return True
@@ -716,12 +734,23 @@ def _loop():
     while True:                                     # 시작할 때 한 번, 그 뒤 6시간마다: 폴더 이름 맞추기 + 놓친 차량 사진 내보내기
         try:
             ensure_all()                            # 먼저: 손으로 만든 폴더를 규칙 이름으로 바꿔 그대로 씀 (두 벌이 되지 않게)
-            rehome()
+            with FS_LOCK:
+                rehome()
             export_vehicle_photos()
         except Exception:                           # noqa: BLE001
             log.exception("문서 보관함 정리 실패")
         if _stop.wait(6 * 3600):
             return
+
+
+def _auto_loop():
+    """2분마다: NAS 폴더에 직접 넣은 파일을 대장에 올림 (설정에서 끌 수 있음)."""
+    from app import archive_ops
+    while not _stop.wait(120):
+        try:
+            archive_ops.sync_all()
+        except Exception:                           # noqa: BLE001
+            log.exception("자동 대장 올리기 실패")
 
 
 def start_worker():
@@ -731,6 +760,7 @@ def start_worker():
     _stop.clear()
     _thread = threading.Thread(target=_loop, name="bms-archive", daemon=True)
     _thread.start()
+    threading.Thread(target=_auto_loop, name="bms-archive-auto", daemon=True).start()
 
 
 def stop_worker():
