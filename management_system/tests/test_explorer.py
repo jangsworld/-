@@ -92,7 +92,7 @@ def test_folder_file_actions(client, cid):
     assert _op(client, i, op="mkdir", dir="변경계약", name="2026년").json()["ok"]
     assert "이미 있습니다" in _op(client, i, op="mkdir", dir="", name="변경계약").json()["msg"]
     assert _up(client, i, "원본.pdf")["ok"] and _up(client, i, "1차.pdf", d="변경계약")["ok"]
-    assert _up(client, i, "속지.txt", b"x")["ok"] is False
+    assert _up(client, i, "속지.log", b"x")["ok"] is False
     assert _items(i)["1차.pdf"]["subdir"] == "변경계약"
     # 옮기기
     a = _items(i)["원본.pdf"]
@@ -106,17 +106,17 @@ def test_folder_file_actions(client, cid):
     assert archive_ops.STAMP.match(b["rel_path"].rsplit("/", 1)[1]) and b["rel_path"].endswith("_임대차 원본.pdf") and archive.read(b) == PDF
     assert _op(client, i, op="rename", ids=[b["id"]], name="가짜.exe").json()["ok"] and "가짜.exe.pdf" in _items(i)
     # 폴더 이름 바꾸기: 아래 서류의 위치가 모두 따라감
-    _write(os.path.join(base, "변경계약", "메모.txt"), b"memo")
+    _write(os.path.join(base, "변경계약", "메모.log"), b"memo")
     assert _op(client, i, op="rename_dir", dir="변경계약", name="변경_계약%").json()["ok"]
     assert {r["subdir"] for r in _items(i).values()} == {"변경_계약%", "변경_계약%/2026년"} and all(archive.read(r) == PDF for r in _items(i).values())
-    assert os.path.exists(os.path.join(base, "변경_계약%", "메모.txt")) and archive.rehome() == 0
+    assert os.path.exists(os.path.join(base, "변경_계약%", "메모.log")) and archive.rehome() == 0
     # 폴더 지우기: 폴더째 _삭제함 (대장에 없는 파일도 함께), 같은 이름이 또 있어도 덮어쓰지 않음
     trash = os.path.join(archive.root(), archive.TRASH, os.path.relpath(base, archive.root()))
     assert _op(client, i, op="trash_dir", dir="변경_계약%").json()["ok"]
-    assert not os.path.exists(os.path.join(base, "변경_계약%")) and os.path.exists(os.path.join(trash, "변경_계약%", "메모.txt")) and _items(i) == {}
+    assert not os.path.exists(os.path.join(base, "변경_계약%")) and os.path.exists(os.path.join(trash, "변경_계약%", "메모.log")) and _items(i) == {}
     _op(client, i, op="mkdir", dir="", name="변경_계약%")
     assert _op(client, i, op="trash_dir", dir="변경_계약%").json()["ok"]
-    assert len([d for d in os.listdir(trash) if d.startswith("변경_계약%")]) == 2 and os.path.exists(os.path.join(trash, "변경_계약%", "메모.txt"))
+    assert len([d for d in os.listdir(trash) if d.startswith("변경_계약%")]) == 2 and os.path.exists(os.path.join(trash, "변경_계약%", "메모.log"))
     acts = {r["action"] for r in query("SELECT action FROM audit_logs WHERE module='files' ORDER BY id DESC LIMIT 60")}
     assert {"폴더 만듦", "서류 옮김", "서류 이름 바꿈", "폴더 이름 바꿈", "폴더 지움(삭제함으로 옮김)"} <= acts
 
@@ -305,7 +305,7 @@ def test_same_title_gets_own_folder(client, clock):
         assert os.path.basename(base) == "같은이름 복합기"                       # 하나뿐이면 이름 그대로
         _up(client, i, "첫계약.pdf", PDF + b"1")
         os.makedirs(os.path.join(base, "하위"))
-        _write(os.path.join(base, "하위", "대장에 없는 것.txt"), b"memo")
+        _write(os.path.join(base, "하위", "대장에 없는 것.log"), b"memo")
         r = client.post("/ga/contracts/save", data={"category": "렌탈", "title": "같은이름 복합기", "counterparty": "상대", "status": "유효", "company": "1",
                                                     "start_date": "2025-03-27", "end_date": "2028-09-27"}, follow_redirects=False)
         from urllib.parse import unquote
@@ -313,7 +313,7 @@ def test_same_title_gets_own_folder(client, clock):
         j = max(x["id"] for x in query("SELECT id FROM ga_contracts WHERE title='같은이름 복합기'"))
         bi, bj = _base(i), _base(j)
         assert os.path.basename(bi) == "같은이름 복합기 (25.02.25~28.08.25)" and os.path.basename(bj) == "같은이름 복합기 (25.03.27~28.09.27)"
-        assert not os.path.exists(base) and os.path.exists(os.path.join(bi, "하위", "대장에 없는 것.txt"))   # 폴더째 따라감
+        assert not os.path.exists(base) and os.path.exists(os.path.join(bi, "하위", "대장에 없는 것.log"))   # 폴더째 따라감
         assert archive.read(_items(i)["첫계약.pdf"]) == PDF + b"1" and archive.rehome() == 0
         _up(client, j, "둘째계약.pdf", PDF + b"2")
         assert set(_items(i)) == {"첫계약.pdf"} and set(_items(j)) == {"둘째계약.pdf"}
@@ -678,3 +678,52 @@ def test_reward_folder(client):
     finally:
         execute("DELETE FROM archive_folders WHERE menu='hr.rewards'")
         repo.delete_employee(eid)
+
+
+def _img(fmt, n=1, color=(200, 60, 60)):
+    b = io.BytesIO()
+    ims = [Image.new("RGB", (400, 300), color) for _ in range(n)]
+    ims[0].save(b, fmt, **({"save_all": True, "append_images": ims[1:]} if n > 1 else {}))
+    return b.getvalue()
+
+
+def test_more_kinds_and_sizes(client, cid, clock, monkeypatch):
+    """도면·jfif·tiff·txt·큰 파일, 이름과 내용이 다른 사진, NAS 의 zip."""
+    i = cid("탐색기 종류")
+    base = _base(i)
+    png, tif = _img("PNG"), _img("TIFF", 3)
+    for name, raw in (("도면.dwg", b"AC1032" + b"0" * 50), ("사진.jfif", _jpg((50, 50))), ("스캔.tiff", tif), ("메모.txt", "한글 메모".encode()),
+                      ("메모949.txt", "한글".encode("cp949")), ("이름만jpg.jpg", png)):
+        assert _up(client, i, name, raw)["ok"], name
+    it = _items(i)
+    assert it["이름만jpg.jpg"]["mime"] == "image/png" and client.get(f"/files/get/{it['이름만jpg.jpg']['id']}").headers["content-type"] == "image/png"
+    for name in ("도면.dwg", "메모.txt"):                                            # 내려받기만
+        r = client.get(f"/files/get/{it[name]['id']}")
+        assert r.headers["content-type"] == "application/octet-stream" and r.headers["content-disposition"].startswith("attachment")
+    v = client.get(f"/files/view/{it['스캔.tiff']['id']}")                            # TIFF 는 PDF 로 바꿔 보여 줌 (원본은 그대로)
+    assert v.status_code == 200 and v.content.startswith(b"%PDF") and v.headers["x-frame-options"] == "SAMEORIGIN" and v.content.count(b"/Type /Page\n") + v.content.count(b"/Type /Page ") >= 1
+    assert client.get(f"/files/get/{it['스캔.tiff']['id']}").content == tif and client.get(f"/files/view/{it['도면.dwg']['id']}").status_code == 404
+    assert client.get(f"/files/thumb/{it['스캔.tiff']['id']}").status_code == 200
+    frag = client.get(f"/files/ga.contracts/{i}/panel").text
+    assert 'data-view="tif"' in frag and "도면(DWG)" in frag
+    # 막는 것: 이름만 바꾼 것
+    for name, raw in (("가짜.dwg", b"MZ\x90\x00"), ("가짜.txt", b"MZ\x90\x00\x00"), ("가짜.jpg", b"MZ\x90\x00"), ("가짜.webp", b"RIFF0000WAVE"), ("가짜.tiff", b"MZ"),
+                      ("묶음.zip", b"PK\x03\x04aa"), ("실행.exe", b"MZ"), ("페이지.html", b"<html>"), ("그림.svg", b"<svg/>")):
+        assert _up(client, i, name, raw)["ok"] is False, name
+    # zip 은 NAS 에 넣은 것만 보이고 내려받기만
+    _write(os.path.join(base, "관련 서류.zip"), b"PK\x03\x04zzzz")
+    for _ in range(2):
+        clock.now += 30
+        archive_ops.sync("ga.contracts", i)
+    z = _items(i)["관련 서류.zip"]
+    r = client.get(f"/files/get/{z['id']}")
+    assert r.headers["content-type"] == "application/octet-stream" and r.headers["content-disposition"].startswith("attachment")
+    # 크기
+    monkeypatch.setattr(archive, "MAX_MB", 1)
+    assert "너무 큽니다" in _up(client, i, "큰.pdf", PDF + b"0" * (1024 * 1024))["msg"]
+    monkeypatch.undo()
+    assert archive.MAX_MB == 100 and _up(client, i, "40메가.pdf", PDF + b"0" * (40 * 1024 * 1024))["ok"]
+    # 조회 권한 없는 계정은 TIFF 보기도 못 함
+    with TestClient(app) as v:
+        _login(v, "ex_view")
+        assert v.get(f"/files/view/{it['스캔.tiff']['id']}").status_code == 404

@@ -26,7 +26,7 @@ from app.config import settings
 from app.db import audit, current_actor, execute, query, query_one
 
 log = logging.getLogger("bms.archive")
-MAX_MB = 30
+MAX_MB = 100
 TRASH = "_삭제함"
 FS_LOCK = threading.RLock()     # 보관함 안에서 옮기기·이름 바꾸기를 한 번에 하나씩
 EMPTY = "_빈폴더"             # 서류를 옮긴 뒤 비게 된 폴더를 모아 두는 곳 (지우지 않음)
@@ -46,7 +46,22 @@ KINDS = {
     ".pptx": ((b"PK\x03\x04",), "application/octet-stream"),
     ".doc": ((b"\xd0\xcf\x11\xe0",), "application/octet-stream"),
     ".xls": ((b"\xd0\xcf\x11\xe0",), "application/octet-stream"),
+    ".jfif": ((b"\xff\xd8\xff",), "image/jpeg"),
+    ".tif": ((b"II*\x00", b"MM\x00*"), "image/tiff"), ".tiff": ((b"II*\x00", b"MM\x00*"), "image/tiff"),
+    ".dwg": ((b"AC1",), "application/octet-stream"),
+    ".txt": ((), "application/octet-stream"),                   # 첫머리 글자가 없음: 글자 파일인지 따로 봄 (_is_text)
+    ".zip": ((b"PK\x03\x04",), "application/octet-stream"),     # NAS 에 직접 넣은 것만 (화면에서 올리기는 막음), 내려받기만
 }
+NAS_ONLY = {".zip"}
+IMAGES = {e: v for e, v in KINDS.items() if v[1].startswith("image/")}      # 사진은 이름이 아니라 실제 내용으로 종류를 정함 (이름은 jpg 인데 png 인 파일 등)
+
+
+def _is_text(raw: bytes) -> bool:
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):              # 유니코드 메모장
+        return True
+    return b"\x00" not in raw[:65536] and not raw.startswith((b"MZ", b"%PDF", b"PK\x03\x04"))
+
+
 INLINE = {"application/pdf", "image/jpeg", "image/png", "image/webp"}      # 브라우저에서 바로 보여도 되는 종류
 
 
@@ -369,16 +384,29 @@ def folder(menu: str, t: dict) -> str:
     return os.path.join(*parts)
 
 
-def check(orig_name: str, raw: bytes) -> tuple[str, str]:
-    """(확장자, 종류) 또는 ArchiveError."""
+def check(orig_name: str, raw: bytes, nas: bool = False) -> tuple[str, str]:
+    """(확장자, 종류) 또는 ArchiveError. nas=True: NAS 폴더에 직접 넣어 둔 파일."""
     ext = os.path.splitext(orig_name or "")[1].lower()
     if ext not in KINDS:
-        raise ArchiveError("올릴 수 있는 파일은 PDF·사진(JPG·PNG)·한글·워드·엑셀·파워포인트입니다")
+        raise ArchiveError("올릴 수 있는 파일은 PDF·사진·한글·워드·엑셀·파워포인트·도면(DWG)·TXT 입니다")
+    if ext in NAS_ONLY and not nas:
+        raise ArchiveError("압축 파일은 화면에서 올릴 수 없습니다. 압축을 풀어 올려 주세요")
     if not raw:
         raise ArchiveError("빈 파일입니다")
     if len(raw) > MAX_MB * 1024 * 1024:
         raise ArchiveError(f"파일이 너무 큽니다 ({MAX_MB}MB 이하)")
     heads, mime = KINDS[ext]
+    if ext in IMAGES:
+        mime = next((m for hs, m in IMAGES.values() if any(raw.startswith(h) for h in hs)), "")
+        if mime == "image/webp" and raw[8:12] != b"WEBP":
+            mime = ""
+        if mime:
+            return ext, mime
+        raise ArchiveError("파일 내용이 확장자와 맞지 않습니다 (이름만 바꾼 파일은 올릴 수 없습니다)")
+    if ext == ".txt":
+        if not _is_text(raw):
+            raise ArchiveError("글자 파일이 아닙니다 (이름만 txt 로 바꾼 파일은 올릴 수 없습니다)")
+        return ext, mime
     if not any(raw.startswith(h) for h in heads):
         raise ArchiveError("파일 내용이 확장자와 맞지 않습니다 (이름만 바꾼 파일은 올릴 수 없습니다)")
     return ext, mime
@@ -602,7 +630,7 @@ def adopt(menu: str, ref_id: int, names: list[str], note: str = "") -> tuple[int
         try:
             with open(path, "rb") as f:
                 raw = f.read(MAX_MB * 1024 * 1024 + 1)
-            _ext, mime = check(w["file"], raw)
+            _ext, mime = check(w["file"], raw, nas=True)
         except (OSError, ArchiveError) as ex:
             errs.append(f"{name}: {ex if isinstance(ex, ArchiveError) else '읽을 수 없습니다'}")
             continue

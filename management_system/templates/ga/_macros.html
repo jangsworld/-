@@ -40,7 +40,7 @@
 {# 등록 창 안에서 바로 서류 붙이기 (저장하면 문서 보관함의 그 대상 폴더에 들어감) #}
 {% macro attfield(label='서류 붙이기', hint='계약서 원본 등') -%}
 <div class="col-12"><label class="form-label small"><i class="bi bi-paperclip"></i> {{ label }} <span class="text-muted fw-normal">(선택 · 여러 개 가능 · {{ hint }})</span></label>
-  <input class="form-control form-control-sm" type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.hwp,.hwpx,.doc,.docx,.xls,.xlsx,.pptx">
+  <input class="form-control form-control-sm" type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.jfif,.png,.webp,.tif,.tiff,.hwp,.hwpx,.doc,.docx,.xls,.xlsx,.pptx,.dwg,.txt">
   <div class="help">저장하면 문서 보관함(NAS)의 이 항목 폴더에 함께 저장됩니다. 나중에 📎 버튼으로 더 붙일 수도 있습니다.</div></div>
 {%- endmacro %}
 

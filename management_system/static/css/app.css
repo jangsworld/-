@@ -313,7 +313,7 @@ body:has(.form-actions) .toast-container { bottom: 64px !important; }
 .fx-ico { position: relative; display: inline-block; line-height: 1; }
 .fx-folder .fx-ico i { color: #f5b82e; }
 .fx-pdf { color: #d93025; } .fx-img { color: #1a9a8a; } .fx-hwp { color: #2b7de0; } .fx-doc { color: #2b5797; }
-.fx-xls { color: #1e7145; } .fx-ppt { color: #d24726; } .fx-etc { color: #8a94a0; }
+.fx-xls { color: #1e7145; } .fx-ppt { color: #d24726; } .fx-etc { color: #8a94a0; } .fx-dwg { color: #7a4fc0; } .fx-zip { color: #b08a3e; }
 .fx-dot { position: absolute; top: -2px; right: -4px; width: 10px; height: 10px; border-radius: 50%; background: #ffc107; border: 2px solid #fff; }
 .fx-isnew { background: #fffdf3; }
 .fx-name { overflow-wrap: anywhere; }

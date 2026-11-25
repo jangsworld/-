@@ -132,7 +132,7 @@ def body_limit(path: str) -> int:
     if path.startswith("/login"):
         return 64 * 1024                                   # 로그인·인증번호 요청은 몇 KB 면 충분
     if (path.startswith("/files/") and path.endswith("/upload")) or path in ("/ga/contracts/save", "/ga/company/save"):
-        return 200 * 1024 * 1024                           # 붙임 서류 여러 개 (한 개 30MB 는 저장할 때 확인)
+        return 200 * 1024 * 1024                           # 붙임 서류 여러 개 (한 개 크기는 저장할 때 확인)
     photo_up = path.startswith(("/ga/assets/", "/vq/")) or (path.startswith("/ga/vehicles/") and path.endswith("/photo"))
     return (25 if photo_up else settings.max_upload_mb) * 1024 * 1024      # 자산·차량 사진은 서버에서 줄여 저장
 
@@ -285,7 +285,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
     def _headers(request: Request, response: Response, path: str):
         n = request.state.csp_nonce
         h = response.headers
-        framed = bool(re.fullmatch(r"/files/get/\d+", path))      # 서류 미리보기 창(같은 사이트)에서만 액자 안에 열 수 있음
+        framed = bool(re.fullmatch(r"/files/(get|view)/\d+", path))      # 서류 미리보기 창(같은 사이트)에서만 액자 안에 열 수 있음
         h["Content-Security-Policy"] = (
             f"default-src 'self'; script-src 'self' 'nonce-{n}'; style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data:; font-src 'self'; connect-src 'self'; " + ("frame-ancestors 'self'; " if framed else "frame-ancestors 'none'; ") +

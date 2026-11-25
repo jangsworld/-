@@ -71,6 +71,9 @@ FILE_LOOK = {      # 확장자 → (아이콘, 색 이름, 종류 이름)  — �
     "webp": ("bi-file-earmark-image-fill", "img", "사진"), "hwp": ("bi-file-earmark-text-fill", "hwp", "한글 문서"),
     "hwpx": ("bi-file-earmark-text-fill", "hwp", "한글 문서"), "doc": ("bi-file-earmark-word-fill", "doc", "워드 문서"),
     "docx": ("bi-file-earmark-word-fill", "doc", "워드 문서"), "xls": ("bi-file-earmark-excel-fill", "xls", "엑셀 문서"),
+    "jfif": ("bi-file-earmark-image-fill", "img", "사진"), "tif": ("bi-file-earmark-image-fill", "img", "사진(TIFF)"),
+    "tiff": ("bi-file-earmark-image-fill", "img", "사진(TIFF)"), "dwg": ("bi-rulers", "dwg", "도면(DWG)"),
+    "txt": ("bi-file-earmark-text", "etc", "텍스트"), "zip": ("bi-file-earmark-zip-fill", "zip", "압축 파일"),
     "xlsx": ("bi-file-earmark-excel-fill", "xls", "엑셀 문서"), "pptx": ("bi-file-earmark-ppt-fill", "ppt", "파워포인트"),
 }
 
@@ -90,8 +93,8 @@ def _explorer(menu: str, ref_id: int, rows: list[dict], waiting: list[dict]) -> 
                         "date": (r.get("uploaded_at") or "")[:16], "by": r.get("uploaded_by") or "", "note": r.get("note") or "",
                         "id": r["id"], "inline": r["inline"], "new": False, "lost": r["id"] in lost, "edited": (r.get("modified_at") or "")[5:16],
                         "changed": r["id"] not in lost and bool(r.get("mtime")) and archive_ops.changed_path(r) is not None,
-                        "view": ("pdf" if r["mime"] == "application/pdf" else "img") if r["inline"] else "",
-                        "thumb": thumbs and r["mime"].startswith("image/") and r["id"] not in lost})
+                        "view": ("pdf" if r["mime"] == "application/pdf" else "img") if r["inline"] else ("tif" if r["mime"] == "image/tiff" else ""),
+                        "thumb": thumbs and r["size"] < 15 * 1024 * 1024 and r["mime"].startswith("image/") and r["id"] not in lost})
     for w in waiting:
         icon, tone, kind = look(w["file"])
         entries.append({"dir": w["sub"], "name": w["file"], "icon": icon, "tone": tone, "kind": kind, "size": w["size"], "date": "", "by": "",
@@ -145,11 +148,25 @@ def download(request: Request, att_id: int, dl: int = 0):
         "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
 
 
+@router.get("/view/{att_id}")
+def view_tiff(request: Request, att_id: int):
+    """TIFF 를 화면에서 볼 수 있게 PDF 로 바꿔 보여 줌."""
+    att = archive.get(att_id)
+    if not att or not archive.allowed(att["menu"], _role(request)) or att["mime"] != "image/tiff":
+        raise HTTPException(404, "파일을 찾을 수 없습니다")
+    try:
+        data = archive_ops.tiff_pdf(att)
+    except Exception as ex:                                 # noqa: BLE001
+        raise HTTPException(409, str(ex) if isinstance(ex, archive.ArchiveError) else "미리 볼 수 없는 사진입니다. 내려받아 열어 주세요") from ex
+    audit("files", "서류 열람", att["orig_name"], f"{att['menu']} #{att['ref_id']}")
+    return Response(data, media_type="application/pdf", headers={"Content-Disposition": "inline", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
+
+
 @router.get("/thumb/{att_id}")
 def thumbnail(request: Request, att_id: int):
     """사진을 작은 그림으로 (총무 메뉴만)."""
     att = archive.get(att_id)
-    if not att or not archive.allowed(att["menu"], _role(request)) or att["menu"].startswith("hr.") or not att["mime"].startswith("image/"):
+    if not att or not archive.allowed(att["menu"], _role(request)) or att["menu"].startswith("hr.") or not att["mime"].startswith("image/") or att["size"] >= 15 * 1024 * 1024:
         raise HTTPException(404, "파일을 찾을 수 없습니다")
     try:
         data = archive_ops.thumb(att)

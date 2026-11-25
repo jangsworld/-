@@ -376,7 +376,7 @@ def test_subfolders_are_recognized(client, two):
     try:
         base = os.path.join(archive.root(), archive.ensure_folder("ga.contracts", cid))
         os.makedirs(os.path.join(base, "기타서류", "2024"))
-        for rel in ("본계약.pdf", "기타서류/확인서.pdf", "기타서류/2024/영수증.pdf", "기타서류/메모.txt", "기타서류/BMS_자동.pdf"):
+        for rel in ("본계약.pdf", "기타서류/확인서.pdf", "기타서류/2024/영수증.pdf", "기타서류/메모.log", "기타서류/BMS_자동.pdf"):
             with open(os.path.join(base, *rel.split("/")), "wb") as f:
                 f.write(PDF)
         names = [x["name"] for x in archive.unregistered("ga.contracts", cid)]
@@ -393,7 +393,7 @@ def test_subfolders_are_recognized(client, two):
         moved = archive.get(rows["기타서류/2024/영수증.pdf"]["id"])
         assert moved["rel_path"].endswith("/하위폴더 계약 새이름/기타서류/2024/영수증.pdf") and archive.read(moved) == PDF
         assert not os.path.exists(base)                                                         # 폴더째 새 이름으로: 대장에 없는 파일도 함께 따라감
-        assert os.path.exists(os.path.join(base + " 새이름", "기타서류", "메모.txt"))
+        assert os.path.exists(os.path.join(base + " 새이름", "기타서류", "메모.log"))
         assert not os.path.exists(os.path.join(archive.root(), archive.EMPTY, company.short("1"), "총무관리", "계약·만기 관리", "하위폴더 계약"))
         # 차량 서류 화면은 과태료·사고·점검사진 폴더(다른 메뉴 것)를 건너뜀
         vbase = os.path.join(archive.root(), archive.ensure_folder("ga.vehicles", vid))

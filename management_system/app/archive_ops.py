@@ -320,7 +320,7 @@ def sync(menu: str, ref_id: int, limit: int = 1000) -> int:
                 with open(path, "rb") as f:
                     raw = f.read(MAX_MB * 1024 * 1024 + 1)
                 try:
-                    _ext, mime = check(w["file"], raw)
+                    _ext, mime = check(w["file"], raw, nas=True)
                 except ArchiveError:
                     _seen[path] = (sig, old[1], True)         # 종류가 맞지 않는 파일: 바뀔 때까지 다시 읽지 않음
                     continue
@@ -401,7 +401,7 @@ def _apply_edit_locked(a: dict, path: str, manual: bool) -> str:
         execute("UPDATE attachments SET mtime=? WHERE id=?", (str(st.st_mtime_ns), a["id"]))
         return "same"
     try:
-        check(os.path.basename(path), raw)
+        _ext, mime = check(os.path.basename(path), raw, nas=True)
     except ArchiveError:
         _seen[path] = (sig, 0.0, True)
         return "bad"
@@ -416,8 +416,8 @@ def _apply_edit_locked(a: dict, path: str, manual: bool) -> str:
                 log.warning("NAS 서류가 짧은 시간에 너무 많이 바뀌어 자동 반영을 멈춤")
             return "hold"
         _changes.append(now)
-    execute("UPDATE attachments SET sha256=?, size=?, mtime=?, modified_at=datetime('now','localtime') WHERE id=? AND sha256=?",
-            (sha, len(raw), str(st.st_mtime_ns), a["id"], now_row["sha256"]))
+    execute("UPDATE attachments SET sha256=?, size=?, mime=?, mtime=?, modified_at=datetime('now','localtime') WHERE id=? AND sha256=?",
+            (sha, len(raw), mime, str(st.st_mtime_ns), a["id"], now_row["sha256"]))
     t = target(a["menu"], a["ref_id"]) or {"title": ""}
     audit("files", "NAS에서 고친 서류 반영", f"{MENUS[a['menu']][1]} {t['title']}"[:120], f"{a['orig_name']} · {a['size'] // 1024}KB → {len(raw) // 1024}KB")
     return "ok"
@@ -544,4 +544,22 @@ def thumb(att: dict) -> bytes:
         im.thumbnail((220, 220))
         out = io.BytesIO()
         im.convert("RGB").save(out, "JPEG", quality=78)
+    return out.getvalue()
+
+
+def tiff_pdf(att: dict) -> bytes:
+    """TIFF(여러 장 스캔본 포함)를 브라우저에서 볼 수 있게 PDF 로 (50장까지). 원본은 그대로."""
+    import io
+
+    from PIL import Image, ImageSequence
+    with Image.open(io.BytesIO(read_fresh(att))) as im:
+        pages = []
+        for n, f in enumerate(ImageSequence.Iterator(im)):
+            if n >= 50:
+                break
+            p = f.convert("RGB")
+            p.thumbnail((2400, 2400))
+            pages.append(p)
+    out = io.BytesIO()
+    pages[0].save(out, "PDF", save_all=True, append_images=pages[1:])
     return out.getvalue()

@@ -532,7 +532,7 @@ document.querySelectorAll('select[data-search]').forEach((sel) => {
   const token = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
   const el = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text !== undefined) x.textContent = text; return x; };
   const icon = (name) => el('i', 'bi ' + name);
-  const EXT = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'hwp', 'hwpx', 'doc', 'docx', 'xls', 'xlsx', 'pptx'];
+  const EXT = ['pdf', 'jpg', 'jpeg', 'jfif', 'png', 'tif', 'tiff', 'dwg', 'txt', 'webp', 'hwp', 'hwpx', 'doc', 'docx', 'xls', 'xlsx', 'pptx'];
 
   // 작은 물음 창 (이름 넣기 / 폴더 고르기)
   const ask = (title, field, okText) => new Promise((done) => {
@@ -552,9 +552,9 @@ document.querySelectorAll('select[data-search]').forEach((sel) => {
     const open = el('a', 'btn btn-sm btn-outline-light text-nowrap', '새 창'), down = el('a', 'btn btn-sm btn-outline-light'); open.target = '_blank'; open.rel = 'noopener'; down.title = '내려받기'; down.append(icon('bi-download'));
     const show = (n) => {
       at = (n + list.length) % list.length;
-      const it = list[at], url = '/files/get/' + it.id;
+      const it = list[at], url = (it.view === 'tif' ? '/files/view/' : '/files/get/') + it.id;
       name.textContent = it.name + (list.length > 1 ? '  (' + (at + 1) + '/' + list.length + ')' : '');
-      open.href = url; down.href = url + '?dl=1';
+      open.href = url; down.href = '/files/get/' + it.id + '?dl=1';
       let v;
       if (it.view === 'img') { v = el('img'); v.alt = it.name; v.src = url; } else { v = el('iframe'); v.title = it.name; v.src = url + '#view=FitH'; }
       body.replaceChildren(v);
