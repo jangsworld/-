@@ -34,7 +34,7 @@
 <div class="card"><div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel>
   <thead><tr><th>상태</th><th>부서</th><th>성명</th><th>상대 사업장</th><th>프로젝트</th><th>기간</th><th>사유</th><th>이중가입 보험</th><th>급여</th><th>처리 체크</th><th></th></tr></thead><tbody>
   {% for r in rows %}
-  <tr class="{{ 'table-danger' if r.overdue else ('table-warning' if r.ending else '') }}">
+  <tr data-row="{{ r.id }}" data-row-noopen class="{{ 'table-danger' if r.overdue else ('table-warning' if r.ending else '') }}">
     <td><span class="badge {{ 'text-bg-success' if r.state == '진행중' else ('text-bg-info' if r.state == '예정' else 'text-bg-secondary') }}">{{ r.state }}</span>
       {% if r.overdue %}<span class="badge text-bg-danger">종료일 지남</span>{% elif r.ending %}<span class="badge text-bg-warning">D-{{ r.dday }}</span>{% endif %}</td>
     <td class="small">{{ r.department or '' }}</td>

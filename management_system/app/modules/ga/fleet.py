@@ -578,17 +578,17 @@ def alerts() -> list[dict]:
                 link=f"/ga/vehicles/{v['id']}")
     for f in fines(status="진행"):
         if not f["driver_id"]:
-            add("warning", "과태료", f["plate_no"], f"{f['violation_at']} {f['kind']} — 운전자 확인 필요", f["due_date"], "/ga/vehicles?tab=fines")
+            add("warning", "과태료", f["plate_no"], f"{f['violation_at']} {f['kind']} — 운전자 확인 필요", f["due_date"], f"/ga/vehicles?tab=fines&status=진행&row={f['id']}")
         elif f["due_dday"] is not None and f["due_dday"] <= 7:
             add("danger" if f["due_dday"] < 0 else "warning", "과태료", f["plate_no"],
-                f"{f['driver_name']} {f['kind']} {f['amount']:,}원 납부기한", f["due_date"], "/ga/vehicles?tab=fines")
+                f"{f['driver_name']} {f['kind']} {f['amount']:,}원 납부기한", f["due_date"], f"/ga/vehicles?tab=fines&status=진행&row={f['id']}")
     for i in inspections(status="확인대기"):
         add("info", "차량점검", i["plate_no"], f"{i['kind']} 사진 점검 — 관리부 비교·확정 대기 ({i['insp_date']})",
             link=f"/ga/vehicles/{i['vehicle_id']}/inspections/{i['id']}")
     for d in damages(status="접수"):
         if d["responsibility"] == "미정":
             add("info", "차량파손", d["plate_no"], f"{d['occur_date']} {d['kind']}({d['part'] or ''}) — 책임·처리 방법 미정",
-                link="/ga/vehicles?tab=damages")
+                link=f"/ga/vehicles?tab=damages&status=진행&row={d['id']}")
     for i in inspections(status="촬영중"):
         if (today() - (to_date(i["insp_date"]) or today())).days >= 3:
             add("info", "차량점검", i["plate_no"], f"{i['kind']} 사진 점검이 {i['insp_date']}부터 촬영 중입니다",

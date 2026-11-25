@@ -37,11 +37,11 @@
   </div></div>
   <div class="col-lg-4"><div class="card h-100"><div class="card-header d-flex">관인 사용 승인 대기<a class="ms-auto small" href="/ga/docs?tab=seal">전체</a></div>
     <ul class="list-group list-group-flush small">{% for s in d.pending_seals %}
-      <li class="list-group-item d-flex gap-2"><span class="text-muted">{{ s.use_date }}</span><span class="badge text-bg-light border">{{ s.seal_type }}</span><span class="text-truncate">{{ s.purpose }}</span><span class="ms-auto">{{ s.requester_name or '' }}</span></li>
+      <li class="list-group-item d-flex gap-2"><span class="text-muted">{{ s.use_date }}</span><span class="badge text-bg-light border">{{ s.seal_type }}</span><a class="text-truncate" href="/ga/docs?tab=seal&year={{ s.use_date[:4] }}&row={{ s.id }}">{{ s.purpose }}</a><span class="ms-auto">{{ s.requester_name or '' }}</span></li>
     {% else %}<li class="list-group-item text-muted">대기 없음</li>{% endfor %}</ul></div></div>
   <div class="col-lg-4"><div class="card h-100"><div class="card-header d-flex">최근 문서 수발<a class="ms-auto small" href="/ga/docs">전체</a></div>
     <ul class="list-group list-group-flush small">{% for x in d.recent_docs %}
-      <li class="list-group-item d-flex gap-2"><span class="st {{ 'st-진행중' if x.direction == '발신' else 'st-예정' }}">{{ x.direction }}</span><span class="text-truncate">{{ x.title }}</span><span class="ms-auto text-muted text-nowrap">{{ x.doc_date }}</span></li>
+      <li class="list-group-item d-flex gap-2"><span class="st {{ 'st-진행중' if x.direction == '발신' else 'st-예정' }}">{{ x.direction }}</span><a class="text-truncate" href="/ga/docs?year={{ x.doc_date[:4] }}&row={{ x.id }}">{{ x.title }}</a><span class="ms-auto text-muted text-nowrap">{{ x.doc_date }}</span></li>
     {% else %}<li class="list-group-item text-muted">없음</li>{% endfor %}</ul></div></div>
   {% if perms.ga_events %}
   <div class="col-lg-4"><div class="card h-100"><div class="card-header">월별 경조금 지급 ({{ today().year }}년)</div><div class="card-body"><div class="chart-box"><canvas id="cEv"></canvas></div></div></div></div>

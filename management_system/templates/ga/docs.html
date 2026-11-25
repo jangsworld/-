@@ -24,7 +24,7 @@
   </form></div>
   <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" data-excel>
     <thead><tr><th>구분</th><th>문서번호</th><th>일자</th><th>{{ '발신처 / 수신처' }}</th><th>제목</th><th>담당</th><th>방법</th><th>상태</th><th>회신기한</th><th>보존</th><th data-nofilter></th></tr></thead>
-    <tbody>{% for d in rows %}<tr>
+    <tbody>{% for d in rows %}<tr data-row="{{ d.id }}">
       <td><span class="st {{ 'st-진행중' if d.direction == '발신' else 'st-예정' }}">{{ d.direction }}</span></td>
       <td class="fw-semibold text-nowrap">{{ d.doc_no }}</td><td class="small text-nowrap">{{ d.doc_date }}</td><td>{{ d.counterpart }}</td><td>{{ d.title }}</td>
       <td class="small">{{ d.department or '' }} {{ d.handler_name or '' }}</td><td class="small">{{ d.method or '' }}</td>
@@ -55,7 +55,7 @@
     {% if can_write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#sealModal" data-fill="{}"><i class="bi bi-plus"></i> 사용 신청</button>{% endif %}</div>
   <div class="table-responsive"><table class="table table-sm align-middle mb-0">
     <thead><tr><th>사용일</th><th>인장</th><th>용도</th><th>제출처</th><th class="num">매수</th><th>신청자</th><th>상태</th><th>승인</th><th></th></tr></thead>
-    <tbody>{% for s in seals %}<tr>
+    <tbody>{% for s in seals %}<tr data-row="{{ s.id }}">
       <td class="small">{{ s.use_date }}</td><td><span class="badge text-bg-light border">{{ s.seal_type }}</span></td><td>{{ s.purpose }}</td><td class="small">{{ s.submit_to or '' }}</td>
       <td class="num">{{ s.copies }}</td><td class="small">{{ s.requester_dept or '' }} {{ s.requester_name or '' }}</td>
       <td><span class="badge {{ {'신청':'text-bg-warning','승인':'text-bg-primary','반려':'text-bg-secondary','사용완료':'text-bg-success'}[s.status] }}">{{ s.status }}</span></td>

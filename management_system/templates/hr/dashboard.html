@@ -101,7 +101,7 @@
         {% for a in d.recent_appointments %}
         <li class="list-group-item d-flex gap-2"><span class="text-muted">{{ a.appt_date }}</span>
           <span class="badge text-bg-light border">{{ a.appt_type }}</span>
-          <a href="/hr/employees/{{ a.employee_id }}">{{ a.name }}</a>
+          <a href="/hr/employees/{{ a.employee_id }}?tab=history">{{ a.name }}</a>
           <span class="text-truncate text-secondary">{{ (a.from_value ~ ' → ') if a.from_value }}{{ a.to_value or '' }}</span></li>
         {% else %}<li class="list-group-item text-muted">이력 없음</li>{% endfor %}
       </ul></div>
@@ -112,7 +112,7 @@
       <ul class="list-group list-group-flush small">
         {% for s in d.active_specials %}
         <li class="list-group-item d-flex gap-2 align-items-center"><span class="st st-{{ s.status }}">{{ s.status }}</span>
-          <a href="/hr/employees/{{ s.employee_id }}">{{ s.name }}</a><span>{{ s.category }}</span>
+          <a href="/hr/specials?row={{ s.id }}">{{ s.name }}</a><span>{{ s.category }}</span>
           <span class="ms-auto text-muted">~{{ s.end_date or '' }}</span></li>
         {% else %}<li class="list-group-item text-muted">없음</li>{% endfor %}
       </ul></div>
@@ -122,7 +122,7 @@
       <ul class="list-group list-group-flush small">
         {% for r in d.recent_rewards %}
         <li class="list-group-item d-flex gap-2 align-items-center"><span class="st kind-{{ r.kind }}">{{ r.kind }}</span>
-          <a href="/hr/employees/{{ r.employee_id }}">{{ r.name }}</a><span>{{ r.category }}</span>
+          <a href="/hr/rewards?row={{ r.id }}">{{ r.name }}</a><span>{{ r.category }}</span>
           <span class="ms-auto text-muted">{{ r.action_date }}</span></li>
         {% else %}<li class="list-group-item text-muted">없음</li>{% endfor %}
       </ul></div>

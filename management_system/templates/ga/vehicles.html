@@ -82,7 +82,7 @@
   {% if can_write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#damageModal" data-fill="{}"><i class="bi bi-plus"></i> 등록</button>{% endif %}</div>
   <div class="table-responsive"><table class="table table-sm align-middle mb-0">
     <thead><tr><th>일자</th><th>차량</th><th>구분</th><th>부위·내용</th><th>운전자</th><th>책임</th><th>처리</th><th class="num">수리비</th><th class="num">본인 부담</th><th>진행</th><th></th></tr></thead>
-    <tbody>{% for d in damage_rows %}<tr>
+    <tbody>{% for d in damage_rows %}<tr data-row="{{ d.id }}">
       <td class="small">{{ d.occur_date }}</td><td class="fw-semibold"><a href="/ga/vehicles/{{ d.vehicle_id }}" class="text-decoration-none">{{ d.plate_no }}</a></td><td>{{ d.kind }}</td>
       <td class="small">{{ d.part or '' }} {{ d.detail or '' }}{% if d.inspection_id %} <a href="/ga/vehicles/{{ d.vehicle_id }}/inspections/{{ d.inspection_id }}" class="small">사진</a>{% endif %}</td>
       <td>{{ d.driver_name or '' }}</td><td><span class="badge {{ 'text-bg-warning' if d.responsibility == '미정' else 'text-bg-light border' }}">{{ d.responsibility }}</span></td><td class="small">{{ d.insurance }}</td>
@@ -96,7 +96,7 @@
   {% if can_write %}<button class="btn btn-sm btn-primary ms-auto" data-bs-toggle="modal" data-bs-target="#fineModal" data-fill="{}"><i class="bi bi-plus"></i> 고지서 등록</button>{% endif %}</div>
   <div class="table-responsive"><table class="table table-sm align-middle mb-0">
     <thead><tr><th>위반 일시</th><th>차량</th><th>내용</th><th>장소</th><th class="num">금액</th><th>운전자</th><th>납부 기한</th><th>진행</th><th></th></tr></thead>
-    <tbody>{% for f in fine_rows %}<tr{% if not f.driver_id %} class="table-warning"{% endif %}>
+    <tbody>{% for f in fine_rows %}<tr data-row="{{ f.id }}"{% if not f.driver_id %} class="table-warning"{% endif %}>
       <td class="small">{{ f.violation_at }}</td><td class="fw-semibold">{{ f.plate_no }}</td><td>{{ f.kind }}</td><td class="small">{{ f.place or '' }}</td><td class="num">{{ f.amount|won }}</td>
       <td>{{ f.driver_name or '확인 필요' }}{% if f.driver_source %} <span class="small text-muted">({{ f.driver_source }})</span>{% endif %}</td>
       <td class="small">{{ f.due_date or '' }} {% if f.status in ('접수','운전자확인','이의신청') %}{{ dday(f.due_dday, 7) }}{% endif %}</td><td>{{ f.status }}{% if f.paid_date %} <span class="small text-muted">{{ f.paid_date }}</span>{% endif %}</td>

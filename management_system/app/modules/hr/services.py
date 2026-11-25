@@ -481,7 +481,7 @@ def build_alerts(emps: list[dict], alert_days: int = 60) -> list[dict]:
         left = days_until(d["end_date"])
         if left is not None and 0 <= left <= alert_days:
             add("warning", "계약만료", e, f"근로계약 만료 예정 ({d['end_date']}) — 갱신·종료 통보 필요",
-                d["end_date"], f"/hr/contracts/{d['id']}")
+                d["end_date"], f"/hr/documents/{d['id']}")
         elif left is not None and left < 0:
             add("danger", "계약만료", e, f"근로계약 기간 경과 ({d['end_date']}) — 재계약 미체결 상태",
                 d["end_date"], f"/hr/contracts/new?employee_id={e['id']}")
@@ -515,10 +515,10 @@ def build_alerts(emps: list[dict], alert_days: int = 60) -> list[dict]:
             emp = {"id": s["employee_id"], "name": s["name"]}
             if s["category"] in LEAVE_CATEGORIES:
                 add("warning", "복직예정", emp, f"{s['category']} 종료 예정 ({s['end_date']}) — 복직 면담·직무 배치 준비",
-                    s["end_date"], "/hr/specials")
+                    s["end_date"], f"/hr/specials?row={s['id']}")
             elif s["category"] in REDUCE_CATEGORIES:
                 add("info", "단축종료", emp, f"{s['category']} 종료 예정 ({s['end_date']}) — 근무시간 원복 및 급여 조정",
-                    s["end_date"], "/hr/specials")
+                    s["end_date"], f"/hr/specials?row={s['id']}")
 
     # 5) 당해 연봉 미책정 / 최저임금 미달 의심
     ov = salary_overview(t.year)
@@ -527,13 +527,13 @@ def build_alerts(emps: list[dict], alert_days: int = 60) -> list[dict]:
         alerts.append({
             "level": "info", "category": "연봉책정", "name": f"{len(missing)}명", "emp_id": None,
             "message": f"{t.year}년 연봉이 등록되지 않은 재직자 {len(missing)}명 — 연봉계약 진행 필요",
-            "dday": None, "link": f"/hr/salaries?year={t.year}",
+            "dday": None, "link": f"/hr/salaries?year={t.year}&tab=people",
         })
     for r in ov["rows"]:
         if r["below_min_wage"] and not r["employee"].get("resign_date"):
             add("danger", "최저임금", r["employee"],
                 f"환산 시급 {won(r['hourly'])}원 — 최저임금 미달 의심 (기본연봉÷12÷월소정시간 기준, 수당 구성 확인 필요)",
-                link=f"/hr/employees/{r['employee']['id']}")
+                link=f"/hr/salaries/person/{r['employee']['id']}")
 
     # 6) 징계 말소 예정
     for rw in repo.list_rewards("징계"):
@@ -541,7 +541,7 @@ def build_alerts(emps: list[dict], alert_days: int = 60) -> list[dict]:
         if left is not None and 0 <= left <= 30:
             add("info", "징계말소", {"id": rw["employee_id"], "name": rw["name"]},
                 f"{rw['category']} 징계 효력 말소 예정 ({rw['expunge_date']}) — 인사평가·승진 제한 해제",
-                rw["expunge_date"], "/hr/rewards")
+                rw["expunge_date"], f"/hr/rewards?row={rw['id']}")
 
     # 6-1) 기술자 교육·자격 갱신 만료
     for q in repo.list_technicians():
@@ -549,7 +549,7 @@ def build_alerts(emps: list[dict], alert_days: int = 60) -> list[dict]:
         if left is not None and left <= alert_days:
             add("danger" if left < 0 else "warning", "기술자격", {"id": q["employee_id"], "name": q["name"]},
                 f"{q['kind']} 교육·갱신 {'만료' if left < 0 else '만료 예정'} ({q['expires_on']})",
-                q["expires_on"], "/hr/technicians")
+                q["expires_on"], f"/hr/employees/{q['employee_id']}/edit#s-qual")
 
     # 6-2) 상해공제 만기 · 미가입
     active_ids = {e["id"] for e in active}
@@ -575,7 +575,7 @@ def build_alerts(emps: list[dict], alert_days: int = 60) -> list[dict]:
             alerts.append({"level": "info", "category": "상해공제", "name": f"{len(missing_ins)}명", "emp_id": None,
                            "message": f"상해공제 기록이 없는 재직자 {len(missing_ins)}명 — " +
                                       ", ".join(e["name"] for e in missing_ins[:5]) + (" 외" if len(missing_ins) > 5 else ""),
-                           "dday": None, "link": None})
+                           "dday": None, "link": "/hr/insurances"})
 
     # 7) 근속 기념 (이번 달) — 포상 검토
     for e in active:
@@ -584,7 +584,7 @@ def build_alerts(emps: list[dict], alert_days: int = 60) -> list[dict]:
             yrs = t.year - hd.year
             if yrs in (5, 10, 15, 20, 25, 30):
                 add("info", "장기근속", e, f"입사 {yrs}주년 ({hd.replace(year=t.year)}) — 장기근속 포상 검토",
-                    hd.replace(year=t.year).isoformat(), "/hr/rewards")
+                    hd.replace(year=t.year).isoformat(), f"/hr/employees/{e['id']}?tab=reward")
 
     order = {"danger": 0, "warning": 1, "info": 2}
     alerts.sort(key=lambda a: (order[a["level"]], a["dday"] if a["dday"] is not None else 9999))

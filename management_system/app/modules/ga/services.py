@@ -199,35 +199,36 @@ def build_alerts(assets, vehicles, contracts, alert_days=60) -> list[dict]:
             nd = c["notice_dday"]
             if nd is not None and 0 <= nd <= alert_days:
                 add("danger" if nd <= 14 else "warning", "계약통보", c["counterparty"],
-                    f"{c['title']} — 해지하려면 {c['notice_date']}까지 통보 (미통보 시 자동 갱신)", c["notice_date"], "/ga/contracts")
+                    f"{c['title']} — 해지하려면 {c['notice_date']}까지 통보 (미통보 시 자동 갱신)", c["notice_date"], f"/ga/contracts/{c['id']}")
             elif nd is not None and nd < 0 and c["dday"] is not None and c["dday"] >= 0:
                 add("info", "자동갱신", c["counterparty"], f"{c['title']} — 통보기한 경과, {c['end_date']} 이후 자동 갱신 확정",
-                    c["end_date"], "/ga/contracts")
+                    c["end_date"], f"/ga/contracts/{c['id']}")
         else:
             dd = c["dday"]
             if dd is not None and dd < 0:
                 add("danger", "계약만료", c["counterparty"], f"{c['title']} 계약기간 만료({c['end_date']}) — 재계약·종료 처리",
-                    c["end_date"], "/ga/contracts")
+                    c["end_date"], f"/ga/contracts/{c['id']}")
             elif dd is not None and dd <= max(alert_days, c.get("notice_days") or 0):
                 add("warning", "계약만료", c["counterparty"], f"{c['title']} 만료 예정 — 재계약 여부 결정 (통보기한 {c['notice_date']})",
-                    c["end_date"], "/ga/contracts")
+                    c["end_date"], f"/ga/contracts/{c['id']}")
     # 5) 관인 사용 승인 대기
-    n = len(repo.list_seals(status="신청"))
+    seals = repo.list_seals(status="신청")
+    n = len(seals)
     if n:
         out.append({"level": "info", "category": "관인", "name": f"{n}건", "message": f"관인 사용 승인 대기 {n}건",
-                    "dday": None, "link": "/ga/docs?tab=seal", "emp_id": None})
+                    "dday": None, "link": f"/ga/docs?tab=seal&year={seals[-1]['use_date'][:4]}&row={seals[-1]['id']}", "emp_id": None})
     # 6) 회신 기한 문서
     for d in repo.list_docs(status="회신필요"):
         dd = days_until(d.get("due_date"))
         if dd is not None and dd <= 7:
             add("danger" if dd < 0 else "warning", "회신기한", d["doc_no"], f"{d['counterpart']} — {d['title']}",
-                d["due_date"], "/ga/docs")
+                d["due_date"], f"/ga/docs?year={d['doc_date'][:4]}&row={d['id']}")
     # 7) 경조금 미지급
     for e in repo.list_events(status="신청"):
         if (t - to_date(e["event_date"])).days >= 3:
             out.append({"level": "info", "category": "경조금", "name": e["name"], "emp_id": e["employee_id"],
                         "message": f"{e['relation']} {e['category']} 경조금 {e['amount']:,}원 미지급 ({e['event_date']})",
-                        "dday": None, "link": "/ga/events"})
+                        "dday": None, "link": f"/ga/events?year={e['event_date'][:4]}&row={e['id']}"})
     # 8) 차량: 엔진오일·과태료·사진 점검·파손 (fleet)
     from app.modules.ga import company, fleet
     out.extend(fleet.alerts())

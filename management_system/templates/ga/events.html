@@ -18,7 +18,7 @@
     </form></div>
     <div class="table-responsive"><table class="table table-sm align-middle mb-0" data-excel>
       <thead><tr><th>일자</th><th>임직원</th><th>구분</th><th>대상</th><th class="num">경조금</th><th class="num">휴가</th><th>화환</th><th>상태</th><th>지급일</th><th>비고</th><th data-nofilter></th></tr></thead>
-      <tbody>{% for e in rows %}<tr>
+      <tbody>{% for e in rows %}<tr data-row="{{ e.id }}">
         <td class="small">{{ e.event_date }}</td><td class="fw-semibold">{{ e.name }}<div class="small text-muted">{{ e.department or '' }}</div></td>
         <td>{{ e.category }}</td><td>{{ e.relation }}</td><td class="num">{{ e.amount|won }}</td><td class="num">{{ e.leave_days or '' }}{% if e.leave_days %}일{% endif %}</td>
         <td>{% if e.flower %}<i class="bi bi-check-lg text-success"></i>{% endif %}</td>

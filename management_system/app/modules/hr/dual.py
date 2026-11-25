@@ -190,7 +190,7 @@ def alerts() -> list[dict]:
     out = []
     for r in rows():
         emp = {"id": r["employee_id"], "name": r["name"]}
-        link = "/hr/dual"
+        link = f"/hr/dual?open={r['id']}&row={r['id']}"
         if r["overdue"]:
             out.append((("danger", "이중가입", emp, f"{r['workplace']} 종료 예정일({r['end_date']})이 지났습니다 — 종료 처리·"
                          + ("보수월액 원복 신고" if r["pay_type"] == "조정" else "상대 사업장 상실 확인") + " 필요", r["end_date"], link)))

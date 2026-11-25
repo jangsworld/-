@@ -21,12 +21,13 @@
 {% if tab == 'matrix' %}
 <div class="row g-2 mb-3">
 {% for s in mx.summary if s.targets %}{% set c = s.course %}
-  <div class="col-6 col-md-4 col-xl-3"><div class="card h-100"><div class="card-body py-2">
+  <div class="col-6 col-md-4 col-xl-3"><div class="card h-100" data-row="c{{ c.id }}"><div class="card-body py-2">
     <div class="d-flex"><div class="small fw-semibold text-truncate" title="{{ c.name }}">{{ c.name }}</div><span class="badge text-bg-light border ms-auto">{{ c.cycle }}{% if c.hours %} {{ '%g'|format(c.hours) }}h{% endif %}</span></div>
     <div class="progress my-1" style="height:6px"><div class="progress-bar {{ 'bg-success' if (s.rate or 0) >= 100 else ('bg-danger' if s.missing else '') }}" style="width:{{ s.rate or 0 }}%"></div></div>
     <div class="small text-muted">대상 {{ s.targets }}명{% if s.due %} · 이수 {{ s.done }}/{{ s.due }}{% endif %}
       {% if s.missing %} · <span class="text-danger">미이수 {{ s.missing|length }}</span>{% endif %}
-      {% if s.pending and s.next_end %} · {{ s.next_end }}까지 {{ s.pending|length }}명 남음{% endif %}</div>
+      {% if s.pending and s.next_end %} · {{ s.next_end }}까지 {{ s.pending|length }}명 남음{% endif %}
+      {% if s.missing or s.pending %}<button type="button" class="btn btn-sm btn-link p-0 float-end" data-bs-toggle="modal" data-bs-target="#recModal" data-rec-course="{{ c.id }}" data-row-open>이수 등록</button>{% endif %}</div>
   </div></div></div>
 {% endfor %}
 </div>
@@ -119,6 +120,10 @@ rc && rc.addEventListener('change', () => { rh.value = ''; setH(); }); setH();
 document.getElementById('rDept').addEventListener('change', (e) => box.querySelectorAll('[data-dept]').forEach(d => d.hidden = !!e.target.value && !(e.target.selectedOptions[0].dataset.scope || '').split('|').includes(d.dataset.dept)));
 document.getElementById('rAll').addEventListener('click', () => { box.querySelectorAll('[data-dept]:not([hidden]) input').forEach(i => i.checked = true); cnt(); });
 document.getElementById('rNone').addEventListener('click', () => { box.querySelectorAll('input').forEach(i => i.checked = false); cnt(); });
+document.addEventListener('click', (e) => {          // 과정 카드의 [이수 등록]: 그 과정을 고르고 아직 이수하지 않은 직원을 체크해 둠
+  const b = e.target.closest('[data-rec-course]'); if (!b || !rc) return;
+  rc.value = b.dataset.recCourse; rc.dispatchEvent(new Event('change')); document.getElementById('rTodo').click();
+});
 document.getElementById('rTodo').addEventListener('click', () => {
   const ids = new Set((NOTDONE[rc.value] || []).map(String));
   box.querySelectorAll('input').forEach(i => i.checked = ids.has(i.value)); cnt();

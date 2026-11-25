@@ -79,21 +79,21 @@ def calendar_year(year: int, sources=("의무", "교육", "회사관리", "계�
                 ev.append({"date": p["end"], "title": title, "category": c["category"], "source": "교육",
                            "status": _status(p["end"], miss == 0),
                            "detail": f"미이수 {miss}명 / 대상 {len(applies)}명" if miss else f"대상 {len(applies)}명 모두 이수",
-                           "link": "/mgmt/training?year=%d" % y})
+                           "link": f"/mgmt/training?year={y}&row=c{c['id']}"})
     if "회사관리" in sources:
         for r in query("SELECT * FROM ga_company_items WHERE status IN ('유효','갱신중') AND expire_date LIKE ?", (f"{y}-%",)):
             d = to_date(r["expire_date"])
             if d:
                 ev.append({"date": d, "title": f"{r['name']} 만기·갱신", "category": r["category"], "source": "회사관리",
                            "status": _status(d, False, int(r.get("alert_days") or 60)), "detail": r.get("agency") or "",
-                           "link": "/ga/contracts?kind=item"})
+                           "link": f"/ga/contracts/item/{r['id']}"})
     if "계약" in sources:
         for r in query("SELECT * FROM ga_contracts WHERE status='유효' AND end_date LIKE ?" + company.sql(""), (f"{y}-%",)):
             d = to_date(r["end_date"])
             if d:
                 ev.append({"date": d, "title": f"계약 만료: {r['title']}", "category": r["category"], "source": "계약",
                            "status": _status(d, False, int(r.get("notice_days") or 30)), "detail": r.get("counterparty") or "",
-                           "link": f"/ga/contracts"})
+                           "link": f"/ga/contracts/{r['id']}"})
     ev.sort(key=lambda e: (e["date"], e["source"], e["title"]))
     return ev
 

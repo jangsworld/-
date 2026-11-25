@@ -826,3 +826,19 @@ document.querySelectorAll('[data-mailpick]').forEach((box) => {
   if (form) { form.addEventListener('bms:filled', load); }
   load();
 });
+
+// ── 알림의 [처리]로 들어온 건 (?row=번호): 그 줄로 가서 표시하고, 수정 창이 있는 메뉴는 창까지 바로 엶 ──
+(() => {
+  const u = new URL(location.href), row = u.searchParams.get('row');
+  if (!row) return;
+  u.searchParams.delete('row');                         // 새로 고침·뒤로가기 때 다시 열리지 않게
+  history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+  window.addEventListener('load', () => setTimeout(() => {
+    const el = /^[\w.-]{1,40}$/.test(row) ? document.querySelector(`[data-row="${CSS.escape(row)}"]`) : null;
+    if (!el) { toast('해당 건이 이 목록에 없습니다. 이미 처리되었거나 지워진 건일 수 있습니다'); return; }
+    el.classList.add('row-hit');
+    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    const b = !el.hasAttribute('data-row-noopen') && el.querySelector('[data-row-open], [data-fill][data-bs-toggle="modal"], [data-reward-edit], [data-special-edit]');
+    if (b) b.click();
+  }, 120));
+})();

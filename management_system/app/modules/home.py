@@ -53,7 +53,7 @@ def _duties() -> list[dict]:
             out.append({"level": "danger" if left < 0 else "warning", "category": e["source"] + "·" + e["category"],
                         "name": e["title"], "emp_id": None, "dday": left,
                         "message": e.get("detail") or (f"기한 {e['date']}" + (f" · {e['basis']}" if e.get("basis") else "")),
-                        "link": e.get("link") or f"/mgmt/compliance?year={y}"})
+                        "link": e.get("link") or f"/mgmt/compliance?year={y}&row={e['task_id']}-{e['period']}"})
     return _sorted(out)
 
 

@@ -26,7 +26,7 @@
 <div class="card mb-2"><div class="card-header py-1 fw-semibold {{ 'bg-primary-subtle' if year == td.year and mon == td.month }}">{{ mon }}월</div>
   <ul class="list-group list-group-flush">
   {% for e in months[mon] %}{% set st = STB[e.status] %}
-    <li class="list-group-item d-flex flex-wrap align-items-center gap-2 py-2">
+    <li class="list-group-item d-flex flex-wrap align-items-center gap-2 py-2"{% if e.task_id %} data-row="{{ e.task_id }}-{{ e.period }}"{% endif %}>
       <span class="text-nowrap small" style="width:88px">{{ e.date.strftime('%m-%d') }} ({{ '월화수목금토일'[e.date.weekday()] }})</span>
       <span class="badge {{ st[0] }}">{{ st[1] }}{% if e.status in ('soon', 'upcoming') %} D-{{ (e.date - td).days }}{% elif e.status == 'overdue' %} {{ (td - e.date).days }}일{% endif %}</span>
       <span class="badge {{ SB[e.source] }}">{{ e.source }}</span>

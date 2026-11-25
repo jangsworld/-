@@ -611,3 +611,53 @@ def test_alert_mail_from_ga_dept(client, two):
         execute("DELETE FROM users WHERE username='co_mgr'")
         if cid:
             execute("DELETE FROM ga_contracts WHERE id=?", (cid,))
+
+
+def test_alert_links_open_the_record(client):
+    """대시보드 알림의 [처리]: 모든 링크가 열리고, ?row= 로 가는 링크는 그 화면에 그 줄이 실제로 있음. 계약·만기는 상세 화면으로 바로."""
+    import re
+    from datetime import date, timedelta
+    from app.modules import home
+    from app.modules.ga import services as ga
+    from app.db import execute, query_one
+    d = lambda n: (date.today() + timedelta(days=n)).isoformat()          # noqa: E731
+    emp = query_one("SELECT id FROM employees WHERE resign_date IS NULL OR resign_date='' ORDER BY id LIMIT 1")["id"]
+    vid = query_one("SELECT id FROM ga_vehicles WHERE status<>'매각' LIMIT 1")["id"]
+    old = str(date.today().year - 1) + "-12-20"
+    made = [
+        ("ga_contracts", execute("INSERT INTO ga_contracts(category, title, counterparty, start_date, end_date, status) VALUES ('임대차','링크계약','상대',?,?,'유효')", (d(-300), d(5)))),
+        ("ga_company_items", execute("INSERT INTO ga_company_items(category, name, expire_date, status) VALUES ('인증','링크인증',?,'유효')", (d(5),))),
+        ("ga_docs", execute("INSERT INTO ga_docs(direction, doc_no, doc_date, counterpart, title, status, due_date) VALUES ('수신','링크-1',?,'상대','링크문서','회신필요',?)", (old, d(2)))),
+        ("ga_seal_logs", execute("INSERT INTO ga_seal_logs(use_date, seal_type, purpose, status, requester_id) VALUES (?,'법인인감','링크관인','신청',?)", (old, emp))),
+        ("ga_vehicle_fines", execute("INSERT INTO ga_vehicle_fines(vehicle_id, violation_at, kind, amount, status) VALUES (?,?,'과태료',1000,'접수')", (vid, old + " 10:00"))),
+        ("ga_vehicle_damages", execute("INSERT INTO ga_vehicle_damages(vehicle_id, occur_date, kind, responsibility, status) VALUES (?,?,'파손','미정','접수')", (vid, old))),
+        ("ga_events", execute("INSERT INTO ga_events(employee_id, event_date, category, relation, amount, status) VALUES (?,?,'결혼','본인',1000,'신청')", (emp, old))),
+        ("work_specials", execute("INSERT INTO work_specials(employee_id, category, start_date, end_date) VALUES (?,'육아휴직',?,?)", (emp, d(-30), d(10)))),
+        ("rewards", execute("INSERT INTO rewards(employee_id, kind, category, action_date, expunge_date) VALUES (?,'징계','견책',?,?)", (emp, d(-170), d(10)))),
+        ("dual_enrollments", execute("INSERT INTO dual_enrollments(employee_id, workplace, start_date, end_date) VALUES (?,'링크사업장',?,?)", (emp, d(-60), d(-1)))),
+    ]
+    ids = dict(made)
+    try:
+        sec = {s["key"]: s["alerts"] for s in home.build("admin")["sections"]}
+        links = {a["link"] for al in sec.values() for a in al if a.get("link")}
+        assert f"/ga/contracts/{ids['ga_contracts']}" in links and f"/ga/contracts/item/{ids['ga_company_items']}" in links
+        assert not [x for x in links if x in ("/ga/contracts", "/ga/contracts?kind=item", "/ga/docs", "/ga/events", "/hr/specials", "/hr/rewards", "/hr/dual")]
+        for t, part in (("ga_docs", "/ga/docs?year="), ("ga_seal_logs", "tab=seal"), ("ga_vehicle_fines", "tab=fines"), ("ga_vehicle_damages", "tab=damages"),
+                        ("ga_events", "/ga/events?"), ("work_specials", "/hr/specials?"), ("rewards", "/hr/rewards?"), ("dual_enrollments", "/hr/dual?")):
+            assert [x for x in links if part in x and x.endswith(f"row={ids[t]}")], (t, sorted(links))
+        for link in sorted(links):
+            r = client.get(link)
+            assert r.status_code == 200, link
+            m = re.search(r"[?&]row=([^&#]+)", link)
+            if m:
+                assert f'data-row="{m.group(1)}"' in r.text, link
+        # 직원 연결·상세로 가는 다른 목록 (총무 대시보드)
+        page = client.get("/ga/dashboard").text
+        assert f"/ga/contracts/{ids['ga_contracts']}" in page and f"row={ids['ga_docs']}" in page
+        # 법정의무 달력의 계약·만기도 상세로
+        cal = client.get(f"/mgmt/compliance?year={d(5)[:4]}&show=all").text
+        assert f"/ga/contracts/{ids['ga_contracts']}" in cal and f"/ga/contracts/item/{ids['ga_company_items']}" in cal
+        assert ga.build_alerts([], [], [], 0) is not None
+    finally:
+        for t, i in made:
+            execute(f"DELETE FROM {t} WHERE id=?", (i,))

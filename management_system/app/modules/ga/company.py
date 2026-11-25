@@ -189,7 +189,7 @@ def alerts() -> list[dict]:
         if r["status"] == "갱신중":
             msg += " · 갱신 진행 중"
         out.append({"level": lvl, "category": "회사관리", "name": f"{r['name']}", "message": msg,
-                    "dday": r["dday"], "link": "/ga/contracts?kind=item", "emp_id": None})
+                    "dday": r["dday"], "link": f"/ga/contracts/item/{r['id']}", "emp_id": None})
     return out
 
 
@@ -243,7 +243,7 @@ def send_due_mails() -> int:
             lines.append(f"담당: {r['owner']}")
         lines += ["", "갱신을 마치면 BMS시스템 「총무관리 → 계약·만기 관리」에서 [갱신]을 눌러 주세요."]
         if base:
-            lines.append(base + "/ga/contracts")
+            lines.append(f"{base}/ga/contracts/item/{r['id']}")
         ok = False
         for to in [m.strip() for m in r["alert_email"].split(",") if m.strip()]:
             try:
@@ -298,7 +298,7 @@ def _send_contract_mails(base: str) -> int:
         lines.append(when + ("  ※ 자동갱신 계약: 통보기한을 넘기면 같은 조건으로 연장됩니다" if c.get("auto_renew") else ""))
         lines += ["", "BMS시스템 「총무관리 → 계약·만기 관리」에서 확인해 주세요."]
         if base:
-            lines.append(base + "/ga/contracts")
+            lines.append(f"{base}/ga/contracts/{c['id']}")
         ok = False
         for to in [m.strip() for m in c["alert_email"].split(",") if m.strip()]:
             try:
