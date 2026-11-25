@@ -1,4 +1,4 @@
-"""2단계 인증: 메일 인증번호(기본) + 인증 앱(TOTP, 대체 수단). 로그인할 때마다 확인.
+"""2단계 인증: 메일 인증번호(기본) + 인증 앱(TOTP, 대체 수단).
 
 - 메일 인증: 6자리 번호를 사용자에게 등록된 회사 메일로 보냄. 3분 유효, 5번 틀리면 무효,
   15분에 5번까지 다시 받기. DB 에는 번호의 서버 비밀 지문만 저장.
@@ -6,10 +6,15 @@
   · 유효한 번호가 남아 있으면 새로 만들지도 다시 보내지도 않음 (뒤로가기 → 재로그인 때 메일이 또 가지 않게)
   · 2단계 인증 실패는 비밀번호가 맞아도 지워지지 않고, 2단계까지 성공해야 0 이 됨. 15분에 5번이면 계정 잠금.
 - 메일을 쓸 수 없으면(메일 설정 없음·사용자 메일 없음) 인증 앱으로 넘어감.
-- '이 PC 30일 기억'은 폐지 (2026-11): 예전 쿠키는 로그인 때 지우고, 기억 표(mfa_devices)는 정리할 때 비움.
+- '이 PC 30일 기억'은 폐지 (2026-11): 예전 쿠키는 로그인 때 지움.
+- 사내에서 2단계 인증을 마친 PC 는 mfa_trust_hours(4시간) 동안 아이디·비밀번호만 (2026-11-25 이사님 결정).
+  · 같은 PC·브라우저(쿠키 열쇠 + 주소 + 브라우저 이름), 같은 계정, 사내 직접 접속일 때만. 밖(Tailscale 등)에서는 매번 확인.
+  · 시간은 2단계 인증을 마친 때부터 세고 늘어나지 않음. 계정당 한 대만.
+  · 그 뒤 비밀번호를 3번 틀리거나, 비밀번호·권한·메일이 바뀌거나, 잠기거나, 관리자가 접속을 끊으면 바로 없어짐.
 """
 import hashlib
 import hmac
+import ipaddress
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -285,6 +290,79 @@ def note_fail(user: dict) -> tuple[int, bool]:
 def fail_count(uid: int) -> int:
     st = query_one("SELECT fails FROM mfa_state WHERE user_id=?", (uid,)) or {}
     return len(_recent(st.get("fails"), FAIL_WINDOW_MIN, datetime.now()))
+
+
+# ── 사내 같은 PC: 2단계 인증을 마친 뒤 몇 시간은 다시 묻지 않음 ─────────────────
+TRUST_COOKIE = "bms_mfa"
+TRUST_MAX_WRONG = 3            # 그동안 이 아이디로 비밀번호를 이만큼 틀리면 (어디서든) 다시 2단계 인증부터
+
+
+def trust_hours() -> int:
+    from app.config import settings
+    return max(0, int(settings.mfa_trust_hours))
+
+
+def inside(request) -> bool:
+    """사내 직접 접속인지: 프록시(Tailscale HTTPS 등)를 거치지 않았고 상대 주소가 사내(사설) 주소."""
+    from app.security.middleware import _proxied
+    if not request.client or _proxied(request) or request.headers.get("x-forwarded-for") or request.headers.get("forwarded"):
+        return False
+    try:
+        a = ipaddress.ip_address(request.client.host)
+    except ValueError:
+        return False
+    if getattr(a, "ipv4_mapped", None):
+        a = a.ipv4_mapped
+    return a.version == 4 and any(a in n for n in _OFFICE)
+
+
+_OFFICE = [ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")]      # 100.64.0.0/10(Tailscale)·127.0.0.1 은 사내로 보지 않음
+
+
+def _device(request) -> str:
+    return _h("trust-device", request.client.host, request.headers.get("user-agent", ""))
+
+
+def grant_trust(user: dict, request) -> str | None:
+    """2단계 인증을 마쳤을 때: 사내면 이 PC 에 열쇠를 줌(쿠키 값 반환). 밖이면 None."""
+    execute("DELETE FROM mfa_devices WHERE user_id=?", (user["id"],))
+    if not trust_hours() or not inside(request):
+        return None
+    key = secrets.token_urlsafe(32)
+    now = datetime.now()
+    execute("INSERT INTO mfa_devices(user_id, token_hash, expires, ip, user_agent, created_at) VALUES (?,?,?,?,?,?)",
+            (user["id"], _h("trust", key), _ts(now + timedelta(hours=trust_hours())), request.client.host, _device(request), _ts(now)))
+    return key
+
+
+def trusted(user: dict, request) -> bool:
+    """아이디·비밀번호가 맞은 뒤: 이 PC 에서 2단계 인증을 건너뛰어도 되는지."""
+    key = request.cookies.get(TRUST_COOKIE) or ""
+    if not key or len(key) > 100 or not trust_hours() or not inside(request):
+        return False
+    r = query_one("SELECT * FROM mfa_devices WHERE token_hash=? AND user_id=?", (_h("trust", key), user["id"]))
+    if not r:
+        return False
+    now = datetime.now()
+    wrong = query_one("SELECT COUNT(*) c FROM login_attempts WHERE username=? COLLATE NOCASE AND success=0 AND created_at>=?",
+                      (user["username"], r["created_at"]))["c"]
+    late = now - datetime.strptime(r["created_at"], "%Y-%m-%d %H:%M:%S") > timedelta(hours=trust_hours())
+    if r["expires"] <= _ts(now) or late or wrong >= TRUST_MAX_WRONG:
+        execute("DELETE FROM mfa_devices WHERE id=?", (r["id"],))
+        return False
+    return r["ip"] == request.client.host and hmac.compare_digest(str(r["user_agent"] or ""), _device(request))
+
+
+def trust_info(uid: int) -> dict | None:
+    """내 계정 화면용: 지금 2단계 인증을 다시 묻지 않는 PC 와 끝나는 시각."""
+    return query_one("SELECT ip, created_at, expires FROM mfa_devices WHERE user_id=? AND expires>?", (uid, _ts(datetime.now())))
+
+
+def drop_trust(uid: int | None = None) -> None:
+    if uid is None:
+        execute("DELETE FROM mfa_devices")
+    else:
+        execute("DELETE FROM mfa_devices WHERE user_id=?", (uid,))
 
 
 def clear_fails(uid: int) -> None:

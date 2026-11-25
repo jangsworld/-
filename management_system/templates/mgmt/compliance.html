@@ -48,7 +48,7 @@
     <td class="small">{% if t.cycle == '한 번' %}{{ t.due_date }}{% elif t.cycle == '매년' %}{{ t.month }}월 {{ t.day or '말' }}일{% elif t.cycle == '매월' %}매월 {{ t.day or '말' }}일{% else %}기간 마지막 달 {{ t.day or '말' }}일{% endif %}</td>
     <td class="small">{{ t.basis or '' }}</td><td class="small">{{ t.owner or '' }}</td><td class="small">{{ t.note or '' }}</td><td>{{ '사용' if t.is_active else '끔' }}</td>
     <td class="text-nowrap"><button class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#taskModal" data-fill='{{ t|tojson }}'>수정</button>
-      <form method="post" action="/mgmt/compliance/tasks/{{ t.id }}/delete" class="d-inline" data-confirm="이 일정과 처리 기록을 삭제할까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>{% endfor %}
+      <form method="post" action="/mgmt/compliance/tasks/{{ t.id }}/delete" class="d-inline" data-confirm="이 일정과 처리 기록을 휴지통으로 옮길까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>{% endfor %}
   </tbody></table></div></div>
 
 <div class="modal fade" id="taskModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="/mgmt/compliance/tasks">

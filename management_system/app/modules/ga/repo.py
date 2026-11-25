@@ -86,8 +86,8 @@ def save(table: str, rid: int | None, data: dict, quiet: bool = False) -> int:
 def delete(table: str, rid: int):
     if table not in TABLES:
         raise ValueError(table)
-    execute(f"DELETE FROM {table} WHERE id=?", (rid,))
-    audit("ga", f"{LABELS[table]} 삭제", f"#{rid}", "")
+    from app import trash
+    trash.remove(table, rid, audit_note=("ga", f"{LABELS[table]} 삭제", f"#{rid}", "휴지통"))
 
 
 def get(table: str, rid: int) -> dict | None:

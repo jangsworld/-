@@ -57,7 +57,7 @@ async def save(request: Request):
 async def delete(rid: int, request: Request):
     f = await request.form()
     health.delete(rid)
-    return _back(f, "삭제했습니다")
+    return _back(f, "휴지통으로 옮겼습니다")
 
 
 @router.post("/cycle")

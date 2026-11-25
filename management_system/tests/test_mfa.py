@@ -1,4 +1,4 @@
-"""2단계 인증: 메일 인증번호(기본), 인증 앱 대체, 매 로그인 확인(기억 없음), 뒤로가기 보안, 로그인 확인 화면."""
+"""2단계 인증: 메일 인증번호(기본), 인증 앱 대체, 밖에서는 매번·사내 같은 PC 는 4시간, 뒤로가기 보안, 로그인 확인 화면."""
 import re
 import sqlite3
 import os
@@ -204,8 +204,9 @@ def test_no_remember_every_login_asks(mail):
         r = _login(c, "mf_rem")
         assert r.headers["location"].startswith("/login/2fa") and len(mail) == n + 1   # 다시 인증번호
         assert c.get("/hr/dashboard", follow_redirects=False).headers["location"] == "/login/2fa"
+    execute("UPDATE mfa_devices SET expires='2020-01-01 00:00:00' WHERE user_id=?", (uid,))
     auth.purge_expired()
-    assert _raw("SELECT COUNT(*) FROM mfa_devices")[0][0] == 0                  # 남은 기억 기록은 정리 때 모두 삭제
+    assert _raw("SELECT COUNT(*) FROM mfa_devices WHERE user_id=%d" % uid)[0][0] == 0      # 지난 기억 기록은 정리 때 삭제
 
 
 def test_back_button_before_2fa(mail):
@@ -361,3 +362,155 @@ def test_code_mail_logo_attached(mail):
         assert kw["inline"] and kw["inline"][0][0] == "bmslogo" and kw["inline"][0][1] == got[0]
     finally:
         set_setting("doc_logo", before or "")
+
+
+# ── 사내 같은 PC: 2단계 인증을 마친 뒤 4시간은 아이디·비밀번호만 ──────────────
+PC, UA = ("192.168.0.50", 5000), {"user-agent": "Edge-A"}
+
+
+def _full(c, name, mail):
+    """로그인 + 2단계 인증까지. 응답 반환."""
+    _login(c, name)
+    return c.post("/login/2fa", data={"code": _code(mail), "csrf_token": _csrf(c, "/login/2fa"), "next": "/"}, headers=O, follow_redirects=False)
+
+
+def _needs_2fa(r):
+    return r.headers["location"].startswith("/login/2fa")
+
+
+def _key(r):
+    return re.search(r"bms_mfa=([^;]+)", r.headers["set-cookie"]).group(1)
+
+
+def _fresh(uid):
+    execute("UPDATE mfa_state SET sends='', code_mac=NULL WHERE user_id=?", (uid,))
+
+
+def test_office_pc_4h_password_only(mail):
+    uid = _user("mf_off", "mf.off@example.test")
+    _user("mf_off2", "mf.off2@example.test")
+    with TestClient(app, client=PC, headers=UA) as c:
+        _login(c, "mf_off")
+        assert "4시간 동안" in c.get("/login/2fa").text
+        _fresh(uid)
+        r = _full(c, "mf_off", mail)
+        sc = r.headers["set-cookie"]
+        assert "bms_mfa=" in sc and "HttpOnly" in sc and "samesite=strict" in sc.lower() and "Path=/login" in sc and "Max-Age=14400" in sc
+        assert _key(r) not in str(_raw("SELECT * FROM mfa_devices"))             # DB 에는 열쇠의 지문만
+        assert "까지 묻지 않음" in c.get("/account").text
+        c.post("/logout", data={"csrf_token": _csrf(c, "/account")}, headers=O)
+        n = len(mail)
+        r = _login(c, "mf_off")
+        assert r.headers["location"].startswith("/login/welcome") and len(mail) == n      # 메일 없이 바로
+        assert c.get("/hr/dashboard").status_code == 200
+        row = _raw("SELECT action, detail FROM audit_logs WHERE target='mf_off' AND action LIKE '로그인 성공%' ORDER BY id DESC LIMIT 1")[0]
+        assert row == ("로그인 성공", "2단계 인증 4시간 이내 같은 PC")
+        # 시간은 늘어나지 않음: 4시간이 지나면(기록의 끝 시각을 늘려 놔도) 다시 2단계, 쓰던 로그인은 그대로
+        execute("UPDATE mfa_devices SET created_at=datetime('now','localtime','-241 minutes'), expires='2099-01-01 00:00:00' WHERE user_id=?", (uid,))
+        assert c.get("/hr/dashboard").status_code == 200
+        _fresh(uid)
+        assert _needs_2fa(_login(c, "mf_off")) and not _raw("SELECT 1 FROM mfa_devices WHERE user_id=%d" % uid)
+    # 같은 열쇠라도 다른 PC·다른 브라우저·밖(프록시)·Tailscale 주소·다른 계정이면 2단계부터
+    with TestClient(app, client=PC, headers=UA) as c:
+        _fresh(uid)
+        key = _key(_full(c, "mf_off", mail))
+        for cl, hd in ((("192.168.0.51", 1), UA), (PC, {"user-agent": "Chrome-B"}), (("100.64.1.2", 1), UA), (("127.0.0.1", 1), UA),
+                       (PC, {**UA, "x-forwarded-for": "192.168.0.50"}),
+                       (("127.0.0.1", 1), {**UA, "x-forwarded-for": "192.168.0.50", "x-forwarded-proto": "https"})):
+            with TestClient(app, client=cl, headers=hd) as x:
+                x.cookies.set("bms_mfa", key)
+                assert _needs_2fa(_login(x, "mf_off")), (cl, hd)
+        with TestClient(app, client=PC, headers=UA) as x:
+            x.cookies.set("bms_mfa", key)
+            assert _needs_2fa(_login(x, "mf_off2"))
+        with TestClient(app, client=PC, headers=UA) as x:
+            x.cookies.set("bms_mfa", key + "x")
+            assert _needs_2fa(_login(x, "mf_off"))
+        with TestClient(app, client=PC, headers=UA) as x:
+            x.cookies.set("bms_mfa", key)
+            assert x.post("/login", data={"username": "mf_off", "password": "wrong-Pass-1!"}, headers=O).status_code == 401   # 비밀번호는 늘 필요
+            assert not _needs_2fa(_login(x, "mf_off"))                            # 한 번 틀린 것은 괜찮음
+            for _ in range(2):
+                x.post("/login", data={"username": "MF_OFF", "password": "wrong-Pass-1!"}, headers=O)
+            _fresh(uid)
+            assert _needs_2fa(_login(x, "mf_off"))                                # 모두 3번 틀리면 다시 2단계
+
+
+def test_outside_never_remembered(mail):
+    """밖(Tailscale HTTPS 등 프록시)에서 2단계 인증을 하면 기억하지 않고, 사내 PC 에 남아 있던 기억도 없앰."""
+    uid = _user("mf_out", "mf.out@example.test")
+    hd = {**UA, "x-forwarded-for": "100.64.1.2", "x-forwarded-proto": "https"}
+    with TestClient(app, client=("127.0.0.1", 1), headers=hd) as c:
+        _login(c, "mf_out")
+        assert "4시간 동안" not in c.get("/login/2fa").text
+        _fresh(uid)
+        r = _full(c, "mf_out", mail)
+        assert r.status_code == 303 and not re.search(r"bms_mfa=[A-Za-z0-9]", r.headers.get("set-cookie", ""))
+        assert not _raw("SELECT 1 FROM mfa_devices WHERE user_id=%d" % uid)
+        _fresh(uid)
+        assert _needs_2fa(_login(c, "mf_out"))
+
+
+def test_trust_removed_on_security_changes(mail):
+    uid = _user("mf_chg", "mf.chg@example.test")
+    if not auth.query_one("SELECT 1 FROM users WHERE username='mf_boss'"):
+        auth.create_user("mf_boss", "mf_boss", "admin", PW, must_change=False)
+    bid = _user("mf_boss", None)
+
+    def give(u):
+        execute("DELETE FROM mfa_devices")
+        execute("INSERT INTO mfa_devices(user_id, token_hash, expires, ip, user_agent, created_at) "
+                "VALUES (?,?,datetime('now','localtime','+4 hours'),?,?,datetime('now','localtime'))", (u, mfa._h("trust", "k1"), PC[0], "x"))
+
+    def left():
+        return bool(_raw("SELECT 1 FROM mfa_devices"))
+    give(uid)
+    auth.set_password(uid, "New-Strong-Pass-2!")
+    assert not left()
+    give(uid)
+    auth.revoke_sessions(uid)                                                     # 잠금·중지·권한 변경·2단계 초기화가 쓰는 길
+    assert not left()
+    give(uid)
+    auth.revoke_sessions(uid, except_token="t")                                   # 로그인 때 다른 접속 끊기는 그대로
+    assert left()
+    set_setting("mail_host", "")
+    with TestClient(app) as c:
+        _login(c, "mf_boss")
+        tok = _csrf(c, "/account")
+        d = {"csrf_token": tok}
+        give(uid)
+        c.post(f"/admin/users/{uid}/update", data={**d, "role": "hr", "is_active": "1", "display_name": "mf_chg", "email": "new@example.test"}, headers=O)
+        assert not left()                                                         # 인증 메일이 바뀌면
+        for path in (f"/admin/users/{uid}/unlock", f"/admin/users/{uid}/reset-2fa"):
+            give(uid)
+            c.post(path, data=d, headers=O)
+            assert not left(), path
+        give(uid)
+        c.post("/admin/mfa-method", data={**d, "method": "app"}, headers=O)
+        assert not left()
+        set_setting("mfa_method", "email")
+        for path in ("/account/forget-2fa", "/account/logout-others"):
+            give(bid)
+            c.post(path, data=d, headers=O)
+            assert not left(), path
+
+
+def test_idle_one_hour_and_alive(mail):
+    """1시간 안 쓰면 끝, 입력 중 신호(/account/api/alive)를 보내면 이어짐. 최대 10시간은 그대로."""
+    from app.config import settings
+    assert settings.session_idle_minutes == 60 and settings.session_max_hours == 10 and settings.mfa_trust_hours == 4
+    uid = _user("mf_idle", None)
+    set_setting("mail_host", "")
+    with TestClient(app) as c:
+        assert c.get("/account/api/alive").status_code == 401                         # 로그인 없이는 안 됨
+        _login(c, "mf_idle")
+        assert 'data-idle="60"' in c.get("/hr/dashboard").text
+        execute("UPDATE sessions SET last_seen=datetime('now','localtime','-59 minutes') WHERE user_id=?", (uid,))
+        assert c.get("/account/api/alive").json() == {"ok": True}
+        assert c.get("/hr/dashboard", follow_redirects=False).status_code == 200      # 신호로 이어짐
+        execute("UPDATE sessions SET last_seen=datetime('now','localtime','-61 minutes') WHERE user_id=?", (uid,))
+        assert c.get("/account/api/alive").status_code == 401
+        assert c.get("/hr/dashboard", follow_redirects=False).status_code == 303
+        _login(c, "mf_idle")
+        execute("UPDATE sessions SET created_at=datetime('now','localtime','-601 minutes') WHERE user_id=?", (uid,))
+        assert c.get("/account/api/alive").status_code == 401

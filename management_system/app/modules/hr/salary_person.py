@@ -147,7 +147,7 @@ def save_steps(emp_id: int, values: dict[int, int | None]) -> dict:
             if not old:
                 continue
             if amt is None:
-                repo.delete_salary_step(sid)
+                repo.delete_salary_step(sid, trashed=True)
                 removed += 1
             elif amt != old["annual_salary"]:
                 repo.update_salary_step(sid, amt)

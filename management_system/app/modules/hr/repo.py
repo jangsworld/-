@@ -322,9 +322,9 @@ def delete_draft(draft_id: int):
 
 def delete_employee(emp_id: int):
     e = query_one("SELECT name, emp_no FROM employees WHERE id=?", (emp_id,))
-    execute("DELETE FROM employees WHERE id=?", (emp_id,))
+    from app import trash
     if e:
-        audit("hr", "임직원 삭제", e["name"], e["emp_no"])
+        trash.remove("employees", emp_id, audit_note=("hr", "임직원 삭제", e["name"], f"{e['emp_no']} 휴지통"))
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -354,7 +354,8 @@ def list_appointments(emp_id: int | None = None, limit: int | None = None) -> li
 
 
 def delete_appointment(appt_id: int):
-    execute("DELETE FROM appointments WHERE id=?", (appt_id,))
+    from app import trash
+    trash.remove("appointments", appt_id)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -412,7 +413,8 @@ def upsert_salary(emp_id, year, annual_salary, effective_date=None, reason="정�
 
 def delete_salary(sal_id: int):
     s = query_one("SELECT employee_id FROM salaries WHERE id=?", (sal_id,))
-    execute("DELETE FROM salaries WHERE id=?", (sal_id,))
+    from app import trash
+    trash.remove("salaries", sal_id)
     if s:
         promote_salary_steps(s["employee_id"])
 
@@ -435,8 +437,13 @@ def update_salary_step(step_id: int, annual_salary: int):
     execute("UPDATE salary_steps SET annual_salary=? WHERE id=?", (enc(int(annual_salary)), step_id))
 
 
-def delete_salary_step(step_id: int):
-    execute("DELETE FROM salary_steps WHERE id=?", (step_id,))
+def delete_salary_step(step_id: int, trashed: bool = False):
+    """trashed=True: 사람이 지운 것(휴지통으로). 아니면 프로그램이 그 해 연봉으로 올리며 정리하는 것."""
+    if trashed:
+        from app import trash
+        trash.remove("salary_steps", step_id)
+    else:
+        execute("DELETE FROM salary_steps WHERE id=?", (step_id,))
 
 
 def promote_salary_steps(emp_id: int):
@@ -516,7 +523,8 @@ def save_template(tid, doc_group, category, name, content, is_active=1, co: str 
 
 
 def delete_template(tid: int):
-    execute("DELETE FROM doc_templates WHERE id=?", (tid,))
+    from app import trash
+    trash.remove("doc_templates", tid)
 
 
 def list_documents(doc_group="contract", employee_id=None, status="", category="", q="") -> list[dict]:
@@ -582,8 +590,8 @@ def list_doc_mails(doc_id: int) -> list[dict]:
 
 
 def delete_document(doc_id: int):
-    execute("DELETE FROM hr_doc_mails WHERE doc_id=?", (doc_id,))
-    execute("DELETE FROM hr_documents WHERE id=?", (doc_id,))
+    from app import trash
+    trash.remove("hr_documents", doc_id)
 
 
 def cert_delete_block(d: dict) -> str:
@@ -689,7 +697,8 @@ def save_reward(rid, data: dict) -> int:
 
 
 def delete_reward(rid: int):
-    execute("DELETE FROM rewards WHERE id=?", (rid,))
+    from app import trash
+    trash.remove("rewards", rid)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -790,13 +799,14 @@ def bulk_insurance(data: dict, emp_ids: list[int]) -> dict:
 
 def delete_insurance(ins_id: int):
     row = query_one("SELECT employee_id, product FROM employee_insurances WHERE id=?", (ins_id,))
-    execute("DELETE FROM employee_insurances WHERE id=?", (ins_id,))
+    from app import trash
     if row:
-        audit("hr", "상해공제 삭제", f"emp#{row['employee_id']}", row["product"])
+        trash.remove("employee_insurances", ins_id, audit_note=("hr", "상해공제 삭제", f"emp#{row['employee_id']}", f"{row['product']} 휴지통"))
 
 
 def delete_special(sid: int):
-    execute("DELETE FROM work_specials WHERE id=?", (sid,))
+    from app import trash
+    trash.remove("work_specials", sid)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -926,7 +936,8 @@ def delete_code(cid: int) -> bool:
     """삭제. 하위 부서가 있는 부서는 지우지 않습니다(False)."""
     if query_one("SELECT 1 x FROM codes WHERE parent_id=? AND group_code='DEPT'", (cid,)):
         return False
-    execute("DELETE FROM codes WHERE id=?", (cid,))
+    from app import trash
+    trash.remove("codes", cid)
     return True
 
 

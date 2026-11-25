@@ -129,8 +129,8 @@ def save(f: dict) -> int:
 def delete(did: int):
     r = query_one("SELECT employee_id, workplace FROM dual_enrollments WHERE id=?", (did,))
     if r:
-        execute("DELETE FROM dual_enrollments WHERE id=?", (did,))
-        audit("hr", "이중가입 삭제", f"emp#{r['employee_id']}", r["workplace"])
+        from app import trash
+        trash.remove("dual_enrollments", did, audit_note=("hr", "이중가입 삭제", f"emp#{r['employee_id']}", f"{r['workplace']} 휴지통"))
 
 
 def toggle_check(did: int, key: str) -> bool:

@@ -244,13 +244,14 @@ def revoke_sessions(uid: int, except_token: str | None = None):
         execute("DELETE FROM sessions WHERE user_id=? AND token_hash!=?", (uid, _hash_token(except_token)))
     else:
         execute("DELETE FROM sessions WHERE user_id=?", (uid,))
+        execute("DELETE FROM mfa_devices WHERE user_id=?", (uid,))      # 비밀번호 변경·잠금·권한 변경·2단계 초기화: 다음 로그인은 2단계 인증부터
 
 
 def purge_expired():
     cutoff = _ts(_now() - timedelta(hours=settings.session_max_hours))
     execute("DELETE FROM sessions WHERE created_at < ?", (cutoff,))
     execute("DELETE FROM login_attempts WHERE created_at < ?", (_ts(_now() - timedelta(days=400)),))
-    execute("DELETE FROM mfa_devices")       # '이 PC 30일 기억' 폐지: 남은 기록을 모두 지움
+    execute("DELETE FROM mfa_devices WHERE expires < ?", (_ts(_now()),))
 
 
 # ════════════════════════════════════════════════════════════════════════

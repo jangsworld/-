@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
+from app import trash
 from app.common import templates, today, to_date, vat_split
 from app.config import settings as cfg
 from app.db import audit, get_codes, get_settings, execute, dept_text, query
@@ -238,7 +239,7 @@ def asset_history_delete(aid: int, hid: int):
     _history_or_404(aid, hid)
     repo.delete("ga_asset_history", hid)
     repo.rebuild_asset_state(aid)
-    return _redirect(f"/ga/assets/{aid}", "이력을 삭제했습니다. 자산 상태도 다시 계산했습니다")
+    return _redirect(f"/ga/assets/{aid}", "이력을 휴지통으로 옮겼습니다. 자산 상태도 다시 계산했습니다")
 
 
 # ── 2. 법인차량 ─────────────────────────────────────────────────────────
@@ -702,7 +703,5 @@ async def generic_delete(request: Request, kind: str, rid: int):
     if kind == "vlogs" and repo.is_cartax_log(rid):
         return _redirect(f.get("next") or "/ga/vehicles", CARTAX_READONLY)
     repo.delete(_table(kind), rid)
-    if kind == "assets":
-        photos.delete(rid)
     nxt = f.get("next") or "/ga/dashboard"
-    return _redirect(nxt if nxt.startswith("/ga/") else "/ga/dashboard", "삭제되었습니다")
+    return _redirect(nxt if nxt.startswith("/ga/") else "/ga/dashboard", trash.MOVED)

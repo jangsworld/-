@@ -139,8 +139,8 @@ def add_payments(year: int, rows: list[dict], by: str = "") -> int:
 
 
 def delete_payment(pid: int):
-    execute("DELETE FROM incentive_payments WHERE id=?", (pid,))
-    audit("mgmt", "인센티브 지급 삭제", str(pid), "")
+    from app import trash
+    trash.remove("incentive_payments", pid, audit_note=("mgmt", "인센티브 지급 삭제", str(pid), "휴지통"))
 
 
 def paid_by_year() -> dict[int, int]:

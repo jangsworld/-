@@ -80,7 +80,7 @@ async def remove_selected(request: Request):
     if not ids:
         return _go("삭제할 발령을 체크해 주세요", **back)
     r = await run_in_threadpool(appoint.delete_many, ids)
-    msg = f"발령 기록 {r['deleted']}건을 삭제했습니다" + (f" (예정 취소 {r['planned']}건 포함)" if r["planned"] else "") + ". 인사·고용 정보는 그대로입니다"
+    msg = f"발령 기록 {r['deleted']}건을 휴지통으로 옮겼습니다" + (f" (예정 취소 {r['planned']}건 포함)" if r["planned"] else "") + ". 인사·고용 정보는 그대로입니다"
     return _go(msg, **back)
 
 

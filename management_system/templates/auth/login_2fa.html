@@ -24,6 +24,7 @@
   <input class="form-control form-control-lg text-center mb-2 fw-bold" name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7"
          autocomplete="one-time-code" required autofocus style="letter-spacing:.5em;font-size:1.6rem" placeholder="······" title="6자리 숫자를 넣어 주세요">
   <button class="btn btn-primary w-100 py-2 mt-2">확인</button>
+  {% if remember %}<div class="help text-center mt-2">확인하면 이 PC에서는 {{ remember }}시간 동안 아이디·비밀번호만으로 로그인합니다 (사내 접속)</div>{% endif %}
 </form>
 <div class="d-flex flex-wrap justify-content-between gap-1 mt-3 small">
   {% if method == 'email' %}

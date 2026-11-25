@@ -41,7 +41,7 @@
       <td class="small">{{ cycles[r.cycle] }}{% if not r.cycle_custom %} <span class="text-muted">(기본)</span>{% endif %}</td>
       <td><span class="badge text-bg-{{ SL[r.status][1] }}">{{ SL[r.status][0] }}</span></td>
       <td class="small">{% for h in r.records %}<span class="d-inline-flex align-items-center gap-1 me-2">{{ h.check_date }} {{ h.kind }}{% if h.institution %} · {{ h.institution }}{% endif %}{% if h.note %} · {{ h.note }}{% endif %}
-        <button type="submit" class="btn btn-sm btn-link text-danger p-0" formaction="/hr/health/{{ h.id }}/delete" formnovalidate title="이 기록 삭제" aria-label="이 기록 삭제" data-confirm="{{ e.name }}님의 {{ h.check_date }} {{ h.kind }} 검진 기록을 삭제할까요?"><i class="bi bi-x-lg"></i></button></span>{% endfor %}</td>
+        <button type="submit" class="btn btn-sm btn-link text-danger p-0" formaction="/hr/health/{{ h.id }}/delete" formnovalidate title="이 기록 삭제" aria-label="이 기록 삭제" data-confirm="{{ e.name }}님의 {{ h.check_date }} {{ h.kind }} 검진 기록을 휴지통으로 옮길까요?"><i class="bi bi-x-lg"></i></button></span>{% endfor %}</td>
       <td class="small">{{ r.last or '-' }}</td></tr>
     {% else %}<tr><td colspan="9" class="text-muted text-center py-4">대상 직원이 없습니다</td></tr>{% endfor %}
   </tbody></table></div>

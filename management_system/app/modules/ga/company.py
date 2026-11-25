@@ -140,8 +140,8 @@ def reflect_insurance(iid: int) -> dict | None:
 
 def delete(iid: int):
     it = get(iid)
-    execute("DELETE FROM ga_company_items WHERE id=?", (iid,))
-    audit("ga", "회사 관리 만기 삭제", (it or {}).get("name", str(iid)), "")
+    from app import trash
+    trash.remove("ga_company_items", iid, audit_note=("ga", "회사 관리 만기 삭제", (it or {}).get("name", str(iid)), "휴지통"))
 
 
 def next_expire(it: dict):

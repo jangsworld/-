@@ -262,11 +262,9 @@ def set_closed(emp_id: int, closed: bool):
 
 
 def remove(emp_id: int):
-    with batch():
-        execute("DELETE FROM " + T_CHECKS + " WHERE employee_id=?", (emp_id,))
-        execute("DELETE FROM " + T_MAILS + " WHERE employee_id=?", (emp_id,))
-        execute("DELETE FROM " + T_MAIN + " WHERE employee_id=?", (emp_id,))
-        audit("hr", NAME + " 절차 기록 삭제", f"emp#{emp_id}", "")
+    from app import trash
+    trash.remove(T_MAIN, emp_id, pk="employee_id", extra=((T_CHECKS, "employee_id", emp_id), (T_MAILS, "employee_id", emp_id)),
+                 audit_note=("hr", NAME + " 절차 기록 삭제", f"emp#{emp_id}", "휴지통"))
 
 
 def mails(emp_id: int) -> list[dict]:

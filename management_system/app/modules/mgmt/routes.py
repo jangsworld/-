@@ -182,7 +182,7 @@ async def incentive_pay(request: Request):
 async def incentive_pay_delete(request: Request, pid: int):
     f = await request.form()
     incentive.delete_payment(pid)
-    return _go(f"/mgmt/incentive?year={_int(f.get('year'), today().year)}", "삭제했습니다")
+    return _go(f"/mgmt/incentive?year={_int(f.get('year'), today().year)}", "휴지통으로 옮겼습니다")
 
 
 @router.get("/incentive/export.csv")
@@ -428,7 +428,7 @@ async def training_add(request: Request):
 async def training_delete(request: Request, rid: int):
     f = await request.form()
     training.delete_record(rid)
-    return _go(f"/mgmt/training?year={_int(f.get('year'), today().year)}&tab=records", "삭제했습니다")
+    return _go(f"/mgmt/training?year={_int(f.get('year'), today().year)}&tab=records", "휴지통으로 옮겼습니다")
 
 
 @router.post("/training/courses")
@@ -513,7 +513,7 @@ async def compliance_task_save(request: Request):
 @router.post("/compliance/tasks/{tid}/delete")
 def compliance_task_delete(tid: int):
     compliance.delete_task(tid)
-    return _go("/mgmt/compliance?show=all#tasks", "삭제했습니다")
+    return _go("/mgmt/compliance?show=all#tasks", "휴지통으로 옮겼습니다")
 
 
 # ── 회사 관리 만기 (/ga/company) ────────────────────────────────────────
@@ -560,7 +560,7 @@ async def company_save(request: Request):
 @company_router.post("/{iid}/delete")
 def company_delete(iid: int):
     company.delete(iid)
-    return _go("/ga/contracts", "삭제했습니다")
+    return _go("/ga/contracts", "휴지통으로 옮겼습니다")
 
 
 @company_router.post("/{iid}/renew")

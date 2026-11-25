@@ -82,7 +82,7 @@
       <td class="small text-nowrap">{{ r.owner or '' }}</td>
       <td class="text-nowrap">{% if can_write %}{{ att('ga.company', r.id, _ac_i, href='/ga/contracts/item/' ~ r.id ~ '#files') }}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#itemModal" data-fill='{{ r|tojson }}' title="수정"><i class="bi bi-pencil"></i></button>
         {% if r.expire_date %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#renewModal" data-renew="{{ r.id }}" data-name="{{ r.name }}" data-old="{{ r.expire_date }}" data-next="{{ x.next }}">갱신</button>{% endif %}
-        <form method="post" action="/ga/company/{{ r.id }}/delete" class="d-inline" data-confirm="'{{ r.name }}'을(를) 삭제할까요? 갱신 이력도 지워집니다."><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
+        <form method="post" action="/ga/company/{{ r.id }}/delete" class="d-inline" data-confirm="'{{ r.name }}'을(를) 휴지통으로 옮길까요? 갱신 이력도 함께 옮겨집니다."><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
     {% endif %}
     {% else %}<tr><td colspan="15" class="text-center text-muted p-4">해당하는 계약·만기 항목이 없습니다</td></tr>{% endfor %}</tbody>
   </table></div>

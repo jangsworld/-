@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}휴지통{% endblock %}
+{% block page_title %}<i class="bi bi-trash3 me-2"></i>휴지통{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header"><form class="row g-2 align-items-center" method="get">
+    <div class="col-auto"><select class="form-select form-select-sm" name="kind" data-autosubmit aria-label="종류"><option value="">전체 종류</option>{% for t, name, n in kinds %}<option value="{{ t }}" {% if kind == t %}selected{% endif %}>{{ name }} ({{ n }})</option>{% endfor %}</select></div>
+    <div class="col-auto"><input class="form-control form-control-sm" name="q" value="{{ q }}" placeholder="이름·내용·지운 사람" style="width:190px"></div>
+    <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">찾기</button></div>
+    {% if kind or q or soon %}<div class="col-auto"><a class="btn btn-sm btn-link px-0" href="/trash">전체 보기</a></div>{% endif %}
+    <div class="col text-end help">{{ rows|length }}건{% if soon %} · 7일 안에 지워질 것만{% endif %}</div>
+  </form></div>
+  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0 trash-table">
+    <thead><tr><th>지운 때</th><th>지운 사람</th><th>메뉴</th><th>내용</th><th>자동 완전삭제</th><th></th></tr></thead>
+    <tbody>{% for r in rows %}<tr>
+      <td class="small text-nowrap">{{ r.deleted_at[:16] }}</td><td class="small text-nowrap">{{ r.deleted_by or '' }}</td>
+      <td class="small"><span class="badge text-bg-light border">{{ r.label }}</span></td>
+      <td><button type="button" class="btn btn-link btn-sm p-0 text-start fw-semibold text-decoration-none" data-trash-view="{{ r.id }}">{{ r.title }}</button>
+        {% if r.kids %}<div class="small text-muted">함께 지워진 것: {% for k, n in r.kids.items() %}{{ k }} {{ n }}건{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}</td>
+      <td class="small text-nowrap">{% if r.left is none %}<span class="text-muted" title="법정 보존 기간이 있을 수 있어 자동으로 지우지 않습니다">자동으로 안 지움</span>
+        {% elif r.left <= 7 %}<span class="badge text-bg-warning">{{ r.left }}일 남음</span>{% else %}{{ r.left }}일 남음{% endif %}</td>
+      <td class="text-nowrap text-end">
+        <form method="post" action="/trash/{{ r.id }}/restore" class="d-inline"><input type="hidden" name="kind" value="{{ kind }}">
+          <button class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-counterclockwise"></i> 복구</button>
+          {% if r.editable %}<button class="btn btn-sm btn-outline-secondary" name="edit" value="1">복구하고 수정</button>{% endif %}</form>
+        {% if perms.admin %}<form method="post" action="/trash/{{ r.id }}/purge" class="d-inline" data-confirm="'{{ r.title }}'을(를) 완전히 지울까요?&#10;&#10;되살릴 수 없습니다.{% if r.keep %}&#10;근로기준법 등 보존 기간이 남았는지 먼저 확인하세요.{% endif %}"><input type="hidden" name="kind" value="{{ kind }}"><button class="btn btn-sm btn-link text-danger p-1" title="완전삭제" aria-label="완전삭제"><i class="bi bi-x-lg"></i></button></form>{% endif %}
+      </td></tr>
+    {% else %}<tr><td colspan="6" class="text-center text-muted p-4">휴지통이 비어 있습니다</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <div class="card-footer help">지운 자료는 {{ days }}일 동안 여기에 두었다가 자동으로 완전히 지웁니다. 임직원·근로계약서·연봉·발령·상벌·근로특이사항·건강검진·교육 이수는 법정 보존 기간이 있을 수 있어 자동으로 지우지 않습니다.
+    <b>복구</b>하면 원래 자리로 돌아가고 이력과 서류도 다시 이어집니다. 문서 보관함(NAS)의 파일은 여기서 무엇을 해도 지워지지 않습니다.</div>
+</div>
+<div class="modal fade" id="trashModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <div class="modal-header"><h6 class="modal-title">지운 내용</h6><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button></div>
+  <div class="modal-body"><dl class="info-grid mb-0" id="trashBody"></dl></div>
+</div></div></div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-trash-view]');
+  if (!b) return;
+  const box = document.getElementById('trashBody');
+  box.textContent = '';
+  const add = (k, v) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = k; dd.textContent = v; box.append(dt, dd); };
+  try {
+    const d = await (await fetch(`/trash/${b.dataset.trashView}/view`, { cache: 'no-store' })).json();
+    if (!d.ok) { add('안내', d.message || '볼 수 없습니다'); } else { d.rows.forEach(([k, v]) => add(k, v)); if (!d.rows.length) add('안내', '보여 줄 내용이 없습니다'); }
+  } catch (_) { add('안내', '불러오지 못했습니다. 새로 고침 후 다시 해 주세요'); }
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('trashModal')).show();
+});
+</script>
+{% endblock %}

@@ -4,6 +4,8 @@
 {% block content %}
 {% set co_sum = d.co_sum %}{% include "_co_summary.html" %}
 {% set k = d.kpi %}
+{% if d.trash_soon %}<div class="alert alert-warning d-flex align-items-center gap-2 py-2 small"><i class="bi bi-trash3"></i>휴지통의 자료 {{ d.trash_soon }}건이 7일 안에 완전히 지워집니다. 필요한 것은 되살려 두세요.
+  <a class="btn btn-sm btn-outline-secondary ms-auto text-nowrap" href="/trash?soon=1">보기</a></div>{% endif %}
 <div class="row g-3 mb-3">
   {% macro kpi(label, value, sub, icon, href='', cls='') %}
   <div class="col-6 col-md-4 col-xl">

@@ -390,3 +390,7 @@ a.fx-name { color: #1d2b3a; text-decoration: none; } a.fx-name:hover { text-deco
 .sal-eye { border: 0; background: none; padding: 0 2px; color: #2b7de0; font-size: .9rem; line-height: 1; }
 /* 알림의 [처리]로 들어온 건 */
 .row-hit, tr.row-hit > td { background: #fff6d6 !important; box-shadow: inset 0 0 0 9999px rgba(255, 214, 102, .18); }
+/* 자동 로그아웃 안내 */
+.idle-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 1200; display: flex; gap: .8rem; align-items: center; max-width: min(560px, calc(100vw - 24px));
+  padding: .7rem 1rem; border-radius: 12px; background: #fff; border: 1px solid #f0c36d; box-shadow: 0 8px 28px rgba(20, 40, 70, .22); font-size: .92rem; }
+.idle-bar[hidden] { display: none; }

@@ -43,7 +43,7 @@
             <td><form method="post" action="/settings/codes/{{ c.id }}/behavior"><select class="form-select form-select-sm" name="behavior" data-autosubmit aria-label="자산 상태 변경">
               {% for v, t in behaviors.items() %}<option value="{{ v }}" {% if (c.behavior or '') == v %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></form></td>
             {% endif %}
-            <td class="text-end">{% if group == 'DEPT' and c.id in has_child %}<span class="text-muted" title="하위 부서가 있어 삭제할 수 없습니다"><i class="bi bi-trash"></i></span>{% else %}<form method="post" action="/settings/codes/{{ c.id }}/delete" data-confirm="'{{ c.name }}' 항목을 목록에서 삭제할까요? 이미 등록된 자료는 유지됩니다."><button class="btn btn-sm btn-link text-danger p-0" title="삭제" aria-label="삭제"><i class="bi bi-trash"></i></button></form>{% endif %}</td>
+            <td class="text-end">{% if group == 'DEPT' and c.id in has_child %}<span class="text-muted" title="하위 부서가 있어 삭제할 수 없습니다"><i class="bi bi-trash"></i></span>{% else %}<form method="post" action="/settings/codes/{{ c.id }}/delete" data-confirm="'{{ c.name }}' 항목을 휴지통으로 옮길까요? 이미 등록된 자료는 유지됩니다."><button class="btn btn-sm btn-link text-danger p-0" title="삭제" aria-label="삭제"><i class="bi bi-trash"></i></button></form>{% endif %}</td>
           </tr>
         {% else %}<tr><td colspan="5" class="text-center text-muted p-4">등록된 항목이 없습니다</td></tr>{% endfor %}</tbody>
       </table>

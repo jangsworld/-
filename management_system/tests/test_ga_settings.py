@@ -88,6 +88,9 @@ def test_asset_photo_shrinks_and_drops_on_delete(ga):
     bad = ga.post(f"/ga/assets/{aid}/photo", files={"photo_file": ("a.jpg", b"not image", "image/jpeg")}, follow_redirects=False)
     assert bad.status_code == 303
     ga.post(f"/ga/assets/{aid}/delete", data={"next": "/ga/assets"})
+    from app import trash                     # 휴지통에 있는 동안은 사진도 남고, 완전삭제 때 지움
+    assert os.path.exists(photos.path(aid))
+    trash.purge(next(x["id"] for x in trash.items("admin") if x["table_name"] == "ga_assets" and x["root_id"] == aid), "admin")
     assert not os.path.exists(photos.path(aid))
 
 

@@ -68,7 +68,7 @@
           <button class="btn btn-link btn-sm text-danger"><i class="bi bi-trash"></i> 잘못 만든 증명서 삭제</button></form>
         {% endif %}
         {% else %}
-        <form method="post" action="/hr/documents/{{ d.id }}/delete" class="d-grid" data-confirm="BMS 대장에서 이 문서를 삭제할까요?{{ ' 임직원 폴더에 저장한 PDF 파일은 지워지지 않고 그대로 남습니다.' if d.pdf_path }}">
+        <form method="post" action="/hr/documents/{{ d.id }}/delete" class="d-grid" data-confirm="이 문서를 휴지통으로 옮길까요?{{ ' 임직원 폴더에 저장한 PDF 파일은 지워지지 않고 그대로 남습니다.' if d.pdf_path }}">
           <button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> 삭제</button></form>
         {% endif %}
         {% endif %}

@@ -874,7 +874,7 @@ CREATE TABLE IF NOT EXISTS ga_events (                 -- 경조사 내역
     created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
-CREATE TABLE IF NOT EXISTS mfa_devices (               -- 2단계 인증을 30일 묻지 않는 PC (쿠키 열쇠의 해시만)
+CREATE TABLE IF NOT EXISTS mfa_devices (               -- 2단계 인증을 몇 시간 다시 묻지 않는 사내 PC (쿠키 열쇠의 해시만, 계정당 한 대)
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_hash  TEXT NOT NULL UNIQUE,
@@ -1065,6 +1065,19 @@ CREATE TABLE IF NOT EXISTS attachments (
     subdir      TEXT                         -- 대상 폴더 안의 하위 폴더 (담당자가 만든 '기타서류' 등). 없으면 빈 값
 );
 CREATE INDEX IF NOT EXISTS idx_att_ref ON attachments(menu, ref_id);
+-- 휴지통: 화면에서 지운 자료와 딸린 자료를 통째로 (app/trash.py)
+CREATE TABLE IF NOT EXISTS trash_items (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_name  TEXT NOT NULL,
+    root_id     INTEGER NOT NULL,
+    title       TEXT NOT NULL,
+    kids        TEXT,                        -- 딸린 자료 이름별 건수 (JSON)
+    data        TEXT NOT NULL,               -- 자료 전체 (JSON, 암호화)
+    deleted_by  TEXT,
+    deleted_at  TEXT NOT NULL,
+    seen_days   INTEGER NOT NULL DEFAULT 0,  -- 자동 정리가 실제로 지켜본 날 수
+    seen_on     TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_rewards_emp ON rewards(employee_id);
 CREATE INDEX IF NOT EXISTS idx_specials_emp ON work_specials(employee_id);
 CREATE INDEX IF NOT EXISTS idx_ins_emp ON employee_insurances(employee_id);

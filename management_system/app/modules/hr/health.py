@@ -99,8 +99,8 @@ def save(f: dict) -> int:
 
 
 def delete(rid: int):
-    execute("DELETE FROM health_checks WHERE id=?", (rid,))
-    audit("hr", "건강검진 기록 삭제", f"#{rid}", "")
+    from app import trash
+    trash.remove("health_checks", rid, audit_note=("hr", "건강검진 기록 삭제", f"#{rid}", "휴지통"))
 
 
 def overview(year: int, department: str = "", q: str = "") -> dict:

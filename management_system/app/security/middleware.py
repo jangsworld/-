@@ -28,6 +28,8 @@ ALL = {"admin", "hr", "ga", "viewer"}
 RULES = [
     (r"^/admin", ADMIN, ADMIN),
     (r"^/settings", ADMIN, ADMIN),
+    (r"^/trash/\d+/purge", ADMIN, ADMIN),   # 휴지통 완전삭제: 시스템관리자만
+    (r"^/trash", GA_STAFF, GA_STAFF),       # 휴지통: 메뉴별 권한은 주소 안에서 다시 확인 (app/trash.py)
     (r"^/account", ALL, ALL),
     (r"^/logout", ALL, ALL),
     # 연봉·계약서·증명서·상벌·근로특이사항(건강·가족정보)·내보내기: 조회자 접근 불가

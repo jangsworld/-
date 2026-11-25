@@ -689,7 +689,7 @@ def employee_rrn_reveal(emp_id: int):
 @router.post("/employees/{emp_id}/delete")
 def employee_delete(emp_id: int):
     repo.delete_employee(emp_id)
-    return _redirect("/hr/employees", "삭제되었습니다")
+    return _redirect("/hr/employees", "휴지통으로 옮겼습니다")
 
 
 @router.post("/employees/{emp_id}/appointments")
@@ -704,7 +704,7 @@ async def appointment_add(request: Request, emp_id: int):
 async def appointment_delete(request: Request, appt_id: int):
     f = dict(await request.form())
     repo.delete_appointment(appt_id)
-    return _redirect(f.get("next") or "/hr/employees", "삭제되었습니다")
+    return _redirect(f.get("next") or "/hr/employees", "휴지통으로 옮겼습니다")
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -1150,12 +1150,12 @@ def document_delete(doc_id: int):
             repo.delete_document(doc_id)
             reused = repo.release_cert_no(d.get("doc_no"))
             audit("hr", "증명서 삭제", f"doc#{doc_id}", f"{d.get('doc_no') or ''} {d['title']}" + (" · 번호 되돌림" if reused else ""))
-        return _redirect("/hr/certificates", f"{d.get('doc_no') or ''} 삭제했습니다" +
+        return _redirect("/hr/certificates", f"{d.get('doc_no') or ''} 휴지통으로 옮겼습니다" +
                          (" (마지막 번호라서 다음 발급에 이 번호를 다시 씁니다)" if reused else " (이 번호는 비워 둡니다)"))
     repo.delete_document(doc_id)
     back = "/hr/certificates" if d and d["doc_group"] == "certificate" else "/hr/contracts"
     kept = " (임직원 폴더에 저장한 PDF 파일은 지우지 않았습니다)" if d and d.get("pdf_path") else ""
-    return _redirect(back, "BMS에서 삭제되었습니다" + kept)
+    return _redirect(back, "휴지통으로 옮겼습니다" + kept)
 
 
 @router.get("/api/doc-asset/{kind}")
@@ -1256,7 +1256,7 @@ async def template_import(file: UploadFile = File(...)):
 @router.post("/templates/{tid}/delete")
 def template_delete(tid: int):
     repo.delete_template(tid)
-    return _redirect("/hr/templates", "템플릿이 삭제되었습니다")
+    return _redirect("/hr/templates", "템플릿을 휴지통으로 옮겼습니다")
 
 
 # ── 증명서 발급 ──
@@ -1343,7 +1343,7 @@ async def salary_save(request: Request):
 async def salary_delete(request: Request, sal_id: int):
     f = dict(await request.form())
     repo.delete_salary(sal_id)
-    return _redirect(f.get("next") or "/hr/salaries", "삭제되었습니다")
+    return _redirect(f.get("next") or "/hr/salaries", "휴지통으로 옮겼습니다")
 
 
 @router.get("/api/salaries/bulk-preview")
@@ -1447,7 +1447,7 @@ async def reward_save(request: Request):
 async def reward_delete(request: Request, rid: int):
     f = dict(await request.form())
     repo.delete_reward(rid)
-    return _redirect(f.get("next") or "/hr/rewards", "삭제되었습니다")
+    return _redirect(f.get("next") or "/hr/rewards", "휴지통으로 옮겼습니다")
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -1486,7 +1486,7 @@ async def special_save(request: Request):
 async def special_delete(request: Request, sid: int):
     f = dict(await request.form())
     repo.delete_special(sid)
-    return _redirect(f.get("next") or "/hr/specials", "삭제되었습니다")
+    return _redirect(f.get("next") or "/hr/specials", "휴지통으로 옮겼습니다")
 
 
 @router.post("/employees/{emp_id}/insurances")
@@ -1576,7 +1576,7 @@ async def insurance_bulk_save(request: Request):
 def insurance_delete(emp_id: int, ins_id: int):
     if repo.query_one("SELECT 1 x FROM employee_insurances WHERE id=? AND employee_id=?", (ins_id, emp_id)):
         repo.delete_insurance(ins_id)
-    return _redirect(f"/hr/employees/{emp_id}?tab=insurance", "삭제되었습니다")
+    return _redirect(f"/hr/employees/{emp_id}?tab=insurance", "휴지통으로 옮겼습니다")
 
 
 @router.get("/api/employees/{emp_id}/contract-defaults")

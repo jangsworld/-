@@ -39,7 +39,8 @@ class Settings:
     contract_root: str = ""             # 계약서 폴더 (계약별 하위 폴더 → 계약 등록 초안). 비우면 끔
     archive_root: str = ""              # 문서 보관함 (메뉴별 붙임 서류·차량 사진). 비우면 nas_root/BMS시스템
     # [security]
-    session_idle_minutes: int = 30
+    session_idle_minutes: int = 60
+    mfa_trust_hours: int = 4            # 사내 같은 PC 에서 2단계 인증을 다시 묻지 않는 시간 (0 이면 매번 물음)
     session_max_hours: int = 10
     require_2fa: bool = True
     max_failed_logins: int = 5

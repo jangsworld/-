@@ -136,15 +136,55 @@ document.addEventListener('click', (e) => {          // 같은 화면 안의 탭
 })();
 
 // ── 유휴 시간 표시 및 자동 로그아웃 안내 ─────────────────────────────────
+// 누르거나 입력하면 서버에도 '쓰고 있음'을 알림(1분에 한 번까지) → 긴 글을 쓰는 동안 로그인이 풀리지 않음.
+// 같은 브라우저의 여러 탭은 마지막 사용 시각을 함께 써서, 안 보는 탭 때문에 로그아웃되지 않음.
 (() => {
   const el = document.getElementById('idleTimer');
   if (!el) return;
-  const limit = Number(el.dataset.idle) * 60; let left = limit;
-  ['click', 'keydown'].forEach(ev => document.addEventListener(ev, () => { left = limit; }));
+  const limit = Number(el.dataset.idle) * 60000, WARN = 5 * 60000, KEY = 'bms_active';
+  let mine = Date.now(), pinged = Date.now(), timer = 0, bar = null, done = false;
+  const last = () => { let v = 0; try { v = Number(localStorage.getItem(KEY)) || 0; } catch (_) {} return Math.max(mine, v > Date.now() + 60000 ? 0 : v); };
+  const mark = () => { mine = Date.now(); try { localStorage.setItem(KEY, String(mine)); } catch (_) {} };
+  const lost = () => {
+    if (done) return;
+    done = true;
+    show('접속이 끝났습니다. 같은 계정이 다른 곳에서 로그인했거나 오래 사용했습니다. 쓰던 내용이 있으면 복사해 두고 다시 로그인해 주세요.', '다시 로그인',
+      () => { location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search); });
+  };
+  const ping = () => {
+    timer = 0; pinged = Date.now();
+    fetch('/account/api/alive', { headers: { Accept: 'application/json' }, cache: 'no-store' }).then((r) => { if (r.status === 401) lost(); }).catch(() => {});
+  };
+  const used = () => {
+    if (done) return;
+    mark(); hide();
+    if (!timer) timer = setTimeout(ping, Math.max(0, pinged + 60000 - Date.now()));
+  };
+  function show(text, label, fn) {
+    if (!bar) {
+      bar = document.createElement('div'); bar.className = 'idle-bar no-print'; bar.setAttribute('role', 'alert');
+      bar.append(document.createElement('span'), document.createElement('button'));
+      bar.lastChild.type = 'button'; bar.lastChild.className = 'btn btn-sm btn-primary text-nowrap';
+      document.body.append(bar);
+    }
+    bar.firstChild.textContent = text; bar.lastChild.textContent = label; bar.lastChild.onclick = (e) => { e.stopPropagation(); fn(); };
+    bar.hidden = false;
+  }
+  function hide() { if (bar) bar.hidden = true; }
+  mark();
+  ['click', 'keydown', 'input'].forEach((ev) => document.addEventListener(ev, used, true));
   setInterval(() => {
-    left -= 1;
-    if (left <= 0) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
-    el.textContent = left <= 300 ? `⏱ ${Math.ceil(left / 60)}분 후 자동 로그아웃` : '';
+    if (done) return;
+    const left = limit - (Date.now() - last());
+    if (left <= 0) {
+      done = true;
+      const go = () => { location.href = '/login?ended=1&next=' + encodeURIComponent(location.pathname + location.search); };
+      const csrf = document.querySelector('meta[name="csrf-token"]');
+      fetch('/logout', { method: 'POST', headers: { 'X-CSRF-Token': csrf ? csrf.content : '' } }).then(go, go);
+      return;
+    }
+    if (left <= WARN) show(`${Math.ceil(left / 60000)}분 뒤 자동으로 로그아웃됩니다.`, '계속 사용', used);
+    else hide();
   }, 1000);
 })();
 

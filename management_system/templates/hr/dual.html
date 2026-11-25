@@ -58,7 +58,7 @@
         <form method="post" action="/hr/dual/{{ r.id }}/apply-bases" data-confirm="{{ r.name }}님의 건강보험·국민연금·고용보험 기준 금액을 조정 전 금액({{ r.our_before|won }}원)으로 되돌릴까요?"><input type="hidden" name="which" value="before"><input type="hidden" name="state" value="{{ state }}"><button class="btn btn-sm btn-outline-secondary py-0">원복</button></form></div>{% endif %}
     </details></td>
     <td class="text-nowrap"><button class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#dualModal" data-fill='{{ r|tojson }}'>수정</button>
-      <form method="post" action="/hr/dual/{{ r.id }}/delete" class="d-inline" data-confirm="{{ r.name }}님의 '{{ r.workplace }}' 이중가입 기록을 삭제할까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td>
+      <form method="post" action="/hr/dual/{{ r.id }}/delete" class="d-inline" data-confirm="{{ r.name }}님의 '{{ r.workplace }}' 이중가입 기록을 휴지통으로 옮길까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td>
   </tr>
   {% else %}<tr><td colspan="11" class="text-muted text-center py-4">등록된 이중가입이 없습니다. 프로젝트 때문에 다른 사업장에도 4대보험이 가입되는 직원을 [등록]으로 넣어 주세요.</td></tr>{% endfor %}
 </tbody></table></div></div>

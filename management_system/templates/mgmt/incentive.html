@@ -45,7 +45,7 @@
   <div class="col-12"><div class="card"><div class="card-header d-flex align-items-center">지급 기록 {% if department %}<span class="badge text-bg-primary ms-2">{{ department }}</span> <a class="small ms-2" href="?year={{ year }}">전체 보기</a>{% endif %}</div>
     <div class="table-responsive" style="max-height:480px"><table class="table table-sm table-hover mb-0" data-excel><thead class="sticky-top"><tr><th>지급일</th><th>부서</th><th>성명</th><th class="num">금액</th><th>사유</th><th>메모</th><th>등록</th><th></th></tr></thead><tbody>
     {% for p in pays %}<tr><td>{{ p.pay_date }}</td><td>{{ p.department }}</td><td>{{ p.name or '(부서 지급)' }}</td><td class="num">{{ p.amount|won }}</td><td>{{ p.reason or '' }}</td><td class="small">{{ p.note or '' }}</td><td class="small text-muted">{{ p.created_by or '' }}</td>
-      <td><form method="post" action="/mgmt/incentive/pay/{{ p.id }}/delete" data-confirm="이 지급 기록을 삭제할까요?"><input type="hidden" name="year" value="{{ year }}"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
+      <td><form method="post" action="/mgmt/incentive/pay/{{ p.id }}/delete" data-confirm="이 지급 기록을 휴지통으로 옮길까요?"><input type="hidden" name="year" value="{{ year }}"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
     {% else %}<tr><td colspan="8" class="text-muted text-center py-3">지급 기록이 없습니다</td></tr>{% endfor %}</tbody></table></div></div></div>
 </div>
 

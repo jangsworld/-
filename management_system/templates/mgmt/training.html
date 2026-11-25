@@ -49,7 +49,7 @@
   <span class="small text-muted">{{ records|length }}건</span></div>
   <div class="table-responsive" style="max-height:640px"><table class="table table-sm table-hover mb-0" data-excel><thead class="sticky-top"><tr><th>교육일</th><th>과정</th><th>부서</th><th>성명</th><th class="num">시간</th><th>방식</th><th>기관·강사</th><th>메모</th><th>등록</th><th></th></tr></thead><tbody>
   {% for r in records %}<tr><td>{{ r.edu_date }}</td><td>{{ r.course }}</td><td>{{ r.department or '' }}</td><td>{{ r.name }}</td><td class="num">{{ '%g'|format(r.hours or 0) }}</td><td>{{ r.method or '' }}</td><td>{{ r.provider or '' }}</td><td class="small">{{ r.note or '' }}</td><td class="small text-muted">{{ r.created_by or '' }}</td>
-    <td><form method="post" action="/mgmt/training/records/{{ r.id }}/delete" data-confirm="이 이수 기록을 삭제할까요?"><input type="hidden" name="year" value="{{ year }}"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
+    <td><form method="post" action="/mgmt/training/records/{{ r.id }}/delete" data-confirm="이 이수 기록을 휴지통으로 옮길까요?"><input type="hidden" name="year" value="{{ year }}"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
   {% else %}<tr><td colspan="10" class="text-muted text-center py-3">{{ year }}년 이수 기록이 없습니다</td></tr>{% endfor %}</tbody></table></div></div>
 
 {% else %}

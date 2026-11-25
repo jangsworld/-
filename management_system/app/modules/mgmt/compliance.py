@@ -151,8 +151,8 @@ def save_task(f: dict) -> int:
 
 
 def delete_task(tid: int):
-    execute("DELETE FROM compliance_tasks WHERE id=?", (tid,))
-    audit("mgmt", "법정의무 일정 삭제", str(tid), "")
+    from app import trash
+    trash.remove("compliance_tasks", tid, audit_note=("mgmt", "법정의무 일정 삭제", str(tid), "휴지통"))
 
 
 def upcoming(days: int = 30) -> list[dict]:

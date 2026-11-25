@@ -146,8 +146,8 @@ def add_records(cid: int, emp_ids: list[int], edu_date: str, hours, method: str,
 
 
 def delete_record(rid: int):
-    execute("DELETE FROM training_records WHERE id=?", (rid,))
-    audit("mgmt", "교육 이수 삭제", str(rid), "")
+    from app import trash
+    trash.remove("training_records", rid, audit_note=("mgmt", "교육 이수 삭제", str(rid), "휴지통"))
 
 
 def save_course(f: dict) -> int:

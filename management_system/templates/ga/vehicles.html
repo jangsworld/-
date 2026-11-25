@@ -88,7 +88,7 @@
       <td>{{ d.driver_name or '' }}</td><td><span class="badge {{ 'text-bg-warning' if d.responsibility == '미정' else 'text-bg-light border' }}">{{ d.responsibility }}</span></td><td class="small">{{ d.insurance }}</td>
       <td class="num">{{ d.repair_cost|won if d.repair_cost else '' }}</td><td class="num">{{ d.self_pay|won if d.self_pay else '' }}</td><td>{{ d.status }}</td>
       <td class="text-nowrap">{{ att('ga.damages', d.id, _ac_ga_damages, pm=pend_map) }}{% if can_write %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#damageModal" data-fill='{{ d|tojson }}'><i class="bi bi-pencil"></i></button>
-        <form method="post" action="/ga/damages/{{ d.id }}/delete" class="d-inline" data-confirm="삭제할까요?"><input type="hidden" name="next" value="/ga/vehicles?tab=damages"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
+        <form method="post" action="/ga/damages/{{ d.id }}/delete" class="d-inline" data-confirm="휴지통으로 옮길까요?"><input type="hidden" name="next" value="/ga/vehicles?tab=damages"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
     {% else %}<tr><td colspan="11" class="text-center text-muted p-4">기록이 없습니다</td></tr>{% endfor %}</tbody></table></div></div>
 {% elif tab == 'fines' %}
 <div class="card"><div class="card-header d-flex align-items-center gap-2">과태료·범칙금
@@ -101,7 +101,7 @@
       <td>{{ f.driver_name or '확인 필요' }}{% if f.driver_source %} <span class="small text-muted">({{ f.driver_source }})</span>{% endif %}</td>
       <td class="small">{{ f.due_date or '' }} {% if f.status in ('접수','운전자확인','이의신청') %}{{ dday(f.due_dday, 7) }}{% endif %}</td><td>{{ f.status }}{% if f.paid_date %} <span class="small text-muted">{{ f.paid_date }}</span>{% endif %}</td>
       <td class="text-nowrap">{{ att('ga.fines', f.id, _ac_ga_fines, pm=pend_map) }}{% if can_write %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#fineModal" data-fill='{{ f|tojson }}'><i class="bi bi-pencil"></i></button>
-        <form method="post" action="/ga/fines/{{ f.id }}/delete" class="d-inline" data-confirm="삭제할까요?"><input type="hidden" name="next" value="/ga/vehicles?tab=fines"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
+        <form method="post" action="/ga/fines/{{ f.id }}/delete" class="d-inline" data-confirm="휴지통으로 옮길까요?"><input type="hidden" name="next" value="/ga/vehicles?tab=fines"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
     {% else %}<tr><td colspan="9" class="text-center text-muted p-4">기록이 없습니다</td></tr>{% endfor %}</tbody></table></div>
   <div class="card-footer help">고지서의 위반 일시를 넣으면 그날 운행기록(카택스 포함)과 차량 사용자 이력으로 운전자를 자동으로 찾습니다. 운전자를 찾지 못한 줄은 노란색입니다.</div></div>
 {% elif tab == 'cost' %}

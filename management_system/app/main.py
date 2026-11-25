@@ -19,9 +19,10 @@ from app.db import audit, init_db, get_settings, set_setting, DEFAULT_SETTINGS, 
 from app.modules import MODULES
 from app import brand, mailer
 from app import company as company_mod
-from app import archive, archive_ops
+from app import archive, archive_ops, trash
 from app import files as files_mod
 from app.files import router as files_router
+from app.trash_routes import router as trash_router
 from app.modules.ga import cartax, company as company_alerts, contract_intake
 from app.modules.ga.constants import ASSET_BEHAVIORS
 from app.modules.hr import intake, repo as hr_repo
@@ -110,6 +111,7 @@ async def lifespan(_app):
     archive.start_worker()                 # 차량 점검 사진을 보관함으로 (놓친 것 다시)
     from app.modules.hr import appoint
     appoint.start_worker()                 # 예정 인사발령: 발령일에 자동 적용
+    trash.start_worker()                   # 휴지통: 60일 지난 자료 자동 완전삭제
     yield
     intake.stop_worker()
     cartax.stop_worker()
@@ -117,6 +119,7 @@ async def lifespan(_app):
     company_alerts.stop_worker()
     archive.stop_worker()
     appoint.stop_worker()
+    trash.stop_worker()
 
 
 app = FastAPI(title=SYSTEM_NAME, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -137,6 +140,7 @@ app.include_router(leave_public_router)
 app.include_router(hr_router)
 app.include_router(sign_router)
 app.include_router(files_router)
+app.include_router(trash_router)
 app.include_router(mgmt_router)
 app.include_router(company_router)        # /ga/company: 일반 총무 경로보다 먼저
 app.include_router(fleet_router)          # /ga/vehicles/labels 등: 일반 차량 경로보다 먼저
@@ -247,7 +251,8 @@ def settings_page(request: Request):
         "active_menu": "settings", "msg": request.query_params.get("msg", ""),
         "cfg": {"포트": settings.port, "HTTPS": "사용" if settings.https else "미사용(내부 테스트용)",
                 "2단계 인증": "필수" if settings.require_2fa else "선택",
-                "세션 유휴 만료": f"{settings.session_idle_minutes}분",
+                "자동 로그아웃": f"{settings.session_idle_minutes}분 동안 쓰지 않으면 (계속 써도 {settings.session_max_hours}시간)",
+                "2단계 인증 다시 묻기": f"사내 같은 PC 는 {settings.mfa_trust_hours}시간 뒤, 밖에서는 매번" if settings.mfa_trust_hours else "로그인할 때마다",
                 "문서 보관 위치": archive.root(),
                 "메일 서버": settings.smtp_host or "미설정(서명 링크를 화면에 표시)",
                 "DB 위치": settings.db_path, "비밀키 폴더": settings.secrets_dir},
@@ -454,4 +459,4 @@ async def code_behavior(request: Request, cid: int):
 def code_delete(cid: int):
     group = hr_repo.code_group(cid)
     ok = hr_repo.delete_code(cid)
-    return _codes_redirect(group, "삭제되었습니다" if ok else "하위 부서가 있어 삭제할 수 없습니다. 하위 부서를 먼저 옮기거나 삭제하세요")
+    return _codes_redirect(group, "휴지통으로 옮겼습니다" if ok else "하위 부서가 있어 삭제할 수 없습니다. 하위 부서를 먼저 옮기거나 삭제하세요")

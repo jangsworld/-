@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
-from app import archive
+from app import archive, trash
 from app.common import templates, today
 from app.config import settings as cfg
 from app.db import audit, get_settings, query_one
@@ -207,7 +207,7 @@ async def inspection_finalize(request: Request, vid: int, iid: int):
 def inspection_delete(request: Request, vid: int, iid: int):
     _insp(vid, iid)
     err = fleet.delete_inspection(iid, request.state.user["display_name"])
-    return _redirect(f"/ga/vehicles/{vid}" if not err else f"/ga/vehicles/{vid}/inspections/{iid}", err or "점검을 삭제했습니다")
+    return _redirect(f"/ga/vehicles/{vid}" if not err else f"/ga/vehicles/{vid}/inspections/{iid}", err or "점검을 " + trash.MOVED)
 
 
 @router.get("/vehicle-photos/{pid}")
@@ -233,10 +233,9 @@ async def damage_save(request: Request):
 @router.post("/damages/{did}/delete")
 async def damage_delete(request: Request, did: int):
     f = await request.form()
-    repo.execute("DELETE FROM ga_vehicle_damages WHERE id=?", (did,))
-    audit("ga", "사고·파손 삭제", f"#{did}", "")
+    trash.remove("ga_vehicle_damages", did, audit_note=("ga", "사고·파손 삭제", f"#{did}", "휴지통"))
     nxt = f.get("next") or "/ga/vehicles?tab=damages"
-    return _redirect(nxt if nxt.startswith("/ga/") else "/ga/vehicles?tab=damages", "삭제했습니다")
+    return _redirect(nxt if nxt.startswith("/ga/") else "/ga/vehicles?tab=damages", trash.MOVED)
 
 
 @router.get("/fines/driver")
@@ -260,10 +259,9 @@ async def fine_save(request: Request):
 @router.post("/fines/{fid}/delete")
 async def fine_delete(request: Request, fid: int):
     f = await request.form()
-    repo.execute("DELETE FROM ga_vehicle_fines WHERE id=?", (fid,))
-    audit("ga", "과태료 삭제", f"#{fid}", "")
+    trash.remove("ga_vehicle_fines", fid, audit_note=("ga", "과태료 삭제", f"#{fid}", "휴지통"))
     nxt = f.get("next") or "/ga/vehicles?tab=fines"
-    return _redirect(nxt if nxt.startswith("/ga/") else "/ga/vehicles?tab=fines", "삭제했습니다")
+    return _redirect(nxt if nxt.startswith("/ga/") else "/ga/vehicles?tab=fines", trash.MOVED)
 
 
 # ════════════════════════════════════════════════════════════════════════

@@ -43,7 +43,7 @@
       <td class="small text-muted">{{ r.from_value or ('(발령일에 확정)' if r.planned else '-') }}</td><td class="text-muted">→</td><td class="fw-semibold">{{ r.to_value or '-' }}</td>
       <td class="small">{% if r.batch_title %}<a href="/hr/appointments?batch={{ r.batch_title|urlencode }}">{{ r.batch_title }}</a>{% endif %}</td>
       <td class="small">{{ r.note or '' }}</td>
-      <td><form method="post" action="/hr/appointments/{{ r.id }}/remove" data-confirm="{{ r.name }}님의 {{ r.appt_date }} {{ r.appt_type }} {{ '예정 발령을 취소' if r.planned else '발령 이력을 삭제' }}할까요?{{ '' if r.planned else ' 인사·고용 정보는 되돌아가지 않습니다.' }}"><button class="btn btn-sm btn-link text-danger p-0" title="{{ '예정 취소' if r.planned else '이력 삭제' }}"><i class="bi bi-x-lg"></i></button></form></td></tr>
+      <td><form method="post" action="/hr/appointments/{{ r.id }}/remove" data-confirm="{{ r.name }}님의 {{ r.appt_date }} {{ r.appt_type }} {{ '예정 발령을 취소' if r.planned else '발령 이력을 휴지통으로 이동' }}할까요?{{ '' if r.planned else ' 인사·고용 정보는 되돌아가지 않습니다.' }}"><button class="btn btn-sm btn-link text-danger p-0" title="{{ '예정 취소' if r.planned else '이력 삭제' }}"><i class="bi bi-x-lg"></i></button></form></td></tr>
     {% else %}<tr><td colspan="12" class="text-muted text-center py-4">조회된 발령이 없습니다</td></tr>{% endfor %}
   </tbody></table></div></div>
 

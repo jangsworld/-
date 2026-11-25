@@ -13,7 +13,7 @@
     {% if locked %}<span class="small text-muted ms-1">{{ i.reviewed_by }} · {{ i.reviewed_at }}</span>{% endif %}</div>
   <div class="ms-auto d-flex gap-2">
     {% if i.status == '촬영중' %}<a class="btn btn-sm btn-primary" href="/ga/vehicles/{{ v.id }}/inspections/{{ i.id }}/shoot"><i class="bi bi-camera"></i> 사진 찍기 (휴대폰)</a>{% endif %}
-    {% if can_write and not locked %}<form method="post" action="/ga/vehicles/{{ v.id }}/inspections/{{ i.id }}/delete" data-confirm="이 점검과 사진을 모두 지울까요?"><button class="btn btn-sm btn-outline-danger">삭제</button></form>{% endif %}
+    {% if can_write and not locked %}<form method="post" action="/ga/vehicles/{{ v.id }}/inspections/{{ i.id }}/delete" data-confirm="이 점검과 사진을 휴지통으로 옮길까요?"><button class="btn btn-sm btn-outline-danger">삭제</button></form>{% endif %}
   </div>
 </div>
 {% if i.note %}<div class="card-footer small">메모: {{ i.note }}</div>{% endif %}</div>

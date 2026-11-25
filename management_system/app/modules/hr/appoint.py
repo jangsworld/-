@@ -155,9 +155,9 @@ def delete(appt_id: int) -> str:
     a = query_one("SELECT a.*, e.name FROM appointments a JOIN employees e ON e.id=a.employee_id WHERE a.id=?", (appt_id,))
     if not a:
         return ""
-    execute("DELETE FROM appointments WHERE id=?", (appt_id,))
-    audit("hr", "인사발령 삭제", a["name"], f"{a['appt_date']} {a['appt_type']}" + (" (예정 취소)" if a.get("status") == "예정" else ""))
-    return "예정 발령을 취소했습니다" if a.get("status") == "예정" else "발령 이력을 삭제했습니다 (인사·고용 정보는 그대로입니다)"
+    from app import trash
+    trash.remove("appointments", appt_id, audit_note=("hr", "인사발령 삭제", a["name"], f"{a['appt_date']} {a['appt_type']}" + (" (예정 취소)" if a.get("status") == "예정" else "") + " 휴지통"))
+    return "예정 발령을 취소하고 휴지통으로 옮겼습니다" if a.get("status") == "예정" else "발령 이력을 휴지통으로 옮겼습니다 (인사·고용 정보는 그대로입니다)"
 
 
 def delete_many(ids: list[int]) -> dict:
@@ -169,9 +169,10 @@ def delete_many(ids: list[int]) -> dict:
     for i in range(0, len(ids), 500):
         part = ids[i:i + 500]
         found += query("SELECT id, status FROM appointments WHERE id IN (" + ",".join("?" * len(part)) + ")", part)
-    for i in range(0, len(found), 500):
-        part = [r["id"] for r in found[i:i + 500]]
-        execute("DELETE FROM appointments WHERE id IN (" + ",".join("?" * len(part)) + ")", part)
+    from app import trash
+    with batch():
+        for r in found:
+            trash.remove("appointments", r["id"])
     planned = sum(1 for r in found if r.get("status") == "예정")
     if found:
         audit("hr", "인사발령 선택 삭제", f"{len(found)}건", f"예정 취소 {planned}건" if planned else "")

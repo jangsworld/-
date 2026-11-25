@@ -164,7 +164,7 @@ def make_router(kind: str, flow) -> APIRouter:
     @router.post("/{emp_id}/delete")
     def delete(emp_id: int):
         flow.remove(emp_id)
-        return go(None, f"{L['name']} 절차 기록을 삭제했습니다 (인사기록카드는 그대로입니다)")
+        return go(None, f"{L['name']} 절차 기록을 휴지통으로 옮겼습니다 (인사기록카드는 그대로입니다)")
 
     return router
 

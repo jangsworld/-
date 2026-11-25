@@ -22,7 +22,7 @@
 {%- endmacro %}
 
 {% macro del_btn(kind, id, next, label='') -%}
-<form method="post" action="/ga/{{ kind }}/{{ id }}/delete" class="d-inline" data-confirm="삭제할까요? {{ label }}">
+<form method="post" action="/ga/{{ kind }}/{{ id }}/delete" class="d-inline" data-confirm="휴지통으로 옮길까요? {{ label }}">
   <input type="hidden" name="next" value="{{ next }}"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>
 {%- endmacro %}
 

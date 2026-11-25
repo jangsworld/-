@@ -367,10 +367,8 @@ def delete_inspection(iid: int, by: str) -> str:
         return "점검을 찾을 수 없습니다"
     if i["status"] == "확정":
         return "확정된 점검은 지울 수 없습니다 (책임 판단 근거)"
-    for p in photo_rows(iid):
-        photos.delete_vehicle(iid, p["id"])
-    execute("DELETE FROM ga_vehicle_inspections WHERE id=?", (iid,))
-    audit("ga", "차량 점검 삭제", f"{i['plate_no']} #{iid}", f"{i['kind']} ({by})")
+    from app import trash                       # 사진 파일은 휴지통에서 완전삭제할 때 지움
+    trash.remove("ga_vehicle_inspections", iid, audit_note=("ga", "차량 점검 삭제", f"{i['plate_no']} #{iid}", f"{i['kind']} ({by}) 휴지통"))
     return ""
 
 

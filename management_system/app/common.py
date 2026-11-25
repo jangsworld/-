@@ -20,6 +20,7 @@ def _security_context(request) -> dict:
         "csrf_token": sess["csrf_token"] if sess else "",
         "csp_nonce": getattr(request.state, "csp_nonce", ""),
         "idle_minutes": settings.session_idle_minutes,
+        "max_hours": settings.session_max_hours,
         "perms": {
             "admin": role == "admin",
             "write": role in ("admin", "hr"),
