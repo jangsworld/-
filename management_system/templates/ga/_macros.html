@@ -47,6 +47,10 @@
 {% macro cobadge(v) -%}{% if co.enabled() %}<span class="co-badge co-{{ co.norm(v) }}">{{ co.label(v) }}</span>{% endif %}{%- endmacro %}
 
 {# 붙인 서류 링크: 개수를 미리 센 표(counts)를 넘기면 숫자가 보임 #}
-{% macro att(menu, id, counts=None, label='') -%}
-<a class="btn btn-sm btn-link p-0 me-1 text-nowrap" href="/files/{{ menu }}/{{ id }}" title="붙인 서류"><i class="bi bi-paperclip"></i>{{ label }}{% if counts and counts.get(id) %}<span class="badge text-bg-secondary">{{ counts.get(id) }}</span>{% endif %}</a>
+{% macro att(menu, id, counts=None, label='', href='', pm=None) -%}
+<a class="btn btn-sm btn-link p-0 me-1 text-nowrap" href="{{ href or '/files/' ~ menu ~ '/' ~ id }}" title="붙인 서류"><i class="bi bi-paperclip"></i>{{ label }}{% if counts and counts.get(id) %}<span class="badge text-bg-secondary">{{ counts.get(id) }}</span>{% endif %}{% if pm and pm.get((menu, id)) %}<span class="badge text-bg-warning ms-1" title="NAS 폴더에 새로 넣은 파일이 있습니다. 눌러서 대장에 올리세요">새 파일 {{ pm.get((menu, id)) }}</span>{% endif %}</a>
 {%- endmacro %}
+
+
+{# 폴더에 새로 넣었지만 대장에 없는 파일 수 (목록 줄의 이름 옆) #}
+{% macro newbadge(n, url) -%}{% if n %} <a class="badge text-bg-warning text-decoration-none" href="{{ url }}#files" title="NAS 폴더에 새로 넣은 파일이 있습니다. 눌러서 대장에 올리세요"><i class="bi bi-folder-plus"></i> 새 파일 {{ n }}</a>{% endif %}{%- endmacro %}

@@ -296,3 +296,7 @@ body:has(.form-actions) .toast-container { bottom: 64px !important; }
 .co-badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:600;line-height:1.5;white-space:nowrap}
 .co-badge.co-1{background:#e7effa;color:#1f4e8c}
 .co-badge.co-2{background:#e6f5ee;color:#17694a}
+
+/* 상세 화면의 항목-값 표: 긴 값(폴더 경로·메일 주소)이 좁은 화면에서 넘치지 않게 줄바꿈 */
+.table.kv-table th:nth-child(n), .table.kv-table td:nth-child(n) { white-space: normal; overflow-wrap: anywhere; }
+.kv-table th { width: 7.5rem; }

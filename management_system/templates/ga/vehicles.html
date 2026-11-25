@@ -25,6 +25,8 @@
   <li class="nav-item"><a class="nav-link {% if tab == key %}active{% endif %}" href="?tab={{ key }}">{{ label }}</a></li>{% endfor %}
   <li class="nav-item ms-auto"><a class="nav-link" href="/ga/vehicles/labels"><i class="bi bi-qr-code"></i> 차량 QR 라벨</a></li>
 </ul>
+{% set pending = pending_for(request, [{'list': 'ga.vehicles', 'fines': 'ga.fines', 'damages': 'ga.damages'}.get(tab, '')]) %}{% set pending_next = '/ga/vehicles' %}{% set pend_map = pending_map(pending) %}
+{% include "_pending_card.html" %}
 {% if tab == 'list' %}
 {% if total.suspect %}<div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle"></i> 올해 운행기록 {{ total.suspect }}건의 주행거리가 비정상입니다. 주행거리와 업무사용비율이 왜곡되니, 아래 표시된 차량을 열어 확인하세요.</div>{% endif %}
 {% if total.pending %}<div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle"></i> 올해 운행기록 {{ total.pending }}건은 카택스에 목적이 비어 있어 "확인필요"로 표시했습니다. 카택스에서 목적을 입력할 때까지 업무용 거리에 포함되지 않습니다.</div>{% endif %}
@@ -45,7 +47,7 @@
     <thead><tr><th>차량번호</th><th>차종</th><th>소유형태</th><th>현재 사용자</th><th class="num">현재 km</th><th class="num">올해 km</th><th>업무비율</th><th>보험 만기</th><th>정기검사</th><th>리스 만기</th><th>상태</th></tr></thead>
     <tbody>{% for v in rows %}
       <tr data-href="/ga/vehicles/{{ v.id }}">
-        <td class="fw-semibold">{{ v.plate_no }}</td><td>{{ v.model }} <span class="small text-muted">{{ v.model_year or '' }} {{ v.fuel or '' }}</span></td>
+        <td class="fw-semibold">{{ v.plate_no }}{% if pend_map.get(('ga.vehicles', v.id)) %} <span class="badge text-bg-warning" title="NAS 폴더에 새로 넣은 파일이 있습니다"><i class="bi bi-folder-plus"></i> 새 파일 {{ pend_map.get(('ga.vehicles', v.id)) }}</span>{% endif %}</td><td>{{ v.model }} <span class="small text-muted">{{ v.model_year or '' }} {{ v.fuel or '' }}</span></td>
         <td>{{ v.ownership }}{% if v.monthly_cost %}<div class="small text-muted">월 {{ v.monthly_cost|man_won }}원</div>{% endif %}</td>
         <td>{% if v.user %}{{ v.user.name }}<div class="small text-muted">{{ v.user.start_date }}~</div>{% else %}<span class="text-muted small">{{ '관리 ' ~ v.manager_name if v.manager_name else '-' }}</span>{% endif %}</td><td class="num">{{ v.odometer|won }}</td><td class="num">{{ v.stat.total_km|won }}{% if v.stat.suspect or v.stat.pending %} <span class="badge text-bg-warning">확인</span>{% endif %}</td>
         <td>{{ ('%.0f'|format(v.stat.biz_ratio) ~ '%') if v.stat.biz_ratio is not none else '-' }}</td>
@@ -85,7 +87,7 @@
       <td class="small">{{ d.part or '' }} {{ d.detail or '' }}{% if d.inspection_id %} <a href="/ga/vehicles/{{ d.vehicle_id }}/inspections/{{ d.inspection_id }}" class="small">사진</a>{% endif %}</td>
       <td>{{ d.driver_name or '' }}</td><td><span class="badge {{ 'text-bg-warning' if d.responsibility == '미정' else 'text-bg-light border' }}">{{ d.responsibility }}</span></td><td class="small">{{ d.insurance }}</td>
       <td class="num">{{ d.repair_cost|won if d.repair_cost else '' }}</td><td class="num">{{ d.self_pay|won if d.self_pay else '' }}</td><td>{{ d.status }}</td>
-      <td class="text-nowrap">{{ att('ga.damages', d.id, _ac_ga_damages) }}{% if can_write %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#damageModal" data-fill='{{ d|tojson }}'><i class="bi bi-pencil"></i></button>
+      <td class="text-nowrap">{{ att('ga.damages', d.id, _ac_ga_damages, pm=pend_map) }}{% if can_write %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#damageModal" data-fill='{{ d|tojson }}'><i class="bi bi-pencil"></i></button>
         <form method="post" action="/ga/damages/{{ d.id }}/delete" class="d-inline" data-confirm="삭제할까요?"><input type="hidden" name="next" value="/ga/vehicles?tab=damages"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
     {% else %}<tr><td colspan="11" class="text-center text-muted p-4">기록이 없습니다</td></tr>{% endfor %}</tbody></table></div></div>
 {% elif tab == 'fines' %}
@@ -98,7 +100,7 @@
       <td class="small">{{ f.violation_at }}</td><td class="fw-semibold">{{ f.plate_no }}</td><td>{{ f.kind }}</td><td class="small">{{ f.place or '' }}</td><td class="num">{{ f.amount|won }}</td>
       <td>{{ f.driver_name or '확인 필요' }}{% if f.driver_source %} <span class="small text-muted">({{ f.driver_source }})</span>{% endif %}</td>
       <td class="small">{{ f.due_date or '' }} {% if f.status in ('접수','운전자확인','이의신청') %}{{ dday(f.due_dday, 7) }}{% endif %}</td><td>{{ f.status }}{% if f.paid_date %} <span class="small text-muted">{{ f.paid_date }}</span>{% endif %}</td>
-      <td class="text-nowrap">{{ att('ga.fines', f.id, _ac_ga_fines) }}{% if can_write %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#fineModal" data-fill='{{ f|tojson }}'><i class="bi bi-pencil"></i></button>
+      <td class="text-nowrap">{{ att('ga.fines', f.id, _ac_ga_fines, pm=pend_map) }}{% if can_write %}<button class="btn btn-sm btn-link p-0 me-1" data-bs-toggle="modal" data-bs-target="#fineModal" data-fill='{{ f|tojson }}'><i class="bi bi-pencil"></i></button>
         <form method="post" action="/ga/fines/{{ f.id }}/delete" class="d-inline" data-confirm="삭제할까요?"><input type="hidden" name="next" value="/ga/vehicles?tab=fines"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form>{% endif %}</td></tr>
     {% else %}<tr><td colspan="9" class="text-center text-muted p-4">기록이 없습니다</td></tr>{% endfor %}</tbody></table></div>
   <div class="card-footer help">고지서의 위반 일시를 넣으면 그날 운행기록(카택스 포함)과 차량 사용자 이력으로 운전자를 자동으로 찾습니다. 운전자를 찾지 못한 줄은 노란색입니다.</div></div>

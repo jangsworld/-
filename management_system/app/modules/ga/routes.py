@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from app.common import templates, today, to_date, vat_split
 from app.config import settings as cfg
-from app.db import audit, get_codes, get_settings, execute, dept_text
+from app.db import audit, get_codes, get_settings, execute, dept_text, query
 from app.modules.ga import cartax, contract_intake, fleet, photos, repo, services
 from app.modules.ga.constants import (
     ASSET_CATEGORIES, ASSET_STATUSES, VEHICLE_STATUSES, DRIVE_PURPOSES, PURPOSE_PENDING, DOC_STATUSES, SEAL_STATUSES,
@@ -138,6 +138,7 @@ def asset_detail(request: Request, aid: int):
         "a": a, "history": repo.asset_history(aid), "events": get_codes("ASSET_EVENT"),
         "qr_text": _qr_text(a, public), "qr_is_url": bool(public),
         "categories": ASSET_CATEGORIES, "statuses": ASSET_STATUSES, "locations": get_codes("ASSET_LOC"),
+        "fp": _files_panel(request, "ga.assets", aid, f"/ga/assets/{aid}"),
     }, "ga.assets")
 
 
@@ -311,6 +312,7 @@ def vehicle_detail(request: Request, vid: int, year: int | None = None):
         "insp_rows": fleet.inspections(vid)[:10], "damage_rows": fleet.damages(vid)[:10], "fine_rows": fleet.fines(vid)[:10],
         "oil": fleet.oil_status(v), "oil_interval": int(v.get("oil_interval_km") or fleet.OIL_DEFAULT_KM),
         "veh_opts": [{"v": v["id"], "t": f"{v['plate_no']} {v['model']}"}], **_fleet_opts(),
+        "fp": _files_panel(request, "ga.vehicles", vid, f"/ga/vehicles/{vid}"),
     }, "ga.vehicles")
 
 
@@ -415,7 +417,6 @@ def contracts(request: Request, category: str = "", status: str = "유효", kind
     if show_c:
         for c in repo.list_contracts(category, status):
             c = services.contract_view(c)
-            c["files"] = contract_intake.list_files(c.get("folder_name")) if c.get("folder_name") else []
             rows.append({"kind": "contract", "dday": c["dday"], "c": c})
     item_rows = items_mod.items(category, ITEM_STATUS.get(status, status)) if show_i else []
     for r in item_rows:
@@ -436,10 +437,8 @@ def contracts(request: Request, category: str = "", status: str = "유효", kind
                            "files": data.get("files", []), "fill": fill})
     return _render(request, "ga/contracts.html", {
         "drafts": drafts, "intake": {**contract_intake.state, "enabled": drafts_on},
-        "rows": rows, "f": {"category": category, "status": status, "kind": kind}, "categories": contract_cats,
-        "item_categories": COMPANY_CATEGORIES, "item_cycles": COMPANY_CYCLES, "item_statuses": COMPANY_STATUSES,
-        "examples": COMPANY_EXAMPLES, "history": items_mod.history() if show_i else [],
-        "cycles": PAY_CYCLES, "statuses": CONTRACT_STATUSES,
+        "rows": rows, "f": {"category": category, "status": status, "kind": kind}, **_contract_form_ctx(),
+        "history": items_mod.history() if show_i else [],
         "status_opts": ["유효", "갱신중", "만료", "해지", "종료", ""],
         "sum": {"count": len(active), "monthly": sum(c["monthly"] for c in active),
                 "yearly": sum(c["monthly"] for c in active) * 12, "deposit": sum(c["deposit"] or 0 for c in active),
@@ -522,6 +521,81 @@ def contract_file(cid: int, name: str):
     if not c or not c.get("folder_name"):
         raise HTTPException(404, "서류 폴더가 연결되지 않은 계약입니다")
     return _folder_file(c["folder_name"], name)
+
+
+def _files_panel(request: Request, menu: str, ref_id: int, back: str) -> dict | None:
+    """상세 화면 아래에 넣는 서류 묶음. 서류를 볼 수 있는 권한(총무 담당자 이상)일 때만."""
+    from app import archive, files
+    if not archive.allowed(menu, request.state.user["role"]):
+        return None
+    try:
+        return files.panel(menu, ref_id, back)
+    except Exception:                                   # noqa: BLE001
+        return None
+
+
+def _contract_form_ctx() -> dict:
+    """계약·면허 등록 창(templates/ga/_contract_modals.html)에 필요한 고르기 값."""
+    from app.modules.ga import company as items_mod
+    from app.modules.mgmt.constants import COMPANY_CYCLES, COMPANY_EXAMPLES, COMPANY_STATUSES
+    return {"categories": get_codes("GA_CONTRACT"), "item_categories": items_mod.categories(), "item_cycles": COMPANY_CYCLES,
+            "item_statuses": COMPANY_STATUSES, "examples": COMPANY_EXAMPLES, "cycles": PAY_CYCLES, "statuses": CONTRACT_STATUSES}
+
+
+HISTORY_WORDS = {"계약 등록": "등록", "계약 수정": "내용 고침", "계약 만기 알림 메일": "만기 알림 메일 보냄", "회사 관리 만기 저장": "등록·내용 고침",
+                 "회사 관리 갱신": "갱신", "만기 알림 메일": "만기 알림 메일 보냄", "서류 붙임": "서류 올림", "폴더 파일을 대장에 올림": "폴더 파일을 대장에 올림",
+                 "서류 삭제": "서류 지움(삭제함으로 옮김)"}
+
+
+def _history(where: str, params: tuple) -> list[dict]:
+    """접속기록에서 이 항목에 한 일만 추려 최근 순으로. (누가·언제·무엇을)"""
+    rows = query("SELECT created_at, username, action, target, detail FROM audit_logs WHERE " + where + " ORDER BY id DESC LIMIT 60", params)
+    for r in rows:
+        r["what"] = HISTORY_WORDS.get(r["action"], r["action"])
+        if r["action"] == "서류 삭제":
+            r["detail"] = r["target"]
+    return rows
+
+
+@router.get("/contracts/item/{iid:int}", response_class=HTMLResponse)
+def item_detail(request: Request, iid: int):
+    """면허·보험·인증 등 한 건: 지금 상태 · 이력 · 서류."""
+    from app import archive
+    from app.modules.ga import company as items_mod
+    r = next((x for x in items_mod.items() if x["id"] == iid), None) or items_mod.get(iid)
+    if not r:
+        raise HTTPException(404, "항목을 찾을 수 없습니다")
+    r.setdefault("dday", None)
+    r.setdefault("alert", False)
+    nx = items_mod.next_expire(r)
+    t = archive.target("ga.company", iid) or {"title": r["name"]}
+    hist = _history("(module='ga' AND action IN ('회사 관리 만기 저장','회사 관리 갱신','만기 알림 메일') AND target=?) "
+                    "OR (module='files' AND target=?) OR (module='files' AND detail LIKE ?)",
+                    (r["name"], f"{archive.MENUS['ga.company'][1]} {t['title']}"[:120], f"ga.company #{iid} %"))
+    back = f"/ga/contracts/item/{iid}"
+    return _render(request, "ga/contract_detail.html", {
+        "kind": "item", "r": r, "next_expire": nx.isoformat() if nx else "", "renewals": items_mod.history(iid), "hist": hist,
+        "fp": _files_panel(request, "ga.company", iid, back), "modal_next": back, **_contract_form_ctx(),
+    }, "ga.contracts")
+
+
+@router.get("/contracts/{cid:int}", response_class=HTMLResponse)
+def contract_detail(request: Request, cid: int):
+    """계약 한 건: 지금 상태 · 이력 · 서류."""
+    from app import archive
+    c = next((x for x in repo.list_contracts() if x["id"] == cid), None)
+    if not c:
+        raise HTTPException(404, "계약을 찾을 수 없습니다")
+    c = services.contract_view(c)
+    fkey = f"{archive.MENUS['ga.contracts'][1]} {c['title']} ("[:120]       # 서류 기록의 대상 이름 앞부분 (상대방 이름이 바뀌어도 찾게)
+    hist = _history("(module='ga' AND action IN ('계약 등록','계약 수정') AND target=?) OR (module='ga' AND action='계약 만기 알림 메일' AND target=?) "
+                    "OR (module='files' AND substr(target, 1, ?)=?) OR (module='files' AND detail LIKE ?)",
+                    (f"#{cid}", c["title"], len(fkey), fkey, f"ga.contracts #{cid} %"))
+    back = f"/ga/contracts/{cid}"
+    return _render(request, "ga/contract_detail.html", {
+        "kind": "contract", "c": c, "hist": hist, "fp": _files_panel(request, "ga.contracts", cid, back), "modal_next": back,
+        **_contract_form_ctx(),
+    }, "ga.contracts")
 
 
 @router.get("/contracts/export.csv")

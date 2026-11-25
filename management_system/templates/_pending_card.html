@@ -1,0 +1,20 @@
+{# 폴더에 새로 넣은 파일 알림. pending = pending_for(request, [메뉴…]) 결과, pending_next = 한꺼번에 올린 뒤 돌아올 화면 #}
+{% if pending %}{% set _solo = pending|rejectattr('shared')|list %}
+<div class="card mb-3 border-warning" id="pendingCard">
+  <div class="card-header bg-warning-subtle d-flex flex-wrap align-items-center gap-2">
+    <span><i class="bi bi-folder-plus"></i> 폴더에 새로 넣은 파일이 있습니다 <b>{{ pending|length }}건</b></span>
+    <span class="help">NAS 폴더(##BMS시스템)에 넣어 둔 파일은 대장에 올려야 이 시스템의 서류 목록에 보입니다</span>
+    {% if _solo %}<form method="post" action="/files/adopt-all" class="ms-auto" data-confirm="새 파일이 있는 {{ _solo|length }}건을 모두 대장에 올릴까요?&#10;&#10;파일은 폴더에 그대로 있고, 대장에만 올라갑니다.">
+      <input type="hidden" name="next" value="{{ pending_next }}">{% for p in _solo %}<input type="hidden" name="items" value="{{ p.menu }}:{{ p.ref_id }}">{% endfor %}
+      <button class="btn btn-sm btn-outline-primary text-nowrap"><i class="bi bi-check2-all"></i> 모두 대장에 올리기</button></form>{% endif %}
+  </div>
+  <ul class="list-group list-group-flush small">
+    {% for p in pending %}<li class="list-group-item py-1 d-flex align-items-center gap-2">
+      <a class="fw-semibold text-decoration-none text-nowrap" href="{{ p.url }}">{{ p.title }}</a>
+      <span class="badge text-bg-warning">새 파일 {{ p.n }}개</span>
+      <span class="text-muted text-truncate">{{ p.names|join(', ') }}{% if p.n > p.names|length %} 외 {{ p.n - p.names|length }}개{% endif %}</span>
+      {% if p.shared %}<span class="ms-auto text-muted text-nowrap">아래 목록에서 <span class="badge text-bg-warning">새 파일</span> 표시가 있는 건 중 해당하는 건을 눌러 올리세요</span>
+      {% else %}<a class="btn btn-sm btn-primary ms-auto text-nowrap" href="{{ p.url }}"><i class="bi bi-box-arrow-in-right"></i> 확인하고 올리기</a>{% endif %}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}

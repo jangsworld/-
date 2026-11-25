@@ -115,7 +115,7 @@ def test_contract_draft_flow(client, root):
     assert ci.get_draft(did)["status"] == "등록완료" and ci.get_draft(did)["contract_id"] == c["id"]
 
     page = client.get("/ga/contracts").text                                      # 계약 줄에서 서류 열기
-    assert f"/ga/contracts/{c['id']}/file?name=" in page
+    assert f'href="/ga/contracts/{c["id"]}"' in page and "/file?name=" not in page     # 서류는 문서 보관함 한 곳에서만 (예전 계약서 폴더 목록은 뺌)
     assert client.get(f"/ga/contracts/{c['id']}/file", params={"name": "임대차계약서.hwpx"}).status_code == 200
     again = client.post("/ga/contract-drafts/confirm", data={"draft_id": did, "title": "x", "counterparty": "y"}, follow_redirects=False)
     assert "이미 처리" in unquote(again.headers["location"])                    # 두 번 등록되지 않음

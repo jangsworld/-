@@ -8,7 +8,7 @@
   <ul class="nav nav-pills">{% for y in years %}<li class="nav-item"><a class="nav-link py-1 {% if y == year %}active{% endif %}" href="?year={{ y }}">{{ y }}년</a></li>{% endfor %}</ul>
   <div class="ms-auto d-flex gap-2">
     <a class="btn btn-sm btn-outline-secondary" href="/ga/vehicles/labels?ids={{ v.id }}"><i class="bi bi-qr-code"></i> QR 라벨</a>
-    {% if can_write %}<a class="btn btn-sm btn-outline-secondary" href="/files/ga.vehicles/{{ v.id }}"><i class="bi bi-paperclip"></i> 차량 서류{% set _n = att_counts('ga.vehicles').get(v.id) %}{% if _n %} <span class="badge text-bg-secondary">{{ _n }}</span>{% endif %}</a>{% endif %}
+    {% if fp %}<a class="btn btn-sm btn-outline-secondary" href="#files"><i class="bi bi-paperclip"></i> 차량 서류 <span class="badge text-bg-secondary">{{ fp.rows|length }}</span>{% if fp.waiting %} <span class="badge text-bg-warning">새 파일 {{ fp.waiting|length }}</span>{% endif %}</a>{% endif %}
     <a class="btn btn-sm btn-outline-secondary" href="/ga/vehicles/{{ v.id }}/logbook.csv?year={{ year }}"><i class="bi bi-download"></i> {{ year }}년 운행기록부</a>
     {% if can_write %}<button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#inspModal" data-fill="{}"><i class="bi bi-camera"></i> 사진 점검</button>
     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#vehicleModal" data-fill='{{ v|tojson }}'><i class="bi bi-pencil"></i> 차량정보</button>
@@ -77,6 +77,10 @@
       <span class="ms-auto text-nowrap">{{ f.amount|won }}원 · {{ f.status }}</span>{% if can_write %}<a class="btn btn-sm btn-link p-0" href="/files/ga.fines/{{ f.id }}" title="고지서·영수증"><i class="bi bi-paperclip"></i></a><button class="btn btn-sm btn-link p-0" data-bs-toggle="modal" data-bs-target="#fineModal" data-fill='{{ f|tojson }}'><i class="bi bi-pencil"></i></button>{% endif %}</li>
     {% else %}<li class="list-group-item text-muted">기록 없음</li>{% endfor %}</ul></div></div>
 </div>
+{% if fp %}
+<h6 class="mt-4 mb-2"><i class="bi bi-paperclip"></i> 차량 서류 <span class="help">자동차등록증·보험증권·리스 계약서 등 (과태료·사고 서류는 각 건의 클립 버튼에서)</span></h6>
+{% include "_files_panel.html" %}
+{% endif %}
 {% if can_write %}
 {% set next = back %}{% include "ga/_fleet_modals.html" %}
 {% include "ga/_vehicle_modal.html" %}

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "ga/_macros.html" import dday, cobadge %}
+{% set name = c.title if kind == 'contract' else r.name %}
+{% block title %}{{ name }}{% endblock %}
+{% block page_title %}<a href="/ga/contracts{{ '?kind=item' if kind == 'item' }}" class="text-decoration-none text-muted"><i class="bi bi-chevron-left"></i></a> {{ name }} <span class="text-muted small">{{ '계약·임대차' if kind == 'contract' else '면허·보험·인증 등' }}</span>{% endblock %}
+{% macro line(label, value) %}<tr><th class="text-muted fw-normal small">{{ label }}</th><td>{{ value }}</td></tr>{% endmacro %}
+{% block content %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  {% if kind == 'contract' %}
+  <span class="badge text-bg-light border">{{ c.category }}</span>{{ cobadge(c.company) }}
+  <span class="badge {{ {'유효':'text-bg-success','만료임박':'text-bg-warning','통보임박':'text-bg-danger','통보경과':'text-bg-warning','만료':'text-bg-danger','자동갱신':'text-bg-info','갱신확정':'text-bg-info'}.get(c.phase, 'text-bg-secondary') }}">{{ c.phase }}</span>
+  {% if c.status == '유효' %}{{ dday(c.dday, 60) }}{% endif %}
+  {% else %}
+  <span class="badge text-bg-light border">{{ r.category }}</span>{{ cobadge(r.company) }}
+  <span class="badge {{ 'text-bg-success' if r.status == '유효' else ('text-bg-info' if r.status == '갱신중' else 'text-bg-secondary') }}">{{ r.status }}</span>
+  {% if r.status in ('유효', '갱신중') %}{{ dday(r.dday, r.alert_days or 60) }}{% endif %}
+  {% endif %}
+  <div class="ms-auto d-flex gap-2">
+    {% if fp %}<a class="btn btn-sm btn-outline-secondary" href="#files"><i class="bi bi-paperclip"></i> 서류 <span class="badge text-bg-secondary">{{ fp.rows|length }}</span>{% if fp.waiting %} <span class="badge text-bg-warning">새 파일 {{ fp.waiting|length }}</span>{% endif %}</a>{% endif %}
+    {% if can_write %}{% if kind == 'contract' %}
+    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#contractModal" data-fill='{{ c|tojson }}'><i class="bi bi-pencil"></i> 내용 고치기</button>
+    {% else %}
+    {% if r.expire_date %}<button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#renewModal" data-renew="{{ r.id }}" data-name="{{ r.name }}" data-old="{{ r.expire_date }}" data-next="{{ next_expire }}"><i class="bi bi-arrow-repeat"></i> 갱신</button>{% endif %}
+    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#itemModal" data-fill='{{ r|tojson }}'><i class="bi bi-pencil"></i> 내용 고치기</button>
+    {% endif %}{% endif %}
+  </div>
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-lg-7"><div class="card h-100"><div class="card-header">지금 상태</div>
+    <div class="card-body py-2"><table class="table table-sm table-borderless mb-0 align-middle kv-table">
+    {% if kind == 'contract' %}
+      {{ line('계약명', c.title) }}{{ line('상대방', c.counterparty or '-') }}{{ line('계약번호', c.contract_no or '-') }}
+      {{ line('계약 기간', (c.start_date or '?') ~ ' ~ ' ~ (c.end_date or '?')) }}
+      <tr><th class="text-muted fw-normal small">만기까지</th><td>{% if c.dday is not none %}{{ dday(c.dday, 60) }}{% else %}-{% endif %}</td></tr>
+      <tr><th class="text-muted fw-normal small">통보기한</th><td>{{ c.notice_date or '-' }} {% if c.status == '유효' %}{{ dday(c.notice_dday) }}{% endif %} <span class="small text-muted">(만료 {{ c.notice_days or 0 }}일 전)</span></td></tr>
+      {{ line('갱신', '자동갱신' if c.auto_renew else '수동 (만료 전에 다시 계약)') }}
+      <tr><th class="text-muted fw-normal small">금액</th><td>{{ c.amount|won }}원 <span class="small text-muted">/ {{ c.pay_cycle }}{% if c.amount_vat %} · {{ c.amount_vat }}{% endif %} · 월 환산 {{ c.monthly|won }}원</span></td></tr>
+      {{ line('보증금', (c.deposit|won ~ '원') if c.deposit else '-') }}
+      {{ line('담당자', c.manager_name or '-') }}{{ line('만기 알림 메일', c.alert_email or '보내지 않음 (대시보드에만 표시)') }}
+      {% if c.memo %}<tr><th class="text-muted fw-normal small">비고</th><td class="small" style="white-space:pre-line">{{ c.memo }}</td></tr>{% endif %}
+    {% else %}
+      {{ line('이름', r.name) }}{{ line('번호', r.number or '-') }}{{ line('발급·관리 기관', r.agency or '-') }}
+      {{ line('기간', (r.start_date or '?') ~ ' ~ ' ~ (r.expire_date or '기한 없음')) }}
+      <tr><th class="text-muted fw-normal small">만기까지</th><td>{% if r.dday is not none %}{{ dday(r.dday, r.alert_days or 60) }}{% else %}-{% endif %}</td></tr>
+      {{ line('갱신 주기', r.cycle if r.cycle and r.cycle != '없음' else '없음') }}
+      {{ line('미리 알림', '만기 ' ~ (r.alert_days or 60) ~ '일 전부터') }}
+      {{ line('담당', r.owner or '-') }}{{ line('만기 알림 메일', r.alert_email or '보내지 않음 (대시보드에만 표시)') }}
+      {% if r.emp_insurance %}<tr><th class="text-muted fw-normal small">임직원 상해공제</th><td><a href="/hr/insurances">재직 직원 인사기록카드에 반영됨</a></td></tr>{% endif %}
+      {% if r.note %}<tr><th class="text-muted fw-normal small">메모</th><td class="small" style="white-space:pre-line">{{ r.note }}</td></tr>{% endif %}
+    {% endif %}
+    {% if fp %}<tr><th class="text-muted fw-normal small">서류 폴더</th><td class="small"><i class="bi bi-folder2-open"></i> ##BMS시스템 \ {{ fp.folder }}</td></tr>{% endif %}
+    </table></div></div></div>
+  <div class="col-lg-5"><div class="card h-100"><div class="card-header">이력 <span class="help">등록·고침·갱신·알림 메일·서류</span></div>
+    {% if kind == 'item' and renewals %}<div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>갱신 처리일</th><th>이전 만기</th><th>새 만기</th><th>처리자</th></tr></thead><tbody>
+      {% for h in renewals %}<tr><td>{{ h.done_date }}</td><td>{{ h.old_expire or '-' }}</td><td class="fw-semibold">{{ h.new_expire }}</td><td class="small">{{ h.done_by or '' }}{% if h.note %}<div class="text-muted">{{ h.note }}</div>{% endif %}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+    <div class="table-responsive" style="max-height:330px"><table class="table table-sm mb-0 small">
+      <thead class="sticky-top"><tr><th>언제</th><th>무엇을</th><th>누가</th></tr></thead><tbody>
+      {% for h in hist %}<tr><td class="text-nowrap text-muted">{{ h.created_at[:16] }}</td><td>{{ h.what }}{% if h.detail %}<div class="text-muted">{{ h.detail }}</div>{% endif %}</td><td class="text-nowrap">{{ h.username or '자동' }}</td></tr>
+      {% else %}<tr><td colspan="3" class="text-center text-muted p-3">남은 이력이 없습니다</td></tr>{% endfor %}</tbody></table></div>
+  </div></div>
+</div>
+{% if fp %}
+<h6 class="mb-2"><i class="bi bi-paperclip"></i> 서류</h6>
+{% include "_files_panel.html" %}
+{% endif %}
+{% if can_write %}{% include "ga/_contract_modals.html" %}{% endif %}
+{% endblock %}

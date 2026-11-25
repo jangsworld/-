@@ -6,7 +6,7 @@
 <div class="row g-3">
   <div class="col-lg-5"><div class="card h-100">
     <div class="card-header d-flex align-items-center">{{ a.name }} <span class="badge text-bg-light border ms-2">{{ a.category }}</span>
-      {% if can_write %}<span class="ms-auto d-flex gap-1"><a class="btn btn-sm btn-outline-secondary" href="/files/ga.assets/{{ a.id }}"><i class="bi bi-paperclip"></i> 서류{% set _n = att_counts('ga.assets').get(a.id) %}{% if _n %} <span class="badge text-bg-secondary">{{ _n }}</span>{% endif %}</a>
+      {% if can_write %}<span class="ms-auto d-flex gap-1">{% if fp %}<a class="btn btn-sm btn-outline-secondary" href="#files"><i class="bi bi-paperclip"></i> 서류 <span class="badge text-bg-secondary">{{ fp.rows|length }}</span>{% if fp.waiting %} <span class="badge text-bg-warning">새 파일 {{ fp.waiting|length }}</span>{% endif %}</a>{% endif %}
         <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#assetModal" data-fill='{{ a|tojson }}'><i class="bi bi-pencil"></i> 수정</button></span>{% endif %}</div>
     <div class="card-body">
       <div class="d-flex gap-3 align-items-start">
@@ -75,6 +75,10 @@
   {{ field('note', '내용', col='col-md-4') }}
   <div class="col-12 help">저장하면 자산 상태와 사용자를 이력 기준으로 다시 계산합니다.</div>
 {% endcall %}
+{% endif %}
+{% if fp %}
+<h6 class="mt-4 mb-2"><i class="bi bi-paperclip"></i> 서류 <span class="help">구매 영수증·보증서·설명서</span></h6>
+{% include "_files_panel.html" %}
 {% endif %}
 {% endblock %}
 {% block scripts %}

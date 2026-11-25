@@ -525,6 +525,13 @@ def company_page(request: Request, category: str = "", status: str = ""):
     return RedirectResponse("/ga/contracts?" + urlencode(q), status_code=303)
 
 
+def _ga_next(f) -> str:
+    """저장 뒤 돌아갈 곳: 계약·만기 목록, 또는 그 항목의 상세 화면(/ga/contracts/…)만."""
+    import re
+    v = str(f.get("next") or "")
+    return v if re.fullmatch(r"/ga/contracts(/item)?/\d+", v) else "/ga/contracts"
+
+
 async def _reflect_msg(iid: int) -> str:
     """'임직원 상해공제' 항목이면 재직 직원 인사기록카드에 반영하고 결과 문구를 돌려줍니다."""
     from fastapi.concurrency import run_in_threadpool
@@ -543,11 +550,11 @@ async def company_save(request: Request):
     try:
         iid = company.save(data, _who(request))
     except company.CompanyError as ex:
-        return _go("/ga/contracts", str(ex))
+        return _go(_ga_next(f), str(ex))
     from app import archive
     await run_in_threadpool(archive.ensure_quiet, "ga.company", iid)
     extra = await archive.save_uploads("ga.company", iid, [u for u in f.getlist("files") if getattr(u, "filename", "")][:20])
-    return _go("/ga/contracts", "저장했습니다" + extra + await _reflect_msg(iid))
+    return _go(_ga_next(f), "저장했습니다" + extra + await _reflect_msg(iid))
 
 
 @company_router.post("/{iid}/delete")
@@ -563,5 +570,5 @@ async def company_renew(request: Request, iid: int):
         company.renew(iid, str(f.get("new_expire") or ""), str(f.get("done_date") or ""), str(f.get("note") or "").strip(),
                       _who(request))
     except company.CompanyError as ex:
-        return _go("/ga/contracts", str(ex))
-    return _go("/ga/contracts", "갱신했습니다" + await _reflect_msg(iid))
+        return _go(_ga_next(f), str(ex))
+    return _go(_ga_next(f), "갱신했습니다" + await _reflect_msg(iid))

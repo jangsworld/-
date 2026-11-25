@@ -20,7 +20,7 @@
     </div>{% endif %}
     {% if perms.write %}<div class="d-flex gap-2 {{ '' if perms.salary else 'ms-auto' }}">
       <a class="btn btn-sm btn-outline-primary" href="/hr/contracts/new?employee_id={{ e.id }}"><i class="bi bi-file-earmark-plus"></i> 계약서 작성</a>
-      <a class="btn btn-sm btn-outline-secondary" href="/files/hr.employees/{{ e.id }}"><i class="bi bi-paperclip"></i> 서류{% set _n = att_counts('hr.employees').get(e.id) %}{% if _n %} <span class="badge text-bg-secondary">{{ _n }}</span>{% endif %}</a>
+      <a class="btn btn-sm btn-outline-secondary" href="/hr/employees/{{ e.id }}?tab=files#files"><i class="bi bi-paperclip"></i> 서류{% set _n = att_counts('hr.employees').get(e.id) %}{% if _n %} <span class="badge text-bg-secondary">{{ _n }}</span>{% endif %}</a>
       <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#certModal"><i class="bi bi-patch-check"></i> 증명서</button>
       {% if perms.salary %}<a class="btn btn-sm btn-outline-secondary" href="/hr/employees/{{ e.id }}/print" target="_blank" title="기본정보·발령·상벌·교육을 한 장으로 인쇄합니다"><i class="bi bi-printer"></i> 카드 인쇄</a>
       {% if recent_hire %}<a class="btn btn-sm btn-outline-secondary" href="/hr/onboard/{{ e.id }}" title="입사 안내문을 보내고, 단계별 진행표로 챙깁니다"><i class="bi bi-box-arrow-in-right"></i> 입사 안내</a>{% endif %}{% endif %}
@@ -31,7 +31,7 @@
   <div class="card-footer bg-white p-0">
     <ul class="nav nav-tabs border-0 px-2">
       {% for key, label, cnt in [('info','기본정보',None), ('history','인사발령',appointments|length), ('contract','근로계약·증명서',contracts|length + certs|length),
-        ('salary','연봉',salaries|length), ('reward','상벌',rewards|length), ('special','근로특이사항',specials|length), ('training','교육이수',None), ('insurance','상해공제',insurances|length), ('payroll','급여·연말정산',None), ('files','입사서류',None), ('check','체크리스트',None)] if perms.salary or key in ('info', 'history') %}
+        ('salary','연봉',salaries|length), ('reward','상벌',rewards|length), ('special','근로특이사항',specials|length), ('training','교육이수',None), ('insurance','상해공제',insurances|length), ('payroll','급여·연말정산',None), ('files','서류',None), ('check','체크리스트',None)] if perms.salary or key in ('info', 'history') %}
       <li class="nav-item"><a class="nav-link {% if tab == key %}active{% endif %}" href="?tab={{ key }}">{{ label }}{% if cnt %} <span class="badge text-bg-light border">{{ cnt }}</span>{% endif %}</a></li>
       {% endfor %}
     </ul>
@@ -249,14 +249,11 @@
 
 {% elif tab == 'files' %}
 <div class="row g-3">
-  <div class="col-lg-4"><div class="card h-100"><div class="card-header">필수서류 제출 현황</div>
+  <div class="col-lg-4"><div class="card h-100"><div class="card-header">필수서류 제출 현황 <span class="help">파일 이름에 서류 이름이 들어 있으면 제출로 봅니다</span></div>
     <ul class="list-group list-group-flush small">{% for d in doc_status %}
       <li class="list-group-item d-flex gap-2 align-items-center">{% if d.file %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-exclamation-circle text-danger"></i>{% endif %}
         <span>{{ d.label }}</span><span class="ms-auto text-muted text-truncate" style="max-width:55%">{{ d.file or '미제출' }}</span></li>{% endfor %}</ul></div></div>
-  <div class="col-lg-8"><div class="card h-100"><div class="card-header">서류 폴더 <span class="help">{{ e.folder_name or e.name }}</span></div>
-    <table class="table table-sm table-hover mb-0"><thead><tr><th>파일</th><th>날짜</th><th class="num">크기</th></tr></thead><tbody>
-    {% for f in files %}<tr><td><a href="/hr/employees/{{ e.id }}/file?name={{ f.name|urlencode }}" target="_blank">{{ f.name }}</a>{% if f.system %} <span class="badge text-bg-light border">시스템 저장</span>{% endif %}</td><td class="small">{{ f.date }}</td><td class="num small">{{ (f.size / 1024)|round|int|won }}KB</td></tr>
-    {% else %}<tr><td colspan="3" class="text-muted text-center p-3">{{ '폴더가 없거나 비어 있습니다' if employee_root else '서류 폴더(employee_root)가 설정되지 않았습니다' }}</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="col-lg-8">{% if fp %}{% include "_files_panel.html" %}{% else %}<div class="card h-100"><div class="card-body text-muted small">서류 보관함을 열 수 없습니다.</div></div>{% endif %}</div>
 </div>
 
 {% elif tab == 'check' %}

@@ -12,6 +12,7 @@
 - 올릴 수 있는 종류는 정해 둔 것뿐이고(PDF·사진·한글·오피스), 내용의 첫머리가 그 종류와 맞는지도 확인합니다.
 - 차량 점검 사진은 서버 안에 작게 보관한 것과 별도로, 관리부가 확정한 점검을 JPG 로 같은 구조의 폴더에 내보냅니다.
 """
+import time
 import hashlib
 import io
 import logging
@@ -100,7 +101,7 @@ def _asset(ref_id):
 def _contract(ref_id):
     r = query_one("SELECT id, title, counterparty, company FROM ga_contracts WHERE id=?", (ref_id,))
     return r and {"company": r["company"], "target": f"{r['title']}", "title": f"{r['title']} ({r['counterparty'] or ''})",
-                  "back": "/ga/contracts"}
+                  "back": f"/ga/contracts/{r['id']}"}
 
 
 def _doc(ref_id):
@@ -111,7 +112,7 @@ def _doc(ref_id):
 
 def _item(ref_id):
     r = query_one("SELECT id, name, category, company FROM ga_company_items WHERE id=?", (ref_id,))
-    return r and {"company": r["company"], "target": f"{r['category']}_{r['name']}", "title": r["name"], "back": "/ga/contracts?kind=item"}
+    return r and {"company": r["company"], "target": f"{r['category']}_{r['name']}", "title": r["name"], "back": f"/ga/contracts/item/{r['id']}"}
 
 
 def _reward(ref_id):
@@ -357,7 +358,101 @@ def adopt(menu: str, ref_id: int, names: list[str], note: str = "") -> tuple[int
         ok += 1
     if ok:
         audit("files", "폴더 파일을 대장에 올림", f"{MENUS[menu][1]} {t['title']}"[:120], f"{ok}개")
+        pending_clear(menu)
     return ok, errs
+
+
+# ── 폴더에 새로 들어온 파일 알림 ─────────────────────────────────────────
+# 관리 중인 대상의 폴더를 훑어 '대장에 없는 파일'이 있는 대상만 모음. NAS 를 매번 훑지 않도록 잠깐 기억해 두고,
+# 기억이 오래되면 화면을 기다리게 하지 않고 뒤에서 다시 훑음.
+#   메뉴: (대상 고르기, 상세 화면 주소, 여러 건이 한 폴더를 같이 쓰는지, 목록 화면 주소)
+PENDING = {
+    "hr.employees": ("SELECT id FROM employees WHERE resign_date IS NULL OR resign_date='' OR resign_date>=date('now','localtime') ORDER BY id DESC",
+                     "/hr/employees/%d?tab=files", False, "/hr/employees"),
+    "hr.rewards": ("SELECT id FROM rewards ORDER BY id DESC LIMIT 400", "/files/hr.rewards/%d", True, "/hr/rewards"),
+    "mgmt.training": ("SELECT id FROM training_courses ORDER BY id DESC LIMIT 200", "/files/mgmt.training/%d", False, "/mgmt/training?tab=courses"),
+    "ga.vehicles": ("SELECT id FROM ga_vehicles WHERE status<>'매각' ORDER BY id DESC", "/ga/vehicles/%d", False, "/ga/vehicles"),
+    "ga.fines": ("SELECT id FROM ga_vehicle_fines ORDER BY id DESC LIMIT 400", "/files/ga.fines/%d", True, "/ga/vehicles?tab=fines"),
+    "ga.damages": ("SELECT id FROM ga_vehicle_damages ORDER BY id DESC LIMIT 400", "/files/ga.damages/%d", True, "/ga/vehicles?tab=damages"),
+    "ga.assets": ("SELECT id FROM ga_assets WHERE status<>'폐기' ORDER BY id DESC LIMIT 1500", "/ga/assets/%d", False, "/ga/assets"),
+    "ga.contracts": ("SELECT id FROM ga_contracts WHERE status='유효' ORDER BY id DESC", "/ga/contracts/%d", False, "/ga/contracts"),
+    "ga.docs": ("SELECT id FROM ga_docs ORDER BY id DESC LIMIT 400", "/files/ga.docs/%d", False, "/ga/docs"),
+    "ga.company": ("SELECT id FROM ga_company_items WHERE status IN ('유효','갱신중') ORDER BY id DESC", "/ga/contracts/item/%d", False, "/ga/contracts"),
+}
+PENDING_TTL = 30             # 초 (NAS 폴더를 화면 열 때마다 훑지 않도록 잠깐만 기억)
+_pending_cache: dict[str, tuple[float, list[dict]]] = {}
+_pending_busy: set[str] = set()
+_pending_lock = threading.Lock()
+
+
+def pending_clear(menu: str | None = None):
+    if menu:
+        _pending_cache.pop(menu, None)
+    else:
+        _pending_cache.clear()
+
+
+def _pending_scan(menu: str) -> list[dict]:
+    sql, url, shared, list_url = PENDING[menu]
+    rows, seen = [], {}
+    for r in query(sql):
+        try:
+            t = target(menu, r["id"])
+            if not t:
+                continue
+            rel = folder(menu, t).replace("\\", "/")
+            if rel in seen:                                  # 한 폴더를 같이 쓰는 건(같은 차량의 과태료 등): 폴더는 한 번만 훑음
+                if seen[rel] is not None:
+                    seen[rel]["ids"].append(r["id"])
+                continue
+            files = unregistered(menu, r["id"])
+        except Exception:                                   # noqa: BLE001  (NAS 가 잠깐 안 보여도 화면은 떠야 함)
+            log.exception("새 파일 확인 실패: %s %s", menu, r["id"])
+            continue
+        seen[rel] = None
+        if files:
+            parts = rel.split("/")
+            link = url % r["id"]
+            seen[rel] = {"menu": menu, "ref_id": r["id"], "ids": [r["id"]], "company": company.norm(t.get("company")), "n": len(files),
+                         "title": (" › ".join(parts[-2:]) if shared else t["title"]), "names": [f["name"] for f in files[:3]],
+                         "shared": shared, "url": list_url if shared else link + ("" if link.startswith("/files/") else "#files")}
+            rows.append(seen[rel])
+    return rows
+
+
+def _pending_refresh(menu: str):
+    try:
+        _pending_cache[menu] = (time.monotonic(), _pending_scan(menu))
+    except Exception:                                       # noqa: BLE001
+        log.exception("새 파일 확인 실패: %s", menu)
+    finally:
+        with _pending_lock:
+            _pending_busy.discard(menu)
+
+
+def pending(menus, fresh: bool = False) -> list[dict]:
+    """폴더에 넣어 두었지만 대장에 없는 파일이 있는 대상 목록.
+    [{menu, ref_id, ids, title, n, names, url, company, shared}] — shared 는 여러 건이 한 폴더를 같이 써서 어느 건의 파일인지 사람이 골라야 하는 것."""
+    out = []
+    for menu in menus:
+        if menu not in PENDING:
+            continue
+        hit = _pending_cache.get(menu)
+        if fresh or not hit:
+            hit = _pending_cache[menu] = (time.monotonic(), _pending_scan(menu))
+        elif time.monotonic() - hit[0] > PENDING_TTL:        # 오래된 기억: 지금은 그대로 보여 주고 뒤에서 다시 훑음
+            with _pending_lock:
+                start = menu not in _pending_busy
+                _pending_busy.add(menu)
+            if start:
+                threading.Thread(target=_pending_refresh, args=(menu,), name="bms-pending", daemon=True).start()
+        out += hit[1]
+    return company.keep_co(out)
+
+
+def pending_map(rows) -> dict:
+    """{(menu, 대상 번호): 새 파일 수} — 목록 줄에 '새 파일' 배지를 붙일 때."""
+    return {(p["menu"], i): p["n"] for p in rows for i in p["ids"]}
 
 
 def save(menu: str, ref_id: int, orig_name: str, raw: bytes, note: str = "") -> int:

@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}상벌현황{% endblock %}
 {% block page_title %}<i class="bi bi-award me-2"></i>상벌현황{% endblock %}
+{% from "ga/_macros.html" import att %}
 {% block content %}
+{% set _ac_rw = att_counts('hr.rewards') %}{% set pending = pending_for(request, ['hr.rewards']) %}{% set pending_next = '/hr/rewards' %}{% set pend_map = pending_map(pending) %}
+{% include "_pending_card.html" %}
 {% set n_reward = rows|selectattr('kind', 'equalto', '포상')|list|length %}
 {% set n_disc = rows|selectattr('kind', 'equalto', '징계')|list|length %}
 <div class="row g-3 mb-3">
@@ -40,7 +43,7 @@
         <td class="small">{% if r.period_start %}{{ r.period_start }} ~ {{ r.period_end or '' }}{% endif %}</td>
         <td class="small">{% if r.expunge_date %}{{ r.expunge_date }}{% if r.expunge_date < today().isoformat() %} <span class="badge text-bg-light border">말소</span>{% endif %}{% endif %}</td>
         <td class="small">{{ r.issuer or '' }}</td>
-        <td class="text-nowrap"><button type="button" class="btn btn-sm btn-link p-0 me-2" title="수정" aria-label="수정" data-reward-edit='{{ {"id": r.id, "employee_id": r.employee_id, "kind": r.kind, "category": r.category, "action_date": r.action_date, "reason": r.reason, "amount": r.amount, "period_start": r.period_start, "period_end": r.period_end, "expunge_date": r.expunge_date, "issuer": r.issuer, "note": r.note}|tojson }}'><i class="bi bi-pencil"></i></button><form class="d-inline" method="post" action="/hr/rewards/{{ r.id }}/delete" data-confirm="{{ r.name }}님의 {{ r.kind }}({{ r.category }}) 기록을 삭제할까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
+        <td class="text-nowrap">{{ att('hr.rewards', r.id, _ac_rw, pm=pend_map) }}<button type="button" class="btn btn-sm btn-link p-0 me-2" title="수정" aria-label="수정" data-reward-edit='{{ {"id": r.id, "employee_id": r.employee_id, "kind": r.kind, "category": r.category, "action_date": r.action_date, "reason": r.reason, "amount": r.amount, "period_start": r.period_start, "period_end": r.period_end, "expunge_date": r.expunge_date, "issuer": r.issuer, "note": r.note}|tojson }}'><i class="bi bi-pencil"></i></button><form class="d-inline" method="post" action="/hr/rewards/{{ r.id }}/delete" data-confirm="{{ r.name }}님의 {{ r.kind }}({{ r.category }}) 기록을 삭제할까요?"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button></form></td></tr>
     {% else %}<tr><td colspan="12" class="text-center text-muted p-4">상벌 내역이 없습니다</td></tr>{% endfor %}</tbody>
   </table></div>
 </div>

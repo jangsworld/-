@@ -404,3 +404,146 @@ def test_subfolders_are_recognized(client, two):
         execute("DELETE FROM attachments WHERE (menu='ga.contracts' AND ref_id=?) OR (menu='ga.vehicles' AND ref_id=?)", (cid, vid))
         execute("DELETE FROM ga_contracts WHERE id=?", (cid,))
         execute("DELETE FROM ga_vehicles WHERE id=?", (vid,))
+
+
+def test_new_file_notice_and_detail_pages(client, two):
+    """폴더에 새로 넣은 파일 알림(목록 위 카드·이름 옆 배지), 계약·면허 상세 화면(지금 상태·이력·서류), 차량 상세의 서류 묶음."""
+    from app.modules.ga import company as items_mod
+    from app.modules.ga import repo as ga
+    cid = ga.save("ga_contracts", None, {"category": "임대차", "title": "알림시험 계약", "counterparty": "임대인A", "status": "유효",
+                                          "company": "1", "end_date": "2031-12-31", "amount": 1100000, "pay_cycle": "월"})
+    iid = items_mod.save({"category": items_mod.categories()[0], "name": "알림시험 인증", "expire_date": "2031-06-30", "status": "유효", "company": "1"}, "시험")
+    vid = ga.save("ga_vehicles", None, {"plate_no": "77사7777", "model": "알림차", "status": "운행", "company": "1"})
+    try:
+        archive.pending_clear()
+        assert "pendingCard" not in client.get("/ga/contracts?co=all").text
+        cbase = os.path.join(archive.root(), archive.ensure_folder("ga.contracts", cid))
+        ibase = os.path.join(archive.root(), archive.ensure_folder("ga.company", iid))
+        vbase = os.path.join(archive.root(), archive.ensure_folder("ga.vehicles", vid))
+        os.makedirs(os.path.join(cbase, "변경계약"))
+        for path in (os.path.join(cbase, "원본.pdf"), os.path.join(cbase, "변경계약", "1차.pdf"), os.path.join(ibase, "인증서.pdf"),
+                     os.path.join(vbase, "등록증.pdf")):
+            with open(path, "wb") as f:
+                f.write(PDF)
+        archive.pending_clear()
+        pend = {(p["menu"], p["ref_id"]): p for p in archive.pending(["ga.contracts", "ga.company", "ga.vehicles"])}
+        assert pend[("ga.contracts", cid)]["n"] == 2 and pend[("ga.company", iid)]["n"] == 1 and pend[("ga.vehicles", vid)]["n"] == 1
+        assert pend[("ga.contracts", cid)]["url"] == f"/ga/contracts/{cid}#files"
+        # 목록: 알림 카드 + 이름 옆 배지 + 이름을 누르면 상세로
+        page = client.get("/ga/contracts?co=all").text
+        assert "pendingCard" in page and "폴더에 새로 넣은 파일이 있습니다" in page and "확인하고 올리기" in page
+        assert f'href="/ga/contracts/{cid}">알림시험 계약</a>' in page and f'href="/ga/contracts/item/{iid}">알림시험 인증</a>' in page
+        assert "새 파일 2" in page and f'value="ga.contracts:{cid}"' in page
+        vpage = client.get("/ga/vehicles?co=all").text
+        assert "pendingCard" in vpage and f'value="ga.vehicles:{vid}"' in vpage
+        # 상세: 지금 상태 · 이력 · 서류(대장에 없는 파일 포함)
+        d = client.get(f"/ga/contracts/{cid}")
+        assert d.status_code == 200
+        for word in ("지금 상태", "이력", "임대인A", "2031-12-31", "폴더에 있는데 대장에 없는 파일", "원본.pdf", "변경계약", "내용 고치기", "contractModal",
+                     f'name="next" value="/ga/contracts/{cid}"'):
+            assert word in d.text, word
+        di = client.get(f"/ga/contracts/item/{iid}")
+        assert di.status_code == 200 and "지금 상태" in di.text and "인증서.pdf" in di.text and "itemModal" in di.text
+        dv = client.get(f"/ga/vehicles/{vid}").text
+        assert "차량 서류" in dv and "등록증.pdf" in dv and 'id="files"' in dv
+        assert client.get("/ga/contracts/999999").status_code == 404 and client.get("/ga/contracts/item/999999").status_code == 404
+        assert client.get("/ga/contracts/export.csv").status_code == 200                       # 옛 주소가 상세 주소에 가려지지 않음
+        # 상세 화면에서 대장에 올리면 그 화면으로 돌아옴
+        r = client.post(f"/files/ga.contracts/{cid}/adopt", data={"names": ["원본.pdf"], "next": f"/ga/contracts/{cid}"}, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].startswith(f"/ga/contracts/{cid}?msg=") and r.headers["location"].endswith("#files")
+        r = client.post(f"/files/ga.contracts/{cid}/adopt", data={"names": ["x"], "next": "https://evil.example/"}, follow_redirects=False)
+        assert r.headers["location"].startswith(f"/files/ga.contracts/{cid}")                  # 바깥 주소로는 돌아가지 않음
+        r = client.post(f"/files/ga.contracts/{cid}/adopt", data={"names": ["x"], "next": "//evil.example/ga/"}, follow_redirects=False)
+        assert r.headers["location"].startswith(f"/files/ga.contracts/{cid}")
+        assert archive.pending(["ga.contracts"]) and {(p["menu"], p["ref_id"]): p["n"] for p in archive.pending(["ga.contracts"])}[("ga.contracts", cid)] == 1
+        # 한꺼번에 올리기
+        r = client.post("/files/adopt-all", data={"items": [f"ga.contracts:{cid}", f"ga.company:{iid}", f"ga.vehicles:{vid}", "hr.employees:1", "x:y"],
+                                                  "next": "/ga/contracts"}, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].startswith("/ga/contracts?msg=")
+        assert len(archive.items("ga.contracts", cid)) == 2 and len(archive.items("ga.company", iid)) == 1 and len(archive.items("ga.vehicles", vid)) == 1
+        assert not [p for p in archive.pending(["ga.contracts", "ga.company", "ga.vehicles"]) if p["ref_id"] in (cid, iid, vid)]
+        assert os.path.exists(os.path.join(cbase, "변경계약", "1차.pdf"))                         # 파일은 그 자리 그대로
+        hist = client.get(f"/ga/contracts/{cid}").text
+        assert "폴더 파일을 대장에 올림" in hist and "폴더에 있는데 대장에 없는 파일" not in hist
+        # 조회 전용 계정: 상세는 보이지만 서류 묶음·고치기 버튼은 없음
+        with TestClient(app) as v:
+            _login(v, "co_view")
+            vt = v.get(f"/ga/contracts/{cid}")
+            assert vt.status_code == 200 and "지금 상태" in vt.text and "원본.pdf" not in vt.text and "내용 고치기" not in vt.text
+            assert v.post("/files/adopt-all", data={"items": [f"ga.contracts:{cid}"]}, follow_redirects=False).status_code in (303, 403)
+        # 저장 뒤 상세로 돌아옴
+        r = client.post("/ga/contracts/save", data={"id": cid, "category": "임대차", "title": "알림시험 계약", "counterparty": "임대인B", "status": "유효",
+                                                    "next": f"/ga/contracts/{cid}"}, follow_redirects=False)
+        assert r.headers["location"].startswith(f"/ga/contracts/{cid}?msg=")
+        r = client.post("/ga/company/save", data={"id": iid, "category": items_mod.categories()[0], "name": "알림시험 인증", "expire_date": "2031-06-30",
+                                                  "status": "유효", "next": f"/ga/contracts/item/{iid}"}, follow_redirects=False)
+        assert r.headers["location"].startswith(f"/ga/contracts/item/{iid}?msg=")
+        r = client.post("/ga/company/save", data={"id": iid, "category": items_mod.categories()[0], "name": "알림시험 인증", "status": "유효",
+                                                  "next": "//evil.example"}, follow_redirects=False)
+        assert r.headers["location"].startswith("/ga/contracts?msg=")
+    finally:
+        archive.pending_clear()
+        execute("DELETE FROM attachments WHERE (menu='ga.contracts' AND ref_id=?) OR (menu='ga.company' AND ref_id=?) OR (menu='ga.vehicles' AND ref_id=?)", (cid, iid, vid))
+        execute("DELETE FROM ga_contracts WHERE id=?", (cid,))
+        execute("DELETE FROM ga_company_items WHERE id=?", (iid,))
+        execute("DELETE FROM ga_vehicles WHERE id=?", (vid,))
+
+
+def test_new_file_notice_on_every_menu(client, two):
+    """인사기록카드·자산 상세의 서류 묶음, 상벌·과태료(한 폴더를 여러 건이 같이 씀)·자산·임직원 목록의 새 파일 알림."""
+    from app.modules.ga import repo as ga
+    eid = _emp(two, "서류사원", "1")
+    aid = ga.save("ga_assets", None, {"asset_no": "A-NEW-1", "name": "알림노트북", "category": "IT기기", "status": "사용중", "company": "1"})
+    vid = ga.save("ga_vehicles", None, {"plate_no": "88아8888", "model": "과태료차", "status": "운행", "company": "1"})
+    f1 = execute("INSERT INTO ga_vehicle_fines(vehicle_id, violation_at, kind, amount, status) VALUES (?,?,?,?,?)", (vid, "2026-10-01 10:00", "속도위반", 40000, "접수"))
+    f2 = execute("INSERT INTO ga_vehicle_fines(vehicle_id, violation_at, kind, amount, status) VALUES (?,?,?,?,?)", (vid, "2026-11-01 10:00", "주정차", 40000, "접수"))
+    try:
+        ebase = os.path.join(archive.root(), archive.ensure_folder("hr.employees", eid))
+        abase = os.path.join(archive.root(), archive.ensure_folder("ga.assets", aid))
+        fbase = os.path.join(archive.root(), archive.folder("ga.fines", archive.target("ga.fines", f1)))
+        os.makedirs(fbase, exist_ok=True)
+        for path in (os.path.join(ebase, "주민등록등본.pdf"), os.path.join(abase, "영수증.pdf"), os.path.join(fbase, "고지서.pdf")):
+            with open(path, "wb") as f:
+                f.write(PDF)
+        archive.pending_clear()
+        # 임직원: 목록 알림 → 인사기록카드 서류 탭(보관함 한 곳)
+        page = client.get("/hr/employees?co=all").text
+        assert "pendingCard" in page and f"/hr/employees/{eid}?tab=files#files" in page and f'value="hr.employees:{eid}"' in page
+        card = client.get(f"/hr/employees/{eid}?tab=files").text
+        assert "서류 올리기" in card and "주민등록등본.pdf" in card and "폴더에 있는데 대장에 없는 파일" in card and "employee_root" not in card
+        assert f'name="next" value="/hr/employees/{eid}?tab=files"' in card and "필수서류 제출 현황" in card
+        r = client.post(f"/files/hr.employees/{eid}/adopt", data={"names": ["주민등록등본.pdf"], "next": f"/hr/employees/{eid}?tab=files"}, follow_redirects=False)
+        assert r.headers["location"].startswith(f"/hr/employees/{eid}?tab=files&msg=") and r.headers["location"].endswith("#files")
+        assert len(archive.items("hr.employees", eid)) == 1 and "pendingCard" not in client.get("/hr/employees?co=all").text.split("서류사원")[0]
+        r = client.post(f"/files/hr.employees/{eid}/upload", data={"next": f"/hr/employees/{eid}?tab=files&x=1"}, files={"files": ("통장사본.pdf", PDF, "application/pdf")}, follow_redirects=False)
+        assert r.headers["location"].startswith(f"/files/hr.employees/{eid}")                      # 정해진 모양이 아닌 돌아갈 곳은 쓰지 않음
+        # 자산: 목록 알림 + 상세 화면 안 서류 묶음
+        assert "pendingCard" in client.get("/ga/assets?co=all").text
+        ad = client.get(f"/ga/assets/{aid}").text
+        assert 'id="files"' in ad and "영수증.pdf" in ad and f'name="next" value="/ga/assets/{aid}"' in ad
+        # 과태료: 두 건이 한 폴더를 같이 씀 → 알림은 폴더 하나, 두 건 모두에 표시, '모두 올리기'에는 넣지 않음
+        pend = [p for p in archive.pending(["ga.fines"]) if f1 in p["ids"]]
+        assert len(pend) == 1 and sorted(pend[0]["ids"]) == [f1, f2] and pend[0]["shared"] and pend[0]["url"] == "/ga/vehicles?tab=fines"
+        fp = client.get("/ga/vehicles?tab=fines&status=진행&co=all").text
+        assert "pendingCard" in fp and "해당하는 건을 눌러 올리세요" in fp and f'value="ga.fines:{f1}"' not in fp and fp.count("새 파일 1</span></a>") >= 2
+        r = client.post("/files/adopt-all", data={"items": [f"ga.fines:{f1}", f"ga.assets:{aid}"], "next": "/ga/assets"}, follow_redirects=False)
+        assert r.headers["location"].startswith("/ga/assets?msg=")
+        assert archive.items("ga.fines", f1) == [] and len(archive.items("ga.assets", aid)) == 1   # 과태료는 건을 골라야 하므로 한꺼번에 올리지 않음
+        client.post(f"/files/ga.fines/{f2}/adopt", data={"names": ["고지서.pdf"]})
+        assert len(archive.items("ga.fines", f2)) == 1 and not [p for p in archive.pending(["ga.fines"]) if f1 in p["ids"]]
+        # 상벌·교육·문서수발 화면도 알림 자리가 있어도 문제없이 열림
+        for url in ("/hr/rewards", "/mgmt/training?tab=courses", "/ga/docs", "/ga/vehicles?tab=damages"):
+            assert client.get(url).status_code == 200, url
+        # 조회 전용 계정: 알림이 보이지 않음
+        with open(os.path.join(abase, "보증서.pdf"), "wb") as f:
+            f.write(PDF)
+        archive.pending_clear()
+        with TestClient(app) as v:
+            _login(v, "co_view")
+            assert "pendingCard" not in v.get("/ga/assets?co=all").text and "보증서.pdf" not in v.get(f"/ga/assets/{aid}").text
+    finally:
+        archive.pending_clear()
+        execute("DELETE FROM attachments WHERE (menu='hr.employees' AND ref_id=?) OR (menu='ga.assets' AND ref_id=?) OR (menu='ga.fines' AND ref_id IN (?,?))", (eid, aid, f1, f2))
+        execute("DELETE FROM ga_vehicle_fines WHERE id IN (?,?)", (f1, f2))
+        execute("DELETE FROM ga_assets WHERE id=?", (aid,))
+        execute("DELETE FROM ga_vehicles WHERE id=?", (vid,))

@@ -15,6 +15,9 @@
   </div>
 </div>
 
+{% from "ga/_macros.html" import att %}
+{% set _ac_tr = att_counts('mgmt.training') %}{% set pending = pending_for(request, ['mgmt.training']) %}{% set pending_next = '/mgmt/training?tab=courses' %}{% set pend_map = pending_map(pending) %}
+{% include "_pending_card.html" %}
 {% if tab == 'matrix' %}
 <div class="row g-2 mb-3">
 {% for s in mx.summary if s.targets %}{% set c = s.course %}
@@ -55,7 +58,7 @@
   {% for c in courses_all %}<tr class="{{ 'text-muted' if not c.is_active }}"><td class="fw-semibold">{{ c.name }}</td><td>{{ c.category }}</td><td>{{ c.cycle }}</td><td class="num">{{ '%g'|format(c.hours or 0) }}</td>
     <td>{{ c.target }}{% if c.target == '지정 직원' %} <span class="badge text-bg-light border">{{ (targets.get(c.id) or [])|length }}명</span>{% endif %}</td>
     <td class="small">{{ c.basis or '' }}</td><td class="small">{{ c.note or '' }}</td><td>{{ '사용' if c.is_active else '끔' }}</td>
-    <td class="text-nowrap"><button class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#courseModal" data-fill='{{ c|tojson }}'>수정</button>
+    <td class="text-nowrap">{{ att('mgmt.training', c.id, _ac_tr, pm=pend_map) }}<button class="btn btn-sm btn-link p-0 me-2" data-bs-toggle="modal" data-bs-target="#courseModal" data-fill='{{ c|tojson }}'>수정</button>
       {% if c.target == '지정 직원' %}<button class="btn btn-sm btn-link p-0" data-bs-toggle="modal" data-bs-target="#tgModal" data-cid="{{ c.id }}" data-cname="{{ c.name }}">대상자</button>{% endif %}</td></tr>{% endfor %}
   </tbody></table></div></div>
 {% endif %}

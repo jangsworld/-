@@ -3,6 +3,8 @@
 {% block title %}자산·비품{% endblock %}
 {% block page_title %}<i class="bi bi-pc-display me-2"></i>자산·비품 관리{% endblock %}
 {% block content %}
+{% set pending = pending_for(request, ['ga.assets']) %}{% set pending_next = '/ga/assets' %}{% set pend_map = pending_map(pending) %}
+{% include "_pending_card.html" %}
 <div class="row g-3 mb-3">
   <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">보유 자산 (폐기 제외)</div><div class="kpi-value">{{ sum.count }}건</div><div class="kpi-sub">미지급(보관) {{ sum.unassigned }}건</div></div></div>
   <div class="col-6 col-md-3"><div class="card kpi h-100"><div class="kpi-label">취득가 합계</div><div class="kpi-value">{{ sum.cost|man_won }}원</div><div class="kpi-sub">{{ sum.cost|won }}원</div></div></div>
@@ -24,7 +26,7 @@
     <thead><tr><th>자산번호</th><th>분류</th><th data-nofilter></th><th>품명 / 모델</th><th>사용자</th><th>위치</th><th>취득일</th><th class="num">취득가</th><th class="num">장부가</th><th style="width:90px">상각</th><th>보증·라이선스</th><th>상태</th></tr></thead>
     <tbody>{% for a in rows %}
       <tr data-href="/ga/assets/{{ a.id }}">
-        <td class="fw-semibold">{{ a.asset_no }}</td><td class="small">{{ a.category }}</td>
+        <td class="fw-semibold">{{ a.asset_no }}{% if pend_map.get(('ga.assets', a.id)) %} <span class="badge text-bg-warning" title="NAS 폴더에 새로 넣은 파일이 있습니다"><i class="bi bi-folder-plus"></i> 새 파일 {{ pend_map.get(('ga.assets', a.id)) }}</span>{% endif %}</td><td class="small">{{ a.category }}</td>
         <td style="width:44px">{% if a.photo %}<img src="/ga/assets/{{ a.id }}/photo?thumb=1" alt="" class="rounded" style="width:36px;height:36px;object-fit:cover" loading="lazy">{% endif %}</td>
         <td>{{ a.name }}<div class="small text-muted">{{ a.model or '' }}</div></td>
         <td>{% if a.holder_name %}{{ a.holder_name }}{% if a.holder_resign %} <span class="badge text-bg-danger">퇴사</span>{% endif %}<div class="small text-muted">{{ a.holder_dept or '' }}</div>{% else %}<span class="text-muted small">-</span>{% endif %}</td>

@@ -452,9 +452,18 @@ def employee_detail(request: Request, emp_id: int, tab: str = "info"):
     if request.state.user["role"] not in ("admin", "hr") and tab in ("salary", "contract", "reward", "special", "training", "insurance", "payroll", "files", "check"):
         tab = "info"
     audit("hr", "인사기록 열람", f"{e['emp_no']} {e['name']}", tab)  # 개인정보 접속기록
-    files = intake.list_files(e) if tab == "files" else []
+    fp, files = None, []
+    if tab == "files":                                   # 서류는 문서 보관함(##BMS시스템) 한 곳에서만 (예전 임직원 폴더 목록은 쓰지 않음)
+        from app import archive
+        from app import files as files_mod
+        try:
+            fp = files_mod.panel("hr.employees", emp_id, f"/hr/employees/{emp_id}?tab=files") if archive.allowed("hr.employees", request.state.user["role"]) else None
+        except Exception:                                # noqa: BLE001
+            fp = None
+        if fp:
+            files = [{"name": r["orig_name"]} for r in fp["rows"]] + [{"name": w["file"]} for w in fp["waiting"]]
     return _render(request, "hr/employee_detail.html", {
-        "e": e, "tab": tab, "files": files, "employee_root": cfg.employee_root,
+        "e": e, "tab": tab, "files": files, "fp": fp,
         "doc_status": intake.document_status(get_codes("INTAKE_DOC"), files) if tab == "files" else [],
         "checklists": {"ONBOARD": ("입사", get_codes("ONBOARD")), "OFFBOARD": ("퇴사", get_codes("OFFBOARD"))},
         "checks": repo.list_checks(emp_id) if tab == "check" else {},

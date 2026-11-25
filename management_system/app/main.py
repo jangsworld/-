@@ -20,6 +20,7 @@ from app.modules import MODULES
 from app import brand, mailer
 from app import company as company_mod
 from app import archive
+from app import files as files_mod
 from app.files import router as files_router
 from app.modules.ga import cartax, company as company_alerts, contract_intake
 from app.modules.ga.constants import ASSET_BEHAVIORS
@@ -150,6 +151,8 @@ templates.env.globals["co"] = company_mod          # 두 회사 구분: 탭·배
 templates.env.globals["CO_TAB_PATHS"] = {it["url"] for m in MODULES if m["key"] in ("home", "hr", "ga") for it in m.get("menus", []) if it.get("url")} \
     | {"/hr/insurances", "/hr/ecount"}
 templates.env.globals["att_counts"] = archive.counts   # 메뉴별 붙임 서류 수 {대상 번호: 개수}
+templates.env.globals["pending_for"] = files_mod.pending_for   # 폴더에 새로 넣었지만 대장에 없는 파일 알림
+templates.env.globals["pending_map"] = archive.pending_map
 templates.env.globals["brand_css"] = brand.css     # 증명서 도장·로고 자리 (정해진 글자로만 만들어지는 CSS)
 templates.env.globals["ROLE_NAMES"] = auth.ROLES
 templates.env.globals["dept_text"] = dept_text     # 부서 선택 목록: 하위 부서 들여쓰기
@@ -245,7 +248,7 @@ def settings_page(request: Request):
         "cfg": {"포트": settings.port, "HTTPS": "사용" if settings.https else "미사용(내부 테스트용)",
                 "2단계 인증": "필수" if settings.require_2fa else "선택",
                 "세션 유휴 만료": f"{settings.session_idle_minutes}분",
-                "임직원 서류 폴더": settings.employee_root or "미설정", "문서 보관 위치": settings.employee_root or settings.output_root,
+                "문서 보관 위치": archive.root(),
                 "메일 서버": settings.smtp_host or "미설정(서명 링크를 화면에 표시)",
                 "DB 위치": settings.db_path, "비밀키 폴더": settings.secrets_dir},
     })
