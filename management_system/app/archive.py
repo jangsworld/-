@@ -196,6 +196,14 @@ def check(orig_name: str, raw: bytes) -> tuple[str, str]:
     return ext, mime
 
 
+def _mtime(path: str) -> str | None:
+    """파일의 고친 시각(나노초). 나중에 NAS 에서 고쳤는지 알아보는 데 씀."""
+    try:
+        return str(os.stat(path).st_mtime_ns)
+    except OSError:
+        return None
+
+
 def _write(rel: str, raw: bytes):
     path = os.path.normpath(os.path.join(root(), rel))
     if not _inside(root(), path):
@@ -382,10 +390,10 @@ def adopt(menu: str, ref_id: int, names: list[str], note: str = "") -> tuple[int
         except (OSError, ArchiveError) as ex:
             errs.append(f"{name}: {ex if isinstance(ex, ArchiveError) else '읽을 수 없습니다'}")
             continue
-        execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256, note, uploaded_by, subdir) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256, note, uploaded_by, subdir, mtime) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (menu, int(ref_id), company.norm(t.get("company")), rel + "/" + name, w["file"][:120], mime, len(raw),
-                 hashlib.sha256(raw).hexdigest(), (note or "폴더에 넣어 둔 파일").strip()[:200], current_actor.get()[1], w["sub"] or None))
+                 hashlib.sha256(raw).hexdigest(), (note or "폴더에 넣어 둔 파일").strip()[:200], current_actor.get()[1], w["sub"] or None, _mtime(path)))
         ok += 1
     if ok:
         audit("files", "폴더 파일을 대장에 올림", f"{MENUS[menu][1]} {t['title']}"[:120], f"{ok}개")
@@ -504,10 +512,10 @@ def save(menu: str, ref_id: int, orig_name: str, raw: bytes, note: str = "", sub
         n += 1
         rel = os.path.join(where, f"{head}{stamp}_{base}_{n}{ext}")
     _write(rel, raw)
-    att = execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256, note, uploaded_by, subdir) "
-                  "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+    att = execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256, note, uploaded_by, subdir, mtime) "
+                  "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                   (menu, int(ref_id), company.norm(t.get("company")), rel.replace("\\", "/"), _safe(os.path.basename(orig_name), 120), mime,
-                   len(raw), sha, (note or "").strip()[:200] or None, current_actor.get()[1], subdir or None))
+                   len(raw), sha, (note or "").strip()[:200] or None, current_actor.get()[1], subdir or None, _mtime(os.path.join(root(), rel))))
     audit("files", "서류 붙임", f"{MENUS[menu][1]} {t['title']}"[:120], f"{base}{ext} {len(raw) // 1024}KB")
     return att
 

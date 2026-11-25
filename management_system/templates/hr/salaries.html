@@ -60,6 +60,7 @@
 <div class="card">
   <div class="card-header d-flex align-items-center flex-wrap gap-2">{{ year }}년 개인별 연봉 · 인상 · 인건비
     <span class="badge text-bg-secondary" data-excel-count>{{ ov.rows|length }}명</span>
+    <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" data-sal-toggle="개인별 연봉" title="누르면 금액이 보이고, 10분 뒤 저절로 다시 가려집니다"><i class="bi bi-eye"></i> <span>연봉 보기</span></button>
     <span class="help ms-auto">이름 클릭 → 입사 때부터의 연봉 현황 · 행 클릭 → 연봉 등록/수정 · 머리글 ▾ 로 정렬·필터</span></div>
   <div class="card-body py-2 border-bottom d-flex flex-wrap align-items-center gap-2 small">
     <b><i class="bi bi-clock-history"></i> 과거 연봉 한꺼번에 넣기</b>
@@ -71,27 +72,27 @@
     <span class="help">양식(사번·성명·연도별 금액)을 엑셀에서 채워 'CSV UTF-8'로 저장해 올립니다. 빈 칸은 건드리지 않습니다.
       같은 해에 연봉이 여러 번 바뀐 직원은 <a href="/hr/salaries/history/template.csv?kind=changes">적용일 양식</a>(사번·성명·적용일·연봉, 한 줄에 한 번의 변경)으로 올립니다.</span></div>
   <div class="table-responsive">
-  <table class="table table-sm table-hover align-middle mb-0" id="salTable" data-excel data-excel-unit="명">
-    <thead><tr><th>사번</th><th>성명</th><th>부서</th><th>직급</th><th>고용형태</th><th class="num">직전 연봉</th><th class="num">{{ year }}년 연봉</th><th class="num">월 환산</th>
-      <th class="num">인상액</th><th class="num">인상률</th><th>사유</th><th class="num">인센티브</th><th class="num">총 인건비<br><span class="help">회사부담 포함</span></th><th>점검</th></tr></thead>
+  <table class="table table-sm table-hover align-middle mb-0 sal-hide" id="salTable" data-excel data-excel-unit="명">
+    <thead><tr><th>사번</th><th>성명</th><th>부서</th><th>직급</th><th>고용형태</th><th class="num sal">직전 연봉</th><th class="num sal">{{ year }}년 연봉 <button type="button" class="sal-eye" data-sal-toggle="개인별 연봉" title="연봉 보기/숨기기" aria-label="연봉 보기/숨기기"><i class="bi bi-eye"></i></button></th><th class="num sal">월 환산</th>
+      <th class="num sal">인상액</th><th class="num sal">인상률</th><th>사유</th><th class="num sal">인센티브</th><th class="num sal">총 인건비<br><span class="help">회사부담 포함</span></th><th>점검</th></tr></thead>
     <tbody>
     {% for r in ov.rows %}{% set e = r.employee %}{% set L = r.labor %}
       <tr style="cursor:pointer" data-emp="{{ e.id }}" data-name="{{ e.name }}" data-cur="{{ r.cur.annual_salary if r.cur else '' }}" data-prev="{{ r.prev.annual_salary if r.prev else '' }}" data-reason="{{ r.cur.reason if r.cur else '정기인상' }}" data-note="{{ r.cur.note if r.cur and r.cur.note else '' }}">
         <td class="text-muted">{{ e.emp_no }}</td><td class="fw-semibold"><a href="/hr/salaries/person/{{ e.id }}" title="입사 때부터의 연봉 현황 보기">{{ e.name }}</a>{% if e.resign_date %} <span class="small text-muted">(퇴사)</span>{% endif %}</td>
         <td>{{ e.department or '' }}</td><td>{{ e.rank or '' }}</td><td class="small">{{ e.employment_type }}</td>
-        <td class="num text-muted" data-v="{{ r.prev.annual_salary if r.prev else '' }}">{{ r.prev.annual_salary|won if r.prev else '-' }}{% if r.prev %}<div class="small">{{ r.prev.year }}</div>{% endif %}</td>
-        <td class="num fw-semibold" data-v="{{ r.cur.annual_salary if r.cur else '' }}">{{ r.cur.annual_salary|won if r.cur else '' }}{% if not r.cur and not e.resign_date %}<span class="badge text-bg-warning">미책정</span>{% endif %}</td>
-        <td class="num text-muted">{{ r.cur.annual_salary|monthly|won if r.cur else '' }}</td>
-        <td class="num {{ 'up' if (r.raise_amount or 0) > 0 else 'down' if (r.raise_amount or 0) < 0 }}">{{ r.raise_amount|won if r.raise_amount is not none else '' }}</td>
-        <td class="num {{ 'up' if (r.raise_rate or 0) > 0 else 'down' if (r.raise_rate or 0) < 0 }}">{{ r.raise_rate|pct if r.raise_rate is not none else '' }}</td>
+        <td class="num text-muted {{ 'sal' if r.prev }}" data-v="{{ r.prev.annual_salary if r.prev else '' }}">{{ r.prev.annual_salary|won if r.prev else '-' }}{% if r.prev %}<div class="small">{{ r.prev.year }}</div>{% endif %}</td>
+        <td class="num fw-semibold {{ 'sal' if r.cur }}" data-v="{{ r.cur.annual_salary if r.cur else '' }}">{{ r.cur.annual_salary|won if r.cur else '' }}{% if not r.cur and not e.resign_date %}<span class="badge text-bg-warning">미책정</span>{% endif %}</td>
+        <td class="num text-muted {{ 'sal' if r.cur }}">{{ r.cur.annual_salary|monthly|won if r.cur else '' }}</td>
+        <td class="num {{ 'sal' if r.raise_amount is not none }} {{ 'up' if (r.raise_amount or 0) > 0 else 'down' if (r.raise_amount or 0) < 0 }}">{{ r.raise_amount|won if r.raise_amount is not none else '' }}</td>
+        <td class="num {{ 'sal' if r.raise_rate is not none }} {{ 'up' if (r.raise_rate or 0) > 0 else 'down' if (r.raise_rate or 0) < 0 }}">{{ r.raise_rate|pct if r.raise_rate is not none else '' }}</td>
         <td class="small">{{ r.cur.reason if r.cur else '' }}</td>
-        <td class="num">{{ L.incentive|won if L and L.incentive else '' }}</td>
-        <td class="num">{{ L.total|won if L else '' }}{% if L and L.months < 12 %}<div class="small text-muted">{{ L.months }}개월</div>{% endif %}{% if L and L.stepped %}<div class="small text-muted" title="그 해에 연봉이 바뀌어 적용일이 든 달부터 새 연봉으로 계산했습니다">연중 변경 반영</div>{% endif %}</td>
-        <td>{% if r.below_min_wage %}<span class="badge text-bg-danger" title="환산시급 {{ r.hourly|won }}원">최저임금</span>{% endif %}</td>
+        <td class="num {{ 'sal' if L and L.incentive }}">{{ L.incentive|won if L and L.incentive else '' }}</td>
+        <td class="num {{ 'sal' if L }}">{{ L.total|won if L else '' }}{% if L and L.months < 12 %}<div class="small text-muted">{{ L.months }}개월</div>{% endif %}{% if L and L.stepped %}<div class="small text-muted" title="그 해에 연봉이 바뀌어 적용일이 든 달부터 새 연봉으로 계산했습니다">연중 변경 반영</div>{% endif %}</td>
+        <td>{% if r.below_min_wage %}<span class="badge text-bg-danger" title="환산 시급이 최저임금보다 낮습니다">최저임금</span>{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
-    <tfoot><tr class="table-light fw-semibold"><td colspan="5">합계 / 평균</td><td class="num"></td><td class="num">{{ k.total|won }}</td><td class="num">{{ (k.total / 12)|won }}</td><td class="num">{{ k.raise_total|won }}</td><td class="num">{{ k.avg_rate|pct }}</td><td></td><td class="num">{{ t.incentive|won }}</td><td class="num">{{ t.total|won }}</td><td></td></tr></tfoot>
+    <tfoot><tr class="table-light fw-semibold"><td colspan="5">합계 / 평균</td><td class="num"></td><td class="num sal">{{ k.total|won }}</td><td class="num sal">{{ (k.total / 12)|won }}</td><td class="num sal">{{ k.raise_total|won }}</td><td class="num sal">{{ k.avg_rate|pct }}</td><td></td><td class="num sal">{{ t.incentive|won }}</td><td class="num sal">{{ t.total|won }}</td><td></td></tr></tfoot>
   </table></div>
   <div class="card-footer help">※ 최저임금 점검은 연봉÷12÷월 소정근로시간({{ settings.monthly_std_hours }}h)으로 환산한 참고치입니다. 실제 판단 시 최저임금 산입범위(정기상여·복리후생비)와 수당 구성을 확인하세요. 단시간·일용직은 제외합니다.
     여러 명의 다음 해 연봉을 한 번에 정할 때는 <a href="/mgmt/review">연봉조정</a>을 쓰세요.</div>
@@ -150,6 +151,7 @@ const modal = new bootstrap.Modal(document.getElementById('salModal'));
 const mAmt = document.getElementById('mAmt'), mRate = document.getElementById('mRate');
 let mPrev = 0;
 document.querySelectorAll('#salTable tbody tr').forEach(tr => tr.addEventListener('click', (ev) => {
+  if (document.getElementById('salTable').classList.contains('sal-hide') && !ev.target.closest('a')) { toast('금액이 가려져 있습니다. [연봉 보기]를 누른 뒤 고쳐 주세요'); return; }
   if (ev.target.closest('a')) return;      // 이름 = 개인별 연봉 현황으로 이동
   const d = tr.dataset; mPrev = Number(d.prev) || 0;
   document.getElementById('mEmp').value = d.emp; document.getElementById('mName').textContent = d.name;

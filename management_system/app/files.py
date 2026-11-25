@@ -23,7 +23,8 @@ def pending_for(request: Request, menus) -> list[dict]:
     try:
         role = _role(request)
         ok = [m for m in menus if archive.allowed(m, role)]
-        rows = Rows(archive.pending(ok))
+        # 자동으로 올라가는 건은 '올리세요' 알림에서 뺌 (아래 '최근 들어온 서류'로 알려 줌)
+        rows = Rows(p for p in archive.pending(ok) if not archive_ops.auto_for(p["menu"], p["ref_id"]))
         rows.recent = archive_ops.recent(ok)
         rows.hold = archive_ops.held() if ok else ""
         return rows
@@ -81,6 +82,7 @@ def _explorer(menu: str, ref_id: int, rows: list[dict], waiting: list[dict]) -> 
 
     entries = []
     lost = archive_ops.lost_ids(menu, ref_id, rows)
+    auto, bad = archive_ops.auto_for(menu, ref_id), archive_ops.refused(menu, ref_id, waiting)
     thumbs = not menu.startswith("hr.")                     # 인사 서류(신분증 사본 등)는 열람 기록이 남는 '열기'로만 봄
     for r in rows:
         icon, tone, kind = look(r["orig_name"])
@@ -93,7 +95,7 @@ def _explorer(menu: str, ref_id: int, rows: list[dict], waiting: list[dict]) -> 
     for w in waiting:
         icon, tone, kind = look(w["file"])
         entries.append({"dir": w["sub"], "name": w["file"], "icon": icon, "tone": tone, "kind": kind, "size": w["size"], "date": "", "by": "",
-                        "note": "", "id": None, "inline": False, "new": True, "path": w["name"]})
+                        "note": "", "id": None, "inline": False, "new": True, "path": w["name"], "bad": w["name"] in bad})
     entries.sort(key=lambda e: (e["dir"], e["name"].lower()))
     paths = set()
     try:
@@ -109,7 +111,9 @@ def _explorer(menu: str, ref_id: int, rows: list[dict], waiting: list[dict]) -> 
         inside = [e for e in entries if e["dir"] == p or e["dir"].startswith(p + "/")]
         folders.append({"path": p, "name": p.rsplit("/", 1)[-1], "parent": p.rsplit("/", 1)[0] if "/" in p else "",
                         "count": len(inside), "new": sum(1 for e in inside if e["new"])})
-    return {"entries": entries, "folders": folders}
+    # 잠시 뒤 다시 그리면 바뀔 것(자동 등록·고친 내용 반영을 기다리는 것)의 수: 화면이 스스로 새로 고침
+    wait = sum(1 for e in entries if (e["new"] and auto and not e["bad"]) or (e.get("changed") and archive_ops.auto_on() and not archive_ops.held()))
+    return {"entries": entries, "folders": folders, "auto": auto, "wait": wait}
 
 
 def panel(menu: str, ref_id: int, nxt: str = "") -> dict | None:
@@ -120,7 +124,7 @@ def panel(menu: str, ref_id: int, nxt: str = "") -> dict | None:
     archive.ensure_quiet(menu, ref_id)                      # 폴더를 먼저 준비 (손으로 만든 비슷한 폴더가 있으면 그 폴더를 씀)
     archive_ops.sync_quiet(menu, ref_id)                    # NAS 에 직접 넣은 파일을 대장에 (복사가 끝난 것만)
     rows, waiting = archive.items(menu, ref_id), archive.unregistered(menu, ref_id)
-    return {"auto": archive_ops.auto_on() and archive_ops.auto_menu(menu), "menu": menu, "ref_id": ref_id, "rows": rows, "info": archive.MENUS[menu],
+    return {"menu": menu, "ref_id": ref_id, "rows": rows, "info": archive.MENUS[menu],
             "waiting": waiting, "next": nxt, **_explorer(menu, ref_id, rows, waiting),
             "folder": " \\ ".join(archive.folder(menu, t).replace("/", "\\").split("\\")), "max_mb": archive.MAX_MB}
 

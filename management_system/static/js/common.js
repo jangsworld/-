@@ -539,7 +539,7 @@ document.querySelectorAll('select[data-search]').forEach((sel) => {
   });
 
   // 미리보기 창
-  const preview = (list, at) => {
+  const preview = (list, at, closed) => {
     const d = el('dialog', 'fx-view'), bar = el('div', 'fx-view-bar'), name = el('b', 'text-truncate'), body = el('div', 'fx-view-body');
     const btn = (ic, title, fn) => { const b = el('button', 'btn btn-sm btn-outline-light'); b.type = 'button'; b.title = title; b.append(icon(ic)); b.addEventListener('click', fn); return b; };
     const open = el('a', 'btn btn-sm btn-outline-light text-nowrap', '새 창'), down = el('a', 'btn btn-sm btn-outline-light'); open.target = '_blank'; open.rel = 'noopener'; down.title = '내려받기'; down.append(icon('bi-download'));
@@ -558,13 +558,13 @@ document.querySelectorAll('select[data-search]').forEach((sel) => {
     d.append(bar, body); document.body.append(d);
     d.addEventListener('keydown', (e) => { if (e.key === 'ArrowLeft' && list.length > 1) show(at - 1); if (e.key === 'ArrowRight' && list.length > 1) show(at + 1); });
     d.addEventListener('click', (e) => { if (e.target === d) d.close(); });
-    d.addEventListener('close', () => { body.replaceChildren(); d.remove(); });
+    d.addEventListener('close', () => { body.replaceChildren(); d.remove(); if (closed) closed(); });
     d.showModal(); show(at);
   };
 
   wraps.forEach((wrap) => {
     const url = wrap.dataset.url, next = wrap.dataset.next;
-    let cur = '', busy = false, menu = null;
+    let cur = '', busy = false, menu = null, drag = null, timer = 0, tries = 0;
     const $ = (q) => wrap.querySelector(q), $$ = (q) => [...wrap.querySelectorAll(q)];
     const fail = (m) => { toast(m); };
 
@@ -605,12 +605,19 @@ document.querySelectorAll('select[data-search]').forEach((sel) => {
     const init = () => {
       let m = 'icons'; try { m = localStorage.getItem('bms_fx_view') || 'icons'; } catch (_) {}
       view(m === 'list' ? 'list' : 'icons');
+      clearTimeout(timer);                                  // NAS 에서 들어오거나 고쳐진 파일이 반영될 때까지 스스로 새로 고침 (최대 3분)
+      if ($('[data-fx]').dataset.wait !== '0') { if (tries < 30) timer = setTimeout(poll, 6000); } else tries = 0;
       $$('[data-fx-thumb]').forEach((im) => im.addEventListener('error', () => { im.hidden = true; im.nextElementSibling.hidden = false; }));
       show(cur);
     };
-    const refresh = async (msg) => {
+    const poll = () => {                                    // 쓰는 중(고르기·끌기·창 열림)에는 방해하지 않고 다음에
+      if (document.hidden || busy || drag || menu || selected().length || document.querySelector('dialog[open]')) { timer = setTimeout(poll, 6000); return; }
+      tries++;
+      refresh('', true);
+    };
+    const refresh = async (msg, quiet) => {
       const r = await fetch(url + '/panel' + (next ? '?next=' + encodeURIComponent(next) : ''), { headers: { 'X-FX': '1' } });
-      if (!r.ok || r.redirected) { fail('화면을 새로 고치지 못했습니다. 다시 로그인해 주세요'); return; }
+      if (!r.ok || r.redirected) { if (!quiet) fail('화면을 새로 고치지 못했습니다. 다시 로그인해 주세요'); return; }
       const note = $('[data-fx-note]').value;
       wrap.innerHTML = await r.text();
       $('[data-fx-note]').value = note;
@@ -692,7 +699,7 @@ document.querySelectorAll('select[data-search]').forEach((sel) => {
     const openFile = (x) => {
       if (!x.dataset.view) { location.href = '/files/get/' + x.dataset.id + '?dl=1'; return; }
       const all = $$('.fx-file:not([hidden])[data-view]');
-      preview(all.map((y) => ({ id: y.dataset.id, name: y.dataset.name, view: y.dataset.view })), all.indexOf(x));
+      preview(all.map((y) => ({ id: y.dataset.id, name: y.dataset.name, view: y.dataset.view })), all.indexOf(x), all.some((y) => y.dataset.changed) ? () => refresh('', true) : null);
     };
     const closeMenu = () => { if (menu) { menu.remove(); menu = null; } };
 
@@ -735,7 +742,6 @@ document.querySelectorAll('select[data-search]').forEach((sel) => {
     document.addEventListener('click', closeMenu); addEventListener('scroll', closeMenu, true);
 
     // 끌어다 놓기
-    let drag = null;
     wrap.addEventListener('dragstart', (e) => {
       const x = e.target.closest('.fx-file[data-id]'); if (!x) return;
       const sel = selected().filter((y) => y.dataset.id);
@@ -767,4 +773,27 @@ document.querySelectorAll('select[data-search]').forEach((sel) => {
   });
   // 창 밖에 잘못 놓았을 때 브라우저가 그 파일을 열어 버리지 않게
   ['dragover', 'drop'].forEach((n) => addEventListener(n, (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files') && !e.target.closest?.('[data-fxwrap], input[type=file]')) e.preventDefault(); }));
+})();
+
+// ── 연봉 가리기: [연봉 보기] 를 누르면 보이고, 10분 뒤 또는 다시 누르면 가려짐 ──
+(() => {
+  const btns = [...document.querySelectorAll('[data-sal-toggle]')];
+  if (!btns.length) return;
+  let timer = 0;
+  const set = (on) => {
+    document.querySelectorAll('table').forEach((t) => { if (t.querySelector('th.sal')) t.classList.toggle('sal-hide', !on); });
+    btns.forEach((b) => {
+      b.querySelector('i').className = 'bi ' + (on ? 'bi-eye-slash' : 'bi-eye');
+      const s = b.querySelector('span'); if (s) s.textContent = on ? '연봉 숨기기' : '연봉 보기';
+    });
+    if (!on) document.querySelectorAll('.xf-pop').forEach((p) => p.remove());      // 금액 목록이 보이는 필터 창도 닫음
+    clearTimeout(timer);
+    if (on) timer = setTimeout(() => set(false), 10 * 60 * 1000);
+  };
+  btns.forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const on = !!document.querySelector('table.sal-hide');
+    set(on);
+    if (on) postJSON('/hr/api/salary-view', { page: b.dataset.salToggle }).catch(() => {});
+  }));
 })();

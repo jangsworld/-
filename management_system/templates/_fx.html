@@ -1,5 +1,5 @@
 {% set _root = fp.folder.split(' \\ ')[-1] %}{% set _fid = 'fxAdopt-' ~ fp.menu|replace('.', '-') ~ '-' ~ fp.ref_id %}
-<div class="card fx" data-fx data-root="{{ _root }}" data-total="{{ fp.rows|length }}" data-new="{{ fp.waiting|length }}">
+<div class="card fx" data-fx data-root="{{ _root }}" data-total="{{ fp.rows|length }}" data-new="{{ 0 if fp.auto else fp.waiting|length }}" data-wait="{{ fp.wait }}">
   <div class="card-header d-flex flex-wrap align-items-center gap-2">
     <button type="button" class="btn btn-sm btn-light border" data-fx-up title="위 폴더로" disabled><i class="bi bi-arrow-up"></i></button>
     <button type="button" class="btn btn-sm btn-light border" data-fx-refresh title="새로 고침"><i class="bi bi-arrow-clockwise"></i></button>
@@ -19,11 +19,11 @@
     <span class="small text-muted" data-fx-sel></span>
     <input class="form-control form-control-sm ms-auto fx-note" data-fx-note maxlength="200" placeholder="올릴 서류에 붙일 메모 (선택)">
   </div>
-  {% if fp.waiting %}
+  {% if fp.waiting and not fp.auto %}
   <form id="{{ _fid }}" method="post" action="/files/{{ fp.menu }}/{{ fp.ref_id }}/adopt" class="fx-new d-flex flex-wrap align-items-center gap-2">
     {% if fp.next %}<input type="hidden" name="next" value="{{ fp.next }}">{% endif %}
     <span><i class="bi bi-folder-symlink"></i> 폴더에 있는데 대장에 없는 파일 <b>{{ fp.waiting|length }}개</b></span>
-    <span class="help">{% if fp.auto %}NAS에 넣은 파일은 2~3분 안에 자동으로 올라갑니다. 기다리지 않고 지금 올리려면 단추를 누르세요{% else %}NAS 폴더에 직접 넣어 둔 파일입니다. 여러 건이 폴더를 같이 쓰므로, 이 건의 것을 골라 올려 주세요{% endif %}</span>
+    <span class="help">NAS 폴더에 직접 넣어 둔 파일입니다. 자동으로 올라가지 않는 폴더(여러 건이 같이 쓰는 폴더 등)이므로, 이 건의 것을 골라 올려 주세요</span>
     <button class="btn btn-sm btn-primary ms-auto text-nowrap"><i class="bi bi-check2-square"></i> 고른 파일 대장에 올리기</button>
   </form>
   {% endif %}
@@ -33,20 +33,20 @@
     <div class="fx-item fx-folder" data-fx-open="{{ d.path }}" data-path="{{ d.path }}" data-parent="{{ d.parent }}" data-name="{{ d.name }}" data-count="{{ d.count }}" tabindex="0" role="button" title="{{ d.name }} (파일 {{ d.count }}개)">
       <input type="checkbox" class="form-check-input fx-sel" aria-label="{{ d.name }} 고르기">
       <span class="fx-ico"><i class="bi bi-folder-fill"></i>{% if d.new %}<span class="fx-dot" title="새 파일 {{ d.new }}개"></span>{% endif %}</span>
-      <span class="fx-name"><i class="bi bi-folder-fill fx-mini"></i>{{ d.name }}</span><span class="fx-c">{% if d.new %}<span class="badge text-bg-warning">새 파일 {{ d.new }}</span>{% endif %}</span>
+      <span class="fx-name"><i class="bi bi-folder-fill fx-mini"></i><span class="fx-t">{{ d.name }}</span></span><span class="fx-c">{% if d.new %}<span class="badge text-bg-warning">새 파일 {{ d.new }}</span>{% endif %}</span>
       <span class="fx-c">파일 폴더</span><span class="fx-c text-end">{{ d.count }}개</span><span class="fx-c"></span><span class="fx-c"></span></div>
     {% endfor %}
     {% for e in fp.entries %}
     <div class="fx-item fx-file {{ 'fx-isnew' if e.new }} {{ 'fx-lost' if e.lost }}" data-dir="{{ e.dir }}" data-name="{{ e.name }}" {% if e.id %}data-id="{{ e.id }}" draggable="true"{% if e.changed %} data-changed="1"{% endif %}{% if e.view and not e.lost %} data-view="{{ e.view }}"{% endif %}{% endif %} title="{{ e.name }}{% if e.note %} — {{ e.note }}{% endif %}">
       {% if e.new %}
-      <label class="fx-ico"><i class="bi {{ e.icon }} fx-{{ e.tone }}"></i><input type="checkbox" class="form-check-input fx-check" name="names" value="{{ e.path }}" form="{{ _fid }}" checked></label>
-      <span class="fx-name"><i class="bi {{ e.icon }} fx-{{ e.tone }} fx-mini"></i>{{ e.name }} <span class="badge text-bg-warning">새 파일</span></span>
-      <span class="fx-c text-muted">대장에 없음</span>
+      <label class="fx-ico"><i class="bi {{ e.icon }} fx-{{ e.tone }}"></i>{% if not fp.auto %}<input type="checkbox" class="form-check-input fx-check" name="names" value="{{ e.path }}" form="{{ _fid }}" checked>{% endif %}</label>
+      <span class="fx-name"><i class="bi {{ e.icon }} fx-{{ e.tone }} fx-mini"></i><span class="fx-t">{{ e.name }}</span> {% if not fp.auto %}<span class="badge text-bg-warning">새 파일</span>{% elif e.bad %}<span class="badge text-bg-danger" title="파일 내용이 종류와 맞지 않거나 {{ fp.max_mb }}MB를 넘어 올리지 않았습니다">열 수 없는 파일</span>{% else %}<span class="badge text-bg-info" title="NAS에 새로 들어온 파일입니다. 잠시 뒤 자동으로 열 수 있게 됩니다">등록 중…</span>{% endif %}</span>
+      <span class="fx-c text-muted">{{ '자동 등록 중' if fp.auto and not e.bad else '대장에 없음' }}</span>
       {% else %}
       <input type="checkbox" class="form-check-input fx-sel" aria-label="{{ e.name }} 고르기">
       <a class="fx-ico" href="/files/get/{{ e.id }}" draggable="false" tabindex="-1">{% if e.thumb %}<img src="/files/thumb/{{ e.id }}" alt="" loading="lazy" draggable="false" class="fx-thumb" data-fx-thumb><i class="bi {{ e.icon }} fx-{{ e.tone }}" hidden></i>{% else %}<i class="bi {{ e.icon }} fx-{{ e.tone }}"></i>{% endif %}</a>
-      <a class="fx-name" href="/files/get/{{ e.id }}" draggable="false"><i class="bi {{ e.icon }} fx-{{ e.tone }} fx-mini"></i>{{ e.name }}{% if e.lost %} <span class="badge text-bg-danger" title="보관함 폴더에서 지워졌거나 다른 곳으로 옮겨졌습니다">파일 없음</span>{% elif e.changed %} <span class="badge text-bg-warning" title="NAS에서 고친 파일입니다. 잠시 뒤 자동으로 반영됩니다">고쳐짐</span>{% endif %}</a>
-      <span class="fx-c">{{ e.date }}{% if e.edited %}<br><span class="text-primary">NAS에서 고침 {{ e.edited }}</span>{% endif %}</span>
+      <a class="fx-name" href="/files/get/{{ e.id }}" draggable="false"><i class="bi {{ e.icon }} fx-{{ e.tone }} fx-mini"></i><span class="fx-t">{{ e.name }}</span>{% if e.lost %} <span class="badge text-bg-danger" title="보관함 폴더에서 지워졌거나 다른 곳으로 옮겨졌습니다">파일 없음</span>{% elif e.changed %} <span class="badge text-bg-warning" title="NAS에서 고친 파일입니다. 잠시 뒤 자동으로 반영됩니다">고쳐짐 · 반영 중…</span>{% endif %}{% if e.edited and not e.changed %}<span class="fx-when" title="NAS에서 고쳐 저장한 내용을 반영한 때">고침 {{ e.edited }}</span>{% endif %}</a>
+      <span class="fx-c">{{ e.date }}{% if e.edited %}<br><span class="text-primary text-nowrap">NAS에서 고침 {{ e.edited }}</span>{% endif %}</span>
       {% endif %}
       <span class="fx-c">{{ e.kind }}</span>
       <span class="fx-c text-end">{{ '%.1f'|format(e.size / 1024 / 1024) ~ 'MB' if e.size >= 1048576 else (e.size // 1024) ~ 'KB' }}</span>

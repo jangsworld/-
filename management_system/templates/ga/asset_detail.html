@@ -6,7 +6,7 @@
 <div class="row g-3">
   <div class="col-lg-5"><div class="card h-100">
     <div class="card-header d-flex align-items-center">{{ a.name }} <span class="badge text-bg-light border ms-2">{{ a.category }}</span>
-      {% if can_write %}<span class="ms-auto d-flex gap-1">{% if fp %}<a class="btn btn-sm btn-outline-secondary" href="#files"><i class="bi bi-paperclip"></i> 서류 <span class="badge text-bg-secondary">{{ fp.rows|length }}</span>{% if fp.waiting %} <span class="badge text-bg-warning">새 파일 {{ fp.waiting|length }}</span>{% endif %}</a>{% endif %}
+      {% if can_write %}<span class="ms-auto d-flex gap-1">{% if fp %}<a class="btn btn-sm btn-outline-secondary" href="#files"><i class="bi bi-paperclip"></i> 서류 <span class="badge text-bg-secondary">{{ fp.rows|length }}</span>{% if fp.waiting and not fp.auto %} <span class="badge text-bg-warning">새 파일 {{ fp.waiting|length }}</span>{% endif %}</a>{% endif %}
         <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#assetModal" data-fill='{{ a|tojson }}'><i class="bi bi-pencil"></i> 수정</button></span>{% endif %}</div>
     <div class="card-body">
       <div class="d-flex gap-3 align-items-start">

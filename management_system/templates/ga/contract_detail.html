@@ -16,7 +16,7 @@
   {% if r.status in ('유효', '갱신중') %}{{ dday(r.dday, r.alert_days or 60) }}{% endif %}
   {% endif %}
   <div class="ms-auto d-flex gap-2">
-    {% if fp %}<a class="btn btn-sm btn-outline-secondary" href="#files"><i class="bi bi-paperclip"></i> 서류 <span class="badge text-bg-secondary">{{ fp.rows|length }}</span>{% if fp.waiting %} <span class="badge text-bg-warning">새 파일 {{ fp.waiting|length }}</span>{% endif %}</a>{% endif %}
+    {% if fp %}<a class="btn btn-sm btn-outline-secondary" href="#files"><i class="bi bi-paperclip"></i> 서류 <span class="badge text-bg-secondary">{{ fp.rows|length }}</span>{% if fp.waiting and not fp.auto %} <span class="badge text-bg-warning">새 파일 {{ fp.waiting|length }}</span>{% endif %}</a>{% endif %}
     {% if can_write %}{% if kind == 'contract' %}
     <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#contractModal" data-fill='{{ c|tojson }}'><i class="bi bi-pencil"></i> 내용 고치기</button>
     {% else %}

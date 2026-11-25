@@ -419,3 +419,31 @@ def test_nas_edit_after_move_and_shared(client, cid, clock):
         execute("DELETE FROM attachments WHERE menu='ga.fines' AND ref_id=?", (f,))
         execute("DELETE FROM ga_vehicle_fines WHERE id=?", (f,))
         execute("DELETE FROM ga_vehicles WHERE id=?", (vid,))
+
+
+def test_auto_folder_has_no_button(client, cid, clock):
+    """자동으로 올라가는 건: [대장에 올리기] 줄·체크 칸·목록 알림이 없고 '등록 중'으로 보이다가 올라감. 자동이 안 되는 건에는 단추가 남음."""
+    i = cid("탐색기 단추없음")
+    base = _base(i)
+    _write(os.path.join(base, "납부확인서.pdf"))
+    _write(os.path.join(base, "깨진.pdf"), b"broken")
+    url = f"/files/ga.contracts/{i}/panel"
+    frag = client.get(url).text
+    assert "고른 파일 대장에 올리기" not in frag and "fx-check" not in frag and "등록 중" in frag and 'data-wait="2"' in frag
+    assert "pendingCard" not in client.get("/ga/contracts?co=all").text
+    clock.now += 10
+    frag = client.get(url).text
+    assert "납부확인서.pdf" in _items(i) and "열 수 없는 파일" in frag and "등록 중" not in frag and 'data-wait="0"' in frag
+    # 고친 때가 이름 아래(큰 아이콘)에도 보임
+    a = _items(i)["납부확인서.pdf"]
+    _sync(i, clock)
+    _edit(a, PDF + b" v2", 1700000000)
+    frag = client.get(url).text
+    assert "반영 중" in frag and 'data-wait="1"' in frag
+    clock.now += 10
+    frag = client.get(url).text
+    assert re.search(r'class="fx-when"[^>]*>고침 \d\d-\d\d \d\d:\d\d', frag) and "반영 중" not in frag and 'data-wait="0"' in frag
+    # 이름이 같은 계약이 둘이면 자동이 아니므로 단추가 있음
+    cid("탐색기 단추없음")
+    _write(os.path.join(base, "둘째.pdf"), PDF + b"7")
+    assert "고른 파일 대장에 올리기" in client.get(url).text

@@ -454,12 +454,15 @@ def test_employee_files_checklist_and_technicians(admin, tmp_path, monkeypatch):
     page = admin.get(f"/hr/employees/{emp['id']}?tab=files").text
     assert "02. 등본.pdf" not in page and "미제출" in page and "서류 올리기" in page
     base = os.path.join(archive.root(), archive.ensure_folder("hr.employees", emp["id"]))
+    from app.db import set_setting
+    set_setting("archive_auto", "0")
     with open(os.path.join(base, "03. 등본.pdf"), "wb") as fh:
         fh.write(b"%PDF-1.4 1 0 obj<<>>endobj trailer<<>> %%EOF")
     page = admin.get(f"/hr/employees/{emp['id']}?tab=files").text
     assert "03. 등본.pdf" in page and "폴더에 있는데 대장에 없는 파일" in page and page.count("미제출") < 10
     os.replace(os.path.join(base, "03. 등본.pdf"), os.path.join(str(tmp_path), "치움.pdf"))      # 다른 시험에 남지 않게 시험 폴더 밖으로
     archive.pending_clear()
+    set_setting("archive_auto", "")
     status = {d["label"]: d["file"] for d in intake.document_status(get_codes("INTAKE_DOC"), intake.list_files(hr_repo.get_employee(emp["id"])))}
     assert status["등본"] == "02. 등본.pdf" and status["통장 / 계좌"] is None
     assert admin.get(f"/hr/employees/{emp['id']}/file", params={"name": "02. 등본.pdf"}).headers["content-type"] == "application/pdf"

@@ -8,7 +8,7 @@
   <ul class="nav nav-pills">{% for y in years %}<li class="nav-item"><a class="nav-link py-1 {% if y == year %}active{% endif %}" href="?year={{ y }}">{{ y }}년</a></li>{% endfor %}</ul>
   <div class="ms-auto d-flex gap-2">
     <a class="btn btn-sm btn-outline-secondary" href="/ga/vehicles/labels?ids={{ v.id }}"><i class="bi bi-qr-code"></i> QR 라벨</a>
-    {% if fp %}<a class="btn btn-sm btn-outline-secondary" href="#files"><i class="bi bi-paperclip"></i> 차량 서류 <span class="badge text-bg-secondary">{{ fp.rows|length }}</span>{% if fp.waiting %} <span class="badge text-bg-warning">새 파일 {{ fp.waiting|length }}</span>{% endif %}</a>{% endif %}
+    {% if fp %}<a class="btn btn-sm btn-outline-secondary" href="#files"><i class="bi bi-paperclip"></i> 차량 서류 <span class="badge text-bg-secondary">{{ fp.rows|length }}</span>{% if fp.waiting and not fp.auto %} <span class="badge text-bg-warning">새 파일 {{ fp.waiting|length }}</span>{% endif %}</a>{% endif %}
     <a class="btn btn-sm btn-outline-secondary" href="/ga/vehicles/{{ v.id }}/logbook.csv?year={{ year }}"><i class="bi bi-download"></i> {{ year }}년 운행기록부</a>
     {% if can_write %}<button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#inspModal" data-fill="{}"><i class="bi bi-camera"></i> 사진 점검</button>
     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#vehicleModal" data-fill='{{ v|tojson }}'><i class="bi bi-pencil"></i> 차량정보</button>

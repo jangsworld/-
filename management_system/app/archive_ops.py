@@ -19,7 +19,7 @@ from app.db import audit, batch, current_actor, execute, get_settings, query, qu
 log = logging.getLogger("bms.archive")
 MAX_DEPTH = 5                                 # 대상 폴더 아래로 만들 수 있는 폴더 단계 (archive.SCAN_DEPTH 와 같아야 다 보임)
 AUTO_BY = "NAS 자동"                           # 자동으로 올린 서류의 '올린 사람'
-AUTO_SETTLE = 20                              # 초. 복사 중인 파일을 올리지 않게, 이만큼 그대로인 파일만
+AUTO_SETTLE = 8                               # 초. 복사 중인 파일을 올리지 않게, 이만큼 그대로인 파일만
 STAMP = re.compile(r"^(?:\d{4}-\d{2}-\d{2}_)?\d{8}_\d{6}_")      # 화면에서 올린 파일의 NAS 이름 앞에 붙는 날짜·시각
 _BAD = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
@@ -250,9 +250,28 @@ def _alone(menu: str, ref_id: int) -> bool:
     return r["n"] <= 1
 
 
+def auto_for(menu: str, ref_id: int) -> bool:
+    """이 건의 폴더에 넣은 파일이 자동으로 올라가는지 (아니면 화면에 [대장에 올리기] 단추가 보임)."""
+    return auto_on() and auto_menu(menu) and _alone(menu, ref_id)
+
+
+def refused(menu: str, ref_id: int, waiting: list[dict]) -> set[str]:
+    """자동으로 올릴 수 없는 파일 (내용이 종류와 다르거나 너무 큼)."""
+    try:
+        _t, _rel, full = _base(menu, ref_id)
+    except ArchiveError:
+        return set()
+    out = set()
+    for w in waiting:
+        s = _seen.get(os.path.normpath(os.path.join(full, w["name"])))
+        if w["size"] > MAX_MB * 1024 * 1024 or (s and s[2]):
+            out.add(w["name"])
+    return out
+
+
 def sync(menu: str, ref_id: int, limit: int = 1000) -> int:
     """대상 폴더에 들어온 새 파일을 대장에 올림. NAS 에서 옮기거나 이름을 바꾼 파일은 내용 지문으로 알아보고 대장의 위치를 맞춤."""
-    if not auto_on() or not auto_menu(menu) or not _alone(menu, ref_id):
+    if not auto_for(menu, ref_id):
         return 0
     waiting = archive.unregistered(menu, ref_id)
     if not waiting:
@@ -302,10 +321,10 @@ def sync(menu: str, ref_id: int, limit: int = 1000) -> int:
                 execute("UPDATE attachments SET rel_path=?, subdir=?, orig_name=? WHERE id=?", (rel + "/" + w["name"], w["sub"] or None, shown, a["id"]))
                 audit("files", "NAS에서 옮긴 서류 위치 맞춤", f"{MENUS[menu][1]} {t['title']}"[:120], w["name"][:150])
             else:
-                execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256, note, uploaded_by, subdir) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256, note, uploaded_by, subdir, mtime) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                         (menu, int(ref_id), company.norm(t.get("company")), rel + "/" + w["name"], w["file"][:120], mime, len(raw), sha,
-                         None, AUTO_BY, w["sub"] or None))
+                         None, AUTO_BY, w["sub"] or None, str(st.st_mtime_ns)))
                 audit("files", "NAS 파일 자동으로 대장에 올림", f"{MENUS[menu][1]} {t['title']}"[:120], w["name"][:150])
             n += 1
     if n:

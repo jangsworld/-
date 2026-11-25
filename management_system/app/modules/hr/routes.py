@@ -666,6 +666,17 @@ def technicians_export(kind: str = ""):
     return _csv_response(out, f"기술자현황_{today().isoformat()}.csv")
 
 
+@router.post("/api/salary-view")
+async def salary_view(request: Request):
+    """현황 화면에서 [연봉 보기]를 눌러 가려진 금액을 본 것을 접속기록에 남김 (값은 기록하지 않음)."""
+    if request.state.user["role"] not in ("admin", "hr"):
+        raise HTTPException(403, "연봉을 볼 권한이 없습니다")
+    b = await request.json()
+    page = str(b.get("page") or "") if isinstance(b, dict) else ""
+    audit("hr", "연봉 보기", page if page in ("임직원 현황", "개인별 연봉") else "연봉", "")
+    return {"ok": True}
+
+
 @router.post("/api/employees/{emp_id}/rrn")
 def employee_rrn_reveal(emp_id: int):
     """주민등록번호 원문 확인: 인사담당 이상, 버튼을 누를 때만, 접속기록 남김 (값은 기록하지 않음)."""

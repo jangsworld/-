@@ -39,7 +39,9 @@ def two(client):
                  "co2_business_no": "222-22-22222", "co2_company_short": "둘째"}.items():
         set_setting(k, v)
     made = []
+    set_setting("archive_auto", "0")          # 여기서는 NAS 파일을 사람이 올리는 방식을 확인 (자동은 test_explorer)
     yield made
+    set_setting("archive_auto", "")
     for eid in made:
         repo.delete_employee(eid)
     for k in ("co2_company_name", "co2_ceo_name", "co2_company_address", "co2_business_no", "co2_company_short",
@@ -547,3 +549,19 @@ def test_new_file_notice_on_every_menu(client, two):
         execute("DELETE FROM ga_vehicle_fines WHERE id IN (?,?)", (f1, f2))
         execute("DELETE FROM ga_assets WHERE id=?", (aid,))
         execute("DELETE FROM ga_vehicles WHERE id=?", (vid,))
+
+
+def test_salary_hidden_until_clicked(client, two):
+    """임직원 현황·개인별 연봉: 금액은 가린 채로 열리고, [연봉 보기]를 누르면 접속기록이 남음."""
+    from app.db import query_one
+    _emp(two, "연봉가림", "1")
+    page = client.get("/hr/employees?co=all").text
+    assert "sal-hide" in page and 'data-sal-toggle="임직원 현황"' in page and page.count('class="num sal"') >= 2
+    page = client.get("/hr/salaries?tab=people&co=all").text
+    assert "sal-hide" in page and 'data-sal-toggle="개인별 연봉"' in page and "환산시급" not in page
+    assert client.post("/hr/api/salary-view", json={"page": "개인별 연봉"}).json()["ok"]
+    r = query_one("SELECT action, target FROM audit_logs ORDER BY id DESC LIMIT 1")
+    assert r["action"] == "연봉 보기" and r["target"] == "개인별 연봉"
+    with TestClient(app) as v:
+        _login(v, "co_view")
+        assert v.post("/hr/api/salary-view", json={}).status_code == 403 and "data-sal-toggle" not in v.get("/hr/employees").text
