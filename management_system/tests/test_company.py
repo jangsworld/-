@@ -563,3 +563,51 @@ def test_salary_hidden_until_clicked(client, two):
     with TestClient(app) as v:
         _login(v, "co_view")
         assert v.post("/hr/api/salary-view", json={}).status_code == 403 and "data-sal-toggle" not in v.get("/hr/employees").text
+
+
+def test_alert_mail_from_ga_dept(client, two):
+    """만기 알림 메일은 알림 부서(하위 포함) 직원에서만, 담당자는 전 직원에서 고름. 개인 메일은 보이지 않고, 이미 저장된 값은 유지."""
+    from app.db import get_settings
+    from app.modules.ga import company as items_mod
+    from app.modules.ga import repo as ga
+    before = {k: get_settings().get(k) for k in ("ga_dept", "mail_user", "mail_from")}
+    a = _emp(two, "담당가", "1", department="시험관리부", email="personal@gmail.example")
+    b = _emp(two, "담당나", "1", department="시험관리부", email="nana@corp.example")
+    c = _emp(two, "담당다", "1", department="시험관리부", email="dada@home.example")
+    _emp(two, "다른부서", "1", department="다른시험부", email="other@corp.example")
+    execute("INSERT OR IGNORE INTO users(username, display_name, role, password_hash, email) VALUES ('co_mgr','담당가','ga','x','gaga@corp.example')")
+    set_setting("mail_user", "")
+    set_setting("mail_from", "")
+    cid = None
+    try:
+        set_setting("ga_dept", "없는부서")
+        assert ga.ga_staff() == []                                              # 직원이 없으면 모든 직원을 보여 줌(제한 없음)
+        assert "data-mailpick" not in client.get("/ga/contracts?co=all").text     # 고를 사람이 없으면 메일을 직접 적음
+        set_setting("ga_dept", "시험관리부")
+        assert {e["name"]: e["mail"] for e in ga.ga_staff()} == {"담당가": "gaga@corp.example", "담당나": "nana@corp.example", "담당다": ""}
+        page = client.get("/ga/contracts?co=all").text
+        opts = page.split('name="manager_id"')[1].split("</select>")[0]
+        assert all(n in opts for n in ("담당가", "담당나", "담당다", "다른부서")) and "data-search" in opts    # 담당자는 전 직원 + 찾기
+        assert 'value="gaga@corp.example"' in page and 'value="nana@corp.example"' in page and "personal@gmail" not in page and "home.example" not in page
+        assert page.count("data-mailpick") == 2 and "other@corp.example" not in page and 'name="owner"' in page       # 면허·보험 창도 같음
+        form = {"category": "임대차", "title": "담당시험 계약", "counterparty": "상대", "status": "유효", "manager_id": str(b)}
+        client.post("/ga/contracts/save", data={**form, "alert_email": "gaga@corp.example, nana@corp.example"})
+        r = query_one("SELECT * FROM ga_contracts WHERE title='담당시험 계약'")
+        cid = r["id"]
+        assert r["alert_email"] == "gaga@corp.example, nana@corp.example" and r["manager_id"] == b
+        client.post("/ga/contracts/save", data={**form, "id": str(cid), "alert_email": "stranger@evil.example"})      # 부서 밖 주소는 저장되지 않음
+        assert query_one("SELECT alert_email FROM ga_contracts WHERE id=?", (cid,))["alert_email"] == "gaga@corp.example, nana@corp.example"
+        execute("UPDATE ga_contracts SET alert_email='old@partner.example' WHERE id=?", (cid,))                       # 전에 저장한 다른 주소는 그대로 둘 수 있음
+        client.post("/ga/contracts/save", data={**form, "id": str(cid), "alert_email": "old@partner.example, nana@corp.example"})
+        assert query_one("SELECT alert_email FROM ga_contracts WHERE id=?", (cid,))["alert_email"] == "old@partner.example, nana@corp.example"
+        try:
+            items_mod.save({"category": items_mod.categories()[0], "name": "담당시험 인증", "status": "유효", "alert_email": "stranger@evil.example"}, "시험")
+            raise AssertionError("부서 밖 주소가 저장됨")
+        except items_mod.CompanyError as ex:
+            assert "알림 부서" in str(ex)
+    finally:
+        for k, v in before.items():
+            set_setting(k, v or "")
+        execute("DELETE FROM users WHERE username='co_mgr'")
+        if cid:
+            execute("DELETE FROM ga_contracts WHERE id=?", (cid,))

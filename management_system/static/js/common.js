@@ -156,15 +156,22 @@ document.addEventListener('click', (e) => {
   const f = m && m.querySelector('form');
   if (!f) return;
   f.reset();
+  f.querySelectorAll('option[data-extra]').forEach((o) => o.remove());
   let data = {};
   try { data = JSON.parse(b.dataset.fill || '{}'); } catch (_) {}
   f.querySelectorAll('[name]').forEach((el) => {
     if (el.name === 'csrf_token' || el.name === 'next') return;
-    if (!(el.name in data)) { if (el.name === 'id') el.value = ''; return; }
+    if (!(el.name in data)) { if (el.name === 'id' || (el.type === 'hidden' && el.closest('[data-mailpick]'))) el.value = ''; return; }
     const v = data[el.name];
     if (el.type === 'checkbox') el.checked = !!v && v !== '0';
     else if (el.name === 'company' && el.tagName === 'SELECT') el.value = String(v || '') === '2' ? '2' : '1';   // 비어 있는 옛 자료는 본사
-    else el.value = v === null || v === undefined ? '' : v;
+    else {
+      if (el.tagName === 'SELECT' && v !== null && v !== undefined && v !== '' && ![...el.options].some((o) => o.value === String(v))) {   // 목록에 없는 옛 값도 그대로 유지 (담당이 바뀌기 전 사람 등)
+        const label = el.name.endsWith('_id') ? data[el.name.replace(/_id$/, '_name')] : v;
+        if (label) { const o = document.createElement('option'); o.value = v; o.textContent = label + (el.name.endsWith('_id') ? ' (재직자 아님)' : ''); o.dataset.extra = '1'; el.append(o); }
+      }
+      el.value = v === null || v === undefined ? '' : v;
+    }
   });
   m.querySelectorAll('[data-mode-title]').forEach((t) => { t.textContent = data.id ? '수정' : '등록'; });
   m.querySelectorAll('[data-new-only]').forEach((t) => { t.hidden = !!data.id; });
@@ -799,3 +806,23 @@ document.querySelectorAll('select[data-search]').forEach((sel) => {
     if (on) postJSON('/hr/api/salary-view', { page: b.dataset.salToggle }).catch(() => {});
   }));
 })();
+
+// ── 만기 알림 받을 사람: 체크한 사람의 메일을 쉼표로 모아 저장 ──
+document.querySelectorAll('[data-mailpick]').forEach((box) => {
+  const hidden = box.querySelector('input[type=hidden]'), list = box.querySelector('.d-flex'), form = box.closest('form');
+  const sync = () => { hidden.value = [...list.querySelectorAll('input:checked')].map((c) => c.value).join(', '); };
+  const load = () => {
+    list.querySelectorAll('[data-extra]').forEach((x) => x.remove());
+    const want = hidden.value.split(',').map((x) => x.trim()).filter(Boolean), seen = new Set();
+    list.querySelectorAll('input').forEach((c) => { c.checked = want.some((w) => w.toLowerCase() === c.value.toLowerCase()); seen.add(c.value.toLowerCase()); });
+    want.filter((w) => !seen.has(w.toLowerCase())).forEach((w) => {            // 이미 저장된 다른 주소
+      const l = document.createElement('label'); l.className = 'small'; l.dataset.extra = '1';
+      const c = document.createElement('input'); c.type = 'checkbox'; c.className = 'form-check-input me-1'; c.value = w; c.checked = true;
+      const t = document.createElement('span'); t.className = 'text-muted'; t.textContent = '기타 ' + w; l.append(c, t); list.append(l);
+    });
+    sync();
+  };
+  box.addEventListener('change', sync);
+  if (form) { form.addEventListener('bms:filled', load); }
+  load();
+});

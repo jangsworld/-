@@ -103,6 +103,32 @@ def employees_brief(active_only=True) -> list[dict]:
     return query(sql + " ORDER BY department, name")
 
 
+def ga_staff() -> list[dict]:
+    """만기 알림을 받을 부서(설정 ga_dept, 하위 부서 포함)의 재직 직원과 회사 메일. 부서가 비었거나 직원이 없으면 빈 목록.
+    메일은 BMS 계정의 회사 메일을 먼저 쓰고, 없으면 인사기록의 메일 중 회사 도메인인 것만 (개인 메일은 보이지 않게)."""
+    from app.db import dept_scope, get_settings
+    s = get_settings()
+    scope = dept_scope((s.get("ga_dept") or "").strip())
+    emps = [e for e in employees_brief() if e["department"] in scope]
+    if not emps:
+        return []
+    accounts: dict[str, list[str]] = {}
+    for u in query("SELECT display_name, email FROM users WHERE is_active=1 AND email IS NOT NULL AND email<>''"):
+        accounts.setdefault(u["display_name"], []).append(u["email"].strip())
+    domains = {m.rsplit("@", 1)[-1].lower() for ms in accounts.values() for m in ms if "@" in m}
+    domains |= {v.rsplit("@", 1)[-1].lower() for v in (s.get("mail_from"), s.get("mail_user")) if v and "@" in v}
+    from app.security.crypto import dec
+    names = [e["name"] for e in emps]
+    for e in emps:
+        got = accounts.get(e["name"], []) if names.count(e["name"]) == 1 else []
+        mail = got[0] if len(got) == 1 else ""
+        if not mail:
+            m = str(dec(query_one("SELECT email FROM employees WHERE id=?", (e["id"],))["email"]) or "").strip()
+            mail = m if "@" in m and m.rsplit("@", 1)[-1].lower() in domains else ""
+        e["mail"] = mail
+    return emps
+
+
 # ── 자산 ────────────────────────────────────────────────────────────────
 def next_asset_no(category: str, acquired: str | None) -> str:
     prefix = ASSET_CATEGORIES.get(category, ("ET", 5))[0]

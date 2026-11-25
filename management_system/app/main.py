@@ -15,7 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.common import templates
 from app.config import APP_DIR, SYSTEM_CODE, SYSTEM_NAME, settings
-from app.db import audit, init_db, get_settings, set_setting, DEFAULT_SETTINGS, DEPT_LEVELS, dept_tree, dept_text, dept_path, dept_scope
+from app.db import audit, init_db, get_settings, set_setting, DEFAULT_SETTINGS, DEPT_LEVELS, dept_tree, dept_text, dept_path, dept_scope, get_codes
 from app.modules import MODULES
 from app import brand, mailer
 from app import company as company_mod
@@ -242,7 +242,7 @@ def settings_page(request: Request):
         "brand2": {k: {"label": v, "has": bool(brand.get(k, "2"))} for k, v in brand.KINDS.items()},
         "co2": {**company_mod.info("2"), "company_short": get_settings().get("co2_company_short", ""),
                 "company_short_1": get_settings().get("company_short", "")},
-        "arch": archive.status(), "arch_auto": archive_ops.auto_on(), "arch_hold": archive_ops.held(),
+        "ga_depts": get_codes("DEPT"), "ga_people": ga_repo.ga_staff(), "arch": archive.status(), "arch_auto": archive_ops.auto_on(), "arch_hold": archive_ops.held(),
         "brand_msg": request.query_params.get("bmsg", ""), "brand_ok": request.query_params.get("bok") == "1",
         "active_menu": "settings", "msg": request.query_params.get("msg", ""),
         "cfg": {"포트": settings.port, "HTTPS": "사용" if settings.https else "미사용(내부 테스트용)",

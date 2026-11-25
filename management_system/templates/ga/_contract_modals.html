@@ -1,5 +1,5 @@
 {# 계약 · 면허·보험·인증 등록/수정 창과 갱신 창 (목록과 상세 화면이 함께 씀). modal_next 가 있으면 저장 뒤 그 화면으로 돌아감 #}
-{% from "ga/_macros.html" import field, modal, cofield, attfield %}
+{% from "ga/_macros.html" import field, modal, cofield, attfield, mailpick %}
 {% call modal('contractModal', '계약', '/ga/contracts/save', enctype='multipart/form-data') %}
   {% if modal_next %}<input type="hidden" name="next" value="{{ modal_next }}">{% endif %}
   {{ cofield() }}
@@ -8,7 +8,7 @@
   {{ field('start_date', '시작일', 'date') }}{{ field('end_date', '종료일', 'date') }}{{ field('status', '상태', opts=statuses, blank=False) }}
   {{ field('amount', '금액(원)', 'number') }}{{ field('amount_vat', '부가세 구분', opts=vat_types, blank=False) }}{{ field('pay_cycle', '지급주기', opts=cycles.keys()|list, blank=False) }}{{ field('deposit', '보증금(원)', 'number') }}
   {{ field('auto_renew', '자동갱신', 'checkbox', ph='만료 시 자동 연장') }}{{ field('notice_days', '통보기한(만료 N일 전)', 'number', value=30) }}
-  <div class="col-md-8"><label class="form-label small">만기 알림 받을 메일 <span class="text-muted fw-normal">(담당자 · 쉼표로 여러 명)</span></label><input class="form-control form-control-sm" name="alert_email" placeholder="예: name@company.com">
+  <div class="col-md-8">{{ mailpick(staff_mails) }}
     <div class="help">넣어 두면 통보기한(없으면 만료일) 30일 전, 7일 전, 당일에 메일을 보냅니다. 비워 두면 대시보드에만 표시됩니다.</div></div>
   {{ field('memo', '비고', 'textarea', col='col-12') }}
   {{ attfield('계약서 붙이기', '계약서 원본·변경 계약서') }}
@@ -29,7 +29,7 @@
     <div class="col-md-2"><label class="form-label small">갱신 주기</label><select class="form-select form-select-sm" name="cycle">{% for x in item_cycles %}<option>{{ x }}</option>{% endfor %}</select></div>
     <div class="col-md-2"><label class="form-label small">미리 알림(일)</label><input class="form-control form-control-sm" name="alert_days" value="60" inputmode="numeric"></div>
     <div class="col-md-2"><label class="form-label small">상태</label><select class="form-select form-select-sm" name="status">{% for x in item_statuses %}<option>{{ x }}</option>{% endfor %}</select></div>
-    <div class="col-md-8"><label class="form-label small">만기 알림 받을 메일 <span class="text-muted fw-normal">(담당자 · 쉼표로 여러 명)</span></label><input class="form-control form-control-sm" name="alert_email" placeholder="예: name@company.com">
+    <div class="col-md-8">{{ mailpick(staff_mails) }}
       <div class="help">넣어 두면 '미리 알림(일)' 전, 7일 전, 만기 당일에 메일을 보냅니다. 비워 두면 대시보드에만 표시됩니다.</div></div>
     <div class="col-md-4"><label class="form-label small">임직원 상해공제</label>
       <div><label class="small"><input type="checkbox" class="form-check-input me-1" name="emp_insurance" value="1">재직 직원 인사기록카드에 반영</label></div>

@@ -538,7 +538,8 @@ def _contract_form_ctx() -> dict:
     """계약·면허 등록 창(templates/ga/_contract_modals.html)에 필요한 고르기 값."""
     from app.modules.ga import company as items_mod
     from app.modules.mgmt.constants import COMPANY_CYCLES, COMPANY_EXAMPLES, COMPANY_STATUSES
-    return {"categories": get_codes("GA_CONTRACT"), "item_categories": items_mod.categories(), "item_cycles": COMPANY_CYCLES,
+    staff = repo.ga_staff()
+    return {"staff_mails": [e for e in staff if e["mail"]], "categories": get_codes("GA_CONTRACT"), "item_categories": items_mod.categories(), "item_cycles": COMPANY_CYCLES,
             "item_statuses": COMPANY_STATUSES, "examples": COMPANY_EXAMPLES, "cycles": PAY_CYCLES, "statuses": CONTRACT_STATUSES}
 
 
@@ -678,7 +679,8 @@ async def generic_save(request: Request, kind: str):
     if table == "ga_contracts":                              # 만기 알림 받을 메일: 주소 모양 확인 후 쉼표로 정리
         from app.modules.ga import company as items_mod
         try:
-            f["alert_email"] = ", ".join(items_mod.clean_mails(f.get("alert_email"))) or ""
+            old = repo.get("ga_contracts", int(f["id"])) if f.get("id") else None
+            f["alert_email"] = items_mod.allowed_mails(f.get("alert_email"), (old or {}).get("alert_email") or "")
         except items_mod.CompanyError as ex:
             return _redirect("/ga/contracts", str(ex))
     rid = repo.save(table, int(f.get("id") or 0) or None, f)

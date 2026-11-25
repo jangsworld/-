@@ -136,6 +136,14 @@
     <form id="mailTest" method="post" action="/settings/mail/test"></form>
   </div>
 
+  <div class="col-12" id="gadept">
+    <form class="card" method="post" action="/settings"><div class="card-header">만기 알림 부서 <span class="help">계약·만기 관리에서 만기 알림 받을 사람을 이 부서(하위 부서 포함) 직원 중에서 고릅니다. 담당자는 전 직원 중에서 고릅니다</span></div>
+      <div class="card-body d-flex flex-wrap gap-2 align-items-center">
+        <select class="form-select form-select-sm" name="ga_dept" style="max-width:260px"><option value="">정하지 않음 (메일을 직접 적음)</option>{% for x in ga_depts %}<option value="{{ x }}" {% if s.ga_dept == x %}selected{% endif %}>{{ dept_text(x) }}</option>{% endfor %}</select>
+        <button class="btn btn-sm btn-primary">저장</button>
+        <span class="small text-muted">{% if ga_people %}지금: {{ ga_people|map(attribute='name')|join(', ') }}{% set _no = ga_people|rejectattr('mail')|list %}{% if _no %} · 회사 메일이 없는 사람: {{ _no|map(attribute='name')|join(', ') }}{% endif %}{% else %}고를 직원이 없어 메일을 직접 적게 됩니다{% endif %}</span></div></form>
+  </div>
+
   <div class="col-12" id="archive">
     <div class="card"><div class="card-header">문서 보관함 (NAS) <span class="help">각 메뉴에서 붙인 서류·사진이 메뉴별 폴더에 자동으로 저장되는 곳</span></div>
       <div class="card-body small">

@@ -1071,6 +1071,7 @@ CREATE INDEX IF NOT EXISTS idx_ins_emp ON employee_insurances(employee_id);
 """
 
 DEFAULT_SETTINGS = {
+    "ga_dept": "경영관리부",          # 만기 알림 부서: 만기 알림 받을 사람을 이 부서(하위 포함) 직원에서 고름 (담당자는 전 직원)
     "company_name": "(주)샘플컴퍼니",
     "ceo_name": "홍길동",
     "company_address": "서울특별시 중구 세종대로 110",

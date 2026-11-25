@@ -53,6 +53,18 @@ def clean_mails(text) -> list[str]:
     return mails
 
 
+def allowed_mails(text, before: str = "") -> str:
+    """알림 메일: 알림 부서 직원의 메일과, 이미 저장돼 있던 주소만. 알림 부서에서 고를 메일이 하나도 없으면 제한하지 않음."""
+    from app.modules.ga import repo
+    mails = list(dict.fromkeys(clean_mails(text)))
+    staff = {e["mail"].lower() for e in repo.ga_staff() if e["mail"]}
+    kept = {m.strip().lower() for m in str(before or "").split(",") if m.strip()}
+    bad = [m for m in mails if staff and m.lower() not in staff | kept]
+    if bad:
+        raise CompanyError("만기 알림 메일은 알림 부서 직원 중에서 골라 주세요: " + ", ".join(bad[:2]))
+    return ", ".join(mails)
+
+
 def save(f: dict, by: str = "") -> int:
     name = (f.get("name") or "").strip()
     if not name:
@@ -70,7 +82,8 @@ def save(f: dict, by: str = "") -> int:
         alert = int(f.get("alert_days") or 60)
     except ValueError as ex:
         raise CompanyError("알림 일수는 숫자로 넣어 주세요") from ex
-    mails = clean_mails(f.get("alert_email"))
+    before = get(int(f["id"])) if str(f.get("id") or "").isdigit() else None
+    mails = allowed_mails(f.get("alert_email"), (before or {}).get("alert_email") or "")
     emp_ins = "1" if f.get("emp_insurance") else None
     if emp_ins and not (sd and ed):
         raise CompanyError("임직원 상해공제는 시작일과 만기일을 넣어 주세요")
@@ -78,7 +91,7 @@ def save(f: dict, by: str = "") -> int:
             sd.isoformat() if sd else None, ed.isoformat() if ed else None, f.get("cycle") or "없음",
             (f.get("owner") or "").strip() or None, alert, f.get("status") or "유효", (f.get("note") or "").strip() or None)
     iid = int(f["id"]) if str(f.get("id") or "").isdigit() else None
-    vals = (*vals, emp_ins, ", ".join(mails) or None)
+    vals = (*vals, emp_ins, mails or None)
     if iid:
         execute("UPDATE ga_company_items SET category=?, name=?, number=?, agency=?, start_date=?, expire_date=?, cycle=?, owner=?, "
                 "alert_days=?, status=?, note=?, emp_insurance=?, alert_email=? WHERE id=?", (*vals, iid))
