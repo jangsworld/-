@@ -13,7 +13,7 @@
       <a class="fw-semibold text-decoration-none text-nowrap" href="{{ p.url }}">{{ p.title }}</a>
       <span class="badge text-bg-warning">새 파일 {{ p.n }}개</span>
       <span class="text-muted text-truncate">{{ p.names|join(', ') }}{% if p.n > p.names|length %} 외 {{ p.n - p.names|length }}개{% endif %}</span>
-      {% if p.shared %}<span class="ms-auto text-muted text-nowrap">아래 목록에서 <span class="badge text-bg-warning">새 파일</span> 표시가 있는 건 중 해당하는 건을 눌러 올리세요</span>
+      {% if p.shared %}<span class="ms-auto text-muted text-nowrap">어느 건의 것인지 정해지지 않은 파일입니다. 아래 목록에서 해당하는 건의 클립 단추를 눌러 가져오세요</span>
       {% else %}<a class="btn btn-sm btn-primary ms-auto text-nowrap" href="{{ p.url }}"><i class="bi bi-box-arrow-in-right"></i> 확인하고 올리기</a>{% endif %}</li>{% endfor %}
   </ul>
 </div>

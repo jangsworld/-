@@ -148,6 +148,32 @@ def move(menu: str, ref_id: int, att_ids, dest) -> str:
     return (f"{ok}개를 옮겼습니다" if ok else "옮길 파일이 없습니다") + ((" · 옮기지 못한 파일 — " + " / ".join(errs[:3])) if errs else "")
 
 
+def claim(menu: str, ref_id: int, names) -> str:
+    """건 폴더 밖(위 폴더)에 넣어 둔 파일을 이 건의 폴더로 옮기고 대장에 올림."""
+    with FS_LOCK:
+        archive.ensure_folder(menu, ref_id)
+        t, rel, full = _base(menu, ref_id)
+        top, ok, errs = os.path.dirname(full), [], []
+        allowed = {w["name"]: w for w in archive.loose(menu, ref_id)}      # 화면이 보여 준 목록 안의 이름만
+        for name in list(names)[:100]:
+            w = allowed.get(name)
+            if not w:
+                continue
+            src, dst = os.path.normpath(os.path.join(top, name)), os.path.join(full, w["file"])
+            if not _inside(os.path.realpath(top), os.path.realpath(src)):
+                continue
+            try:
+                _rename(src, dst)
+                ok.append(w["file"])
+            except ArchiveError as ex:
+                errs.append(f"{w['file']}: {ex}")
+        n, e2 = archive.adopt(menu, ref_id, ok) if ok else (0, [])
+        if ok:
+            _log(menu, "파일을 이 건으로 가져옴", t, f"{len(ok)}개")
+    errs += e2
+    return (f"{n}개를 이 건으로 가져왔습니다" if n else "가져온 파일이 없습니다") + ((" · 가져오지 못한 파일 — " + " / ".join(errs[:3])) if errs else "")
+
+
 def _move_file(a: dict, new_rel: str, sub: str, orig: str):
     src, dst = (os.path.normpath(os.path.join(root(), x)) for x in (a["rel_path"], new_rel))
     if not _inside(root(), src) or not _inside(root(), dst):
@@ -237,7 +263,7 @@ def auto_on() -> bool:
 
 
 def auto_menu(menu: str) -> bool:
-    """자동으로 올릴 수 있는 메뉴인지. 여러 건이 폴더를 같이 쓰는 메뉴(과태료·사고·상벌)는 어느 건인지 알 수 없어 제외."""
+    """자동으로 올릴 수 있는 메뉴인지 (건마다 폴더가 따로 있는 메뉴)."""
     return menu in PENDING and not PENDING[menu][2]
 
 

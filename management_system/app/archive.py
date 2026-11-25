@@ -80,7 +80,7 @@ def _vehicle(ref_id):
 def _fine(ref_id):
     r = query_one("SELECT f.id, f.violation_at, f.kind, v.id vid, v.plate_no, v.model, v.company FROM ga_vehicle_fines f "
                   "JOIN ga_vehicles v ON v.id=f.vehicle_id WHERE f.id=?", (ref_id,))
-    return r and {"company": r["company"], "target": vehicle_name(r["plate_no"], r["model"]), "key": plate_key(r["plate_no"]), "sub": "과태료",
+    return r and {"company": r["company"], "target": vehicle_name(r["plate_no"], r["model"]), "key": plate_key(r["plate_no"]), "sub": ["과태료"], "vid": r["vid"],
                   "title": f"{r['plate_no']} 과태료 {(r['violation_at'] or '')[:10]} {r['kind'] or ''}".strip(),
                   "prefix": (r["violation_at"] or "")[:10], "back": f"/ga/vehicles/{r['vid']}?tab=fines"}
 
@@ -88,7 +88,7 @@ def _fine(ref_id):
 def _damage(ref_id):
     r = query_one("SELECT d.id, d.occur_date, d.kind, d.part, v.id vid, v.plate_no, v.model, v.company FROM ga_vehicle_damages d "
                   "JOIN ga_vehicles v ON v.id=d.vehicle_id WHERE d.id=?", (ref_id,))
-    return r and {"company": r["company"], "target": vehicle_name(r["plate_no"], r["model"]), "key": plate_key(r["plate_no"]), "sub": "사고·파손",
+    return r and {"company": r["company"], "target": vehicle_name(r["plate_no"], r["model"]), "key": plate_key(r["plate_no"]), "sub": ["사고·파손"], "vid": r["vid"],
                   "title": f"{r['plate_no']} {r['kind']} {r['occur_date']} {r['part'] or ''}".strip(),
                   "prefix": r["occur_date"] or "", "back": f"/ga/vehicles/{r['vid']}?tab=damages"}
 
@@ -172,7 +172,77 @@ def target(menu: str, ref_id: int) -> dict | None:
     t = MENUS[menu][3](ref_id)
     if t and menu in UNIQUE:
         _make_unique(menu, int(ref_id), t)
+    if t and menu in SUBS:
+        _own_sub(menu, int(ref_id), t)
     return t
+
+
+# ── 과태료·사고·상벌: 차량(직원) 폴더 안에 건마다 폴더 ────────────────────
+#   예) 총무관리/법인차량/12가3456 그랜저/과태료/2026-10-01 속도위반,  인사관리/상벌현황/사번_이름/2026-11-01 포상
+SUBS = {
+    "ga.fines": "SELECT id, violation_at a, kind b, '' c FROM ga_vehicle_fines WHERE vehicle_id=(SELECT vehicle_id FROM ga_vehicle_fines WHERE id=?)",
+    "ga.damages": "SELECT id, occur_date a, kind b, part c FROM ga_vehicle_damages WHERE vehicle_id=(SELECT vehicle_id FROM ga_vehicle_damages WHERE id=?)",
+    "hr.rewards": "SELECT id, action_date a, kind b, '' c FROM rewards WHERE employee_id=(SELECT employee_id FROM rewards WHERE id=?)",
+}
+
+
+def _sub_name(r) -> str:
+    return _safe(" ".join(x for x in (str(r["a"] or "")[:10] or "날짜 없음", r["b"] or "", r["c"] or "") if x))
+
+
+def _sub_twins(menu: str, ref_id: int) -> list[dict]:
+    rows = query(SUBS[menu], (ref_id,))
+    me = next((r for r in rows if r["id"] == ref_id), None)
+    return [r for r in rows if me and _sub_name(r).lower() == _sub_name(me).lower()]
+
+
+def _own_sub(menu: str, ref_id: int, t: dict):
+    group, same = list(t.get("sub") or []), _sub_twins(menu, ref_id)
+    if not same:
+        return
+    name = _sub_name(next(r for r in same if r["id"] == ref_id))
+    t["sub"] = group + [name]
+    if len(same) > 1 or _left_by_deleted(menu, ref_id, folder(menu, t).replace("\\", "/")):
+        tail = f" (등록 {ref_id}번)"
+        t["sub"] = group + [_safe(name, 60 - len(tail)) + tail]
+
+
+def loose(menu: str, ref_id: int) -> list[dict]:
+    """건마다의 폴더가 아니라 그 위('과태료' 폴더 등)에 바로 넣어 두어, 어느 건의 것인지 사람이 골라야 하는 파일."""
+    t = target(menu, ref_id) if menu in SUBS else None
+    if not t:
+        return []
+    rel = os.path.dirname(folder(menu, t)).replace("\\", "/")
+    full = os.path.normpath(os.path.join(root(), rel))
+    if not _inside(root(), full) or not os.path.isdir(full):
+        return []
+    p = rel + "/"
+    known = {a["rel_path"] for a in query("SELECT rel_path FROM attachments WHERE substr(rel_path, 1, ?)=? AND deleted_at IS NULL", (len(p), p))}
+    owned = {a["rel"] for a in query("SELECT rel FROM archive_folders WHERE substr(rel, 1, ?)=?", (len(p), p))}
+    for r in query(SUBS[menu], (ref_id,)):                   # 아직 기록이 없는 건의 폴더
+        x = target(menu, r["id"])
+        if x:
+            owned.add(folder(menu, x).replace("\\", "/"))
+    out = []
+
+    def walk(d: str, prefix: str, depth: int):
+        try:
+            names = sorted(os.listdir(d))
+        except OSError:
+            return
+        for name in names:
+            low, rp = name.lower(), p + prefix + name
+            if len(out) >= 100 or low in SKIP_NAMES or name.startswith((".", "~$", "@", "BMS_")) or low.endswith(".part"):
+                continue
+            f = os.path.join(d, name)
+            if os.path.isdir(f):
+                if depth < 2 and rp not in owned:
+                    walk(f, prefix + name + "/", depth + 1)
+            elif os.path.splitext(low)[1] in KINDS and rp not in known:
+                out.append({"name": prefix + name, "file": name})
+
+    walk(full, "", 0)
+    return out
 
 
 # ── 이름이 같아도 건마다 폴더를 따로 ───────────────────────────────────
@@ -280,7 +350,7 @@ def _split_files(menu: str, ref_id: int, rel: str):
     for d in left:
         _tidy_dirs(d)
     if n:
-        audit("files", "폴더 나눔", rel.split("/")[-1], f"같은 이름의 다른 건과 같이 쓰던 폴더에서 서류 {n}개를 옮김")
+        audit("files", "폴더 나눔", rel.split("/")[-1], f"다른 건과 같이 쓰던 폴더에서 서류 {n}개를 옮김")
         pending_clear(menu)
 
 
@@ -295,7 +365,7 @@ def folder(menu: str, t: dict) -> str:
     module, name = MENUS[menu][0], MENUS[menu][1]
     parts = [_safe(company.short(company.norm(t.get("company"))), 30), module, name, _safe(t["target"])]
     if t.get("sub"):
-        parts.append(_safe(t["sub"]))
+        parts += [_safe(s) for s in (t["sub"] if isinstance(t["sub"], list) else [t["sub"]])]
     return os.path.join(*parts)
 
 
@@ -365,6 +435,10 @@ def ensure_folder(menu: str, ref_id: int, siblings: bool = True) -> str | None:
                 for n in _twins(menu, int(ref_id), t["target"], t.get("company")):
                     if (n["menu"], n["id"]) != (menu, int(ref_id)):
                         _ensure_folder(n["menu"], n["id"])
+        if rel and siblings and menu in SUBS:
+            for n in _sub_twins(menu, int(ref_id)):
+                if n["id"] != int(ref_id):
+                    _ensure_folder(menu, n["id"])
         return rel
 
 
@@ -373,17 +447,19 @@ def _ensure_folder(menu: str, ref_id: int) -> str | None:
     if not t:
         return None
     r = root()
-    rel = _target_dir(menu, t)
+    if t.get("vid"):                                         # 차량 폴더를 먼저 맞춘 다음 그 안에 건 폴더
+        _ensure_folder("ga.vehicles", t["vid"])
+    rel = folder(menu, t) if menu in SUBS else _target_dir(menu, t)
     full = os.path.normpath(os.path.join(r, rel))
     if not _inside(r, full):
         return None
     try:
-        if menu in UNIQUE:
-            _move_own_folder(menu, ref_id, rel, bool(t.get("dup")))
+        if menu in UNIQUE or menu in SUBS:
+            _move_own_folder(menu, ref_id, rel, bool(t.get("dup")) or menu in SUBS)
         if not os.path.isdir(full):
             parent = os.path.dirname(full)
             twins = []
-            if t.get("key") and os.path.isdir(parent):
+            if t.get("key") and menu not in SUBS and os.path.isdir(parent):
                 twins = [d for d in os.listdir(parent) if os.path.isdir(os.path.join(parent, d)) and _same_thing(d, _safe(t["key"]))]
             if len(twins) == 1:                              # 손으로 만든 폴더 → 규칙에 맞는 이름으로 바꿔서 그대로 씀
                 old_rel = os.path.join(os.path.dirname(rel), twins[0]).replace("\\", "/")
@@ -394,7 +470,7 @@ def _ensure_folder(menu: str, ref_id: int) -> str | None:
                 audit("files", "폴더 이름 정리", twins[0], "→ " + os.path.basename(full))
             else:
                 os.makedirs(full, exist_ok=True)
-        if menu in UNIQUE:
+        if menu in UNIQUE or menu in SUBS:
             _split_files(menu, ref_id, rel)
             execute("INSERT INTO archive_folders(menu, ref_id, rel) VALUES (?,?,?) ON CONFLICT(menu, ref_id) DO UPDATE SET rel=excluded.rel",
                     (menu, int(ref_id), rel.replace("\\", "/")))
@@ -421,7 +497,10 @@ def ensure_all() -> int:
             ("ga.vehicles", "SELECT id FROM ga_vehicles WHERE status<>'매각'", ()),
             ("ga.contracts", "SELECT id FROM ga_contracts WHERE status='유효' OR id IN (SELECT ref_id FROM attachments WHERE menu='ga.contracts' AND deleted_at IS NULL)", ()),
             ("ga.company", "SELECT id FROM ga_company_items WHERE status IN ('유효','갱신중') OR id IN (SELECT ref_id FROM attachments WHERE menu='ga.company' AND deleted_at IS NULL)", ()),
-            ("ga.assets", "SELECT id FROM ga_assets WHERE status<>'폐기'", ())]
+            ("ga.assets", "SELECT id FROM ga_assets WHERE status<>'폐기'", ()),
+            ("ga.fines", "SELECT id FROM ga_vehicle_fines ORDER BY id DESC LIMIT 400", ()),
+            ("ga.damages", "SELECT id FROM ga_vehicle_damages ORDER BY id DESC LIMIT 400", ()),
+            ("hr.rewards", "SELECT id FROM rewards ORDER BY id DESC LIMIT 400", ())]
     for menu, sql, p in jobs:
         for row in query(sql, p):
             if ensure_folder(menu, row["id"]):
@@ -545,11 +624,11 @@ def adopt(menu: str, ref_id: int, names: list[str], note: str = "") -> tuple[int
 PENDING = {
     "hr.employees": ("SELECT id FROM employees WHERE resign_date IS NULL OR resign_date='' OR resign_date>=date('now','localtime') ORDER BY id DESC",
                      "/hr/employees/%d?tab=files", False, "/hr/employees"),
-    "hr.rewards": ("SELECT id FROM rewards ORDER BY id DESC LIMIT 400", "/files/hr.rewards/%d", True, "/hr/rewards"),
+    "hr.rewards": ("SELECT id FROM rewards ORDER BY id DESC LIMIT 400", "/files/hr.rewards/%d", False, "/hr/rewards"),
     "mgmt.training": ("SELECT id FROM training_courses ORDER BY id DESC LIMIT 200", "/files/mgmt.training/%d", False, "/mgmt/training?tab=courses"),
     "ga.vehicles": ("SELECT id FROM ga_vehicles WHERE status<>'매각' ORDER BY id DESC", "/ga/vehicles/%d", False, "/ga/vehicles"),
-    "ga.fines": ("SELECT id FROM ga_vehicle_fines ORDER BY id DESC LIMIT 400", "/files/ga.fines/%d", True, "/ga/vehicles?tab=fines"),
-    "ga.damages": ("SELECT id FROM ga_vehicle_damages ORDER BY id DESC LIMIT 400", "/files/ga.damages/%d", True, "/ga/vehicles?tab=damages"),
+    "ga.fines": ("SELECT id FROM ga_vehicle_fines ORDER BY id DESC LIMIT 400", "/files/ga.fines/%d", False, "/ga/vehicles?tab=fines"),
+    "ga.damages": ("SELECT id FROM ga_vehicle_damages ORDER BY id DESC LIMIT 400", "/files/ga.damages/%d", False, "/ga/vehicles?tab=damages"),
     "ga.assets": ("SELECT id FROM ga_assets WHERE status<>'폐기' ORDER BY id DESC LIMIT 1500", "/ga/assets/%d", False, "/ga/assets"),
     "ga.contracts": ("SELECT id FROM ga_contracts WHERE status='유효' ORDER BY id DESC", "/ga/contracts/%d", False, "/ga/contracts"),
     "ga.docs": ("SELECT id FROM ga_docs ORDER BY id DESC LIMIT 400", "/files/ga.docs/%d", False, "/ga/docs"),
@@ -593,6 +672,25 @@ def _pending_scan(menu: str) -> list[dict]:
                          "title": (" › ".join(parts[-2:]) if shared else t["title"]), "names": [f["name"] for f in files[:3]],
                          "shared": shared, "url": list_url if shared else link + ("" if link.startswith("/files/") else "#files")}
             rows.append(seen[rel])
+    if menu in SUBS:                                         # 건 폴더가 아니라 그 위에 바로 넣은 파일: 어느 건인지 골라야 함
+        tops: dict[str, dict] = {}
+        for r in query(sql):
+            t = target(menu, r["id"])
+            top = os.path.dirname(folder(menu, t)).replace("\\", "/") if t else ""
+            if not top:
+                continue
+            if top in tops:
+                if tops[top]:
+                    tops[top]["ids"].append(r["id"])
+                continue
+            try:
+                files = loose(menu, r["id"])
+            except Exception:                               # noqa: BLE001
+                log.exception("새 파일 확인 실패: %s %s", menu, r["id"])
+                files = []
+            tops[top] = {"menu": menu, "ref_id": r["id"], "ids": [r["id"]], "company": company.norm(t.get("company")), "n": len(files),
+                         "title": " › ".join(top.split("/")[-2:]), "names": [f["name"] for f in files[:3]], "shared": True, "url": list_url} if files else {}
+        rows += [x for x in tops.values() if x]
     return rows
 
 
@@ -837,7 +935,8 @@ def rehome() -> int:
         old_base = cur_dir[:-len(sd) - 1] if sd and cur_dir.endswith("/" + sd) else cur_dir
         ob, nb = os.path.normpath(os.path.join(r, old_base)), os.path.normpath(os.path.join(r, base))
         if old_base != base and _inside(r, ob) and _inside(r, nb) and os.path.isdir(ob) and not os.path.exists(nb) \
-                and not (att["menu"] in UNIQUE and shared_by_others(old_base, att["menu"], att["ref_id"])) and len(old_base.split("/")) >= 4 and old_base.split("/")[0] not in (TRASH, EMPTY):
+                and not (base + "/").startswith(old_base + "/") \
+                and not ((att["menu"] in UNIQUE or att["menu"] in SUBS) and shared_by_others(old_base, att["menu"], att["ref_id"])) and len(old_base.split("/")) >= 4 and old_base.split("/")[0] not in (TRASH, EMPTY):
             try:
                 os.makedirs(os.path.dirname(nb), exist_ok=True)
                 os.replace(ob, nb)

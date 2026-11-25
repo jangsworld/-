@@ -1436,7 +1436,9 @@ async def reward_save(request: Request):
         f["expunge_date"] = add_months(to_date(f["action_date"]), m).isoformat()
     if (f.get("category") or "").startswith("기타") and (f.get("category_etc") or "").strip():
         f["category"] = f["category_etc"].strip()
-    repo.save_reward(int(f.get("id") or 0) or None, f)
+    rid = repo.save_reward(int(f.get("id") or 0) or None, f)
+    from app import archive
+    await run_in_threadpool(archive.ensure_quiet, "hr.rewards", rid)
     audit("hr", "상벌 저장", f.get("employee_id", ""), f"{f.get('kind')}/{f.get('category')}")
     return _redirect(f.get("next") or "/hr/rewards", "저장되었습니다")
 

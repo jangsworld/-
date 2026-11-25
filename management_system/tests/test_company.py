@@ -180,7 +180,7 @@ def test_archive_flow(client, two):
         att = archive.items("ga.fines", fid)[0]
         assert att["orig_name"] == "고지서 원본.pdf" and att["company"] == "2"
         path = os.path.join(archive.root(), att["rel_path"])
-        assert os.path.exists(path) and "둘째/총무관리/법인차량/33다3333 보관함차/과태료/2026-11-01_" in att["rel_path"]
+        assert os.path.exists(path) and "둘째/총무관리/법인차량/33다3333 보관함차/과태료/2026-11-01 주정차/2026-11-01_" in att["rel_path"]
         got = client.get(f"/files/get/{att['id']}")
         assert got.status_code == 200 and got.content == PDF and got.headers["x-content-type-options"] == "nosniff"
         # 이름만 바꾼 파일·허용하지 않는 종류는 거절
@@ -523,16 +523,14 @@ def test_new_file_notice_on_every_menu(client, two):
         assert "pendingCard" in client.get("/ga/assets?co=all").text
         ad = client.get(f"/ga/assets/{aid}").text
         assert 'id="files"' in ad and "영수증.pdf" in ad and f'name="next" value="/ga/assets/{aid}"' in ad
-        # 과태료: 두 건이 한 폴더를 같이 씀 → 알림은 폴더 하나, 두 건 모두에 표시, '모두 올리기'에는 넣지 않음
+        # 과태료: 건마다 폴더가 따로이므로 그 건에만 알림 (자동을 끈 상태)
         pend = [p for p in archive.pending(["ga.fines"]) if f1 in p["ids"]]
-        assert len(pend) == 1 and sorted(pend[0]["ids"]) == [f1, f2] and pend[0]["shared"] and pend[0]["url"] == "/ga/vehicles?tab=fines"
+        assert len(pend) == 1 and pend[0]["ids"] == [f1] and not pend[0]["shared"] and pend[0]["url"] == f"/files/ga.fines/{f1}"
         fp = client.get("/ga/vehicles?tab=fines&status=진행&co=all").text
-        assert "pendingCard" in fp and "해당하는 건을 눌러 올리세요" in fp and f'value="ga.fines:{f1}"' not in fp and fp.count("새 파일 1</span></a>") >= 2
+        assert "pendingCard" in fp and f'value="ga.fines:{f1}"' in fp and f'value="ga.fines:{f2}"' not in fp
         r = client.post("/files/adopt-all", data={"items": [f"ga.fines:{f1}", f"ga.assets:{aid}"], "next": "/ga/assets"}, follow_redirects=False)
         assert r.headers["location"].startswith("/ga/assets?msg=")
-        assert archive.items("ga.fines", f1) == [] and len(archive.items("ga.assets", aid)) == 1   # 과태료는 건을 골라야 하므로 한꺼번에 올리지 않음
-        client.post(f"/files/ga.fines/{f2}/adopt", data={"names": ["고지서.pdf"]})
-        assert len(archive.items("ga.fines", f2)) == 1 and not [p for p in archive.pending(["ga.fines"]) if f1 in p["ids"]]
+        assert len(archive.items("ga.fines", f1)) == 1 and archive.items("ga.fines", f2) == [] and len(archive.items("ga.assets", aid)) == 1
         # 상벌·교육·문서수발 화면도 알림 자리가 있어도 문제없이 열림
         for url in ("/hr/rewards", "/mgmt/training?tab=courses", "/ga/docs", "/ga/vehicles?tab=damages"):
             assert client.get(url).status_code == 200, url

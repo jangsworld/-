@@ -592,6 +592,9 @@ def contract_detail(request: Request, cid: int):
     hist = _history("(module='ga' AND action IN ('계약 등록','계약 수정') AND target=?) OR (module='ga' AND action='계약 만기 알림 메일' AND target=?) "
                     "OR (module='files' AND substr(target, 1, ?)=?) OR (module='files' AND detail LIKE ?)",
                     (f"#{cid}", c["title"], len(fkey), fkey, f"ga.contracts #{cid} %"))
+    first = next((n for n, h in enumerate(hist) if h["action"] == "계약 등록"), None)
+    if first is not None:                                    # 같은 번호를 쓰던 예전 자료의 기록은 빼고, 이 계약을 등록한 때부터
+        hist = hist[:first + 1]
     back = f"/ga/contracts/{cid}"
     return _render(request, "ga/contract_detail.html", {
         "kind": "contract", "c": c, "hist": hist, "fp": _files_panel(request, "ga.contracts", cid, back), "modal_next": back,

@@ -23,8 +23,17 @@
   <form id="{{ _fid }}" method="post" action="/files/{{ fp.menu }}/{{ fp.ref_id }}/adopt" class="fx-new d-flex flex-wrap align-items-center gap-2">
     {% if fp.next %}<input type="hidden" name="next" value="{{ fp.next }}">{% endif %}
     <span><i class="bi bi-folder-symlink"></i> 폴더에 있는데 대장에 없는 파일 <b>{{ fp.waiting|length }}개</b></span>
-    <span class="help">NAS 폴더에 직접 넣어 둔 파일입니다. 자동으로 올라가지 않는 폴더(여러 건이 같이 쓰는 폴더 등)이므로, 이 건의 것을 골라 올려 주세요</span>
+    <span class="help">NAS 폴더에 직접 넣어 둔 파일입니다. 골라서 대장에 올려 주세요 (자동 올리기가 꺼져 있습니다)</span>
     <button class="btn btn-sm btn-primary ms-auto text-nowrap"><i class="bi bi-check2-square"></i> 고른 파일 대장에 올리기</button>
+  </form>
+  {% endif %}
+  {% if fp.loose %}
+  <form method="post" action="/files/{{ fp.menu }}/{{ fp.ref_id }}/claim" class="fx-new">
+    {% if fp.next %}<input type="hidden" name="next" value="{{ fp.next }}">{% endif %}
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1"><span><i class="bi bi-question-circle"></i> 어느 건의 것인지 정해지지 않은 파일 <b>{{ fp.loose|length }}개</b></span>
+      <span class="help">NAS에서 건마다의 폴더가 아니라 그 위 폴더에 넣은 파일입니다. 이 건의 것이면 골라서 가져오세요</span>
+      <button class="btn btn-sm btn-primary ms-auto text-nowrap"><i class="bi bi-box-arrow-in-down"></i> 고른 파일을 이 건으로</button></div>
+    {% for w in fp.loose %}<label class="me-3 small"><input type="checkbox" class="form-check-input me-1" name="names" value="{{ w.name }}">{{ w.name }}</label>{% endfor %}
   </form>
   {% endif %}
   <div class="fx-head"><span>이름</span><span>올린 때</span><span>종류</span><span class="text-end">크기</span><span>메모 · 올린 사람</span><span></span></div>

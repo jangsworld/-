@@ -24,7 +24,7 @@ def pending_for(request: Request, menus) -> list[dict]:
         role = _role(request)
         ok = [m for m in menus if archive.allowed(m, role)]
         # 자동으로 올라가는 건은 '올리세요' 알림에서 뺌 (아래 '최근 들어온 서류'로 알려 줌)
-        rows = Rows(p for p in archive.pending(ok) if not archive_ops.auto_for(p["menu"], p["ref_id"]))
+        rows = Rows(p for p in archive.pending(ok) if p["shared"] or not archive_ops.auto_for(p["menu"], p["ref_id"]))
         rows.recent = archive_ops.recent(ok)
         rows.hold = archive_ops.held() if ok else ""
         return rows
@@ -125,7 +125,7 @@ def panel(menu: str, ref_id: int, nxt: str = "") -> dict | None:
     archive_ops.sync_quiet(menu, ref_id)                    # NAS 에 직접 넣은 파일을 대장에 (복사가 끝난 것만)
     rows, waiting = archive.items(menu, ref_id), archive.unregistered(menu, ref_id)
     return {"menu": menu, "ref_id": ref_id, "rows": rows, "info": archive.MENUS[menu],
-            "waiting": waiting, "next": nxt, **_explorer(menu, ref_id, rows, waiting),
+            "waiting": waiting, "loose": archive.loose(menu, ref_id), "next": nxt, **_explorer(menu, ref_id, rows, waiting),
             "folder": " \\ ".join(archive.folder(menu, t).replace("/", "\\").split("\\")), "max_mb": archive.MAX_MB}
 
 
@@ -240,6 +240,19 @@ async def op(request: Request, menu: str, ref_id: int):
         return {"ok": True, "msg": await run_in_threadpool(calls[kind])}
     except archive.ArchiveError as ex:
         return {"ok": False, "msg": str(ex)}
+
+
+@router.post("/{menu}/{ref_id}/claim")
+async def claim(request: Request, menu: str, ref_id: int):
+    """위 폴더('과태료' 등)에 바로 넣어 둔 파일을 이 건으로 가져옴."""
+    _guard(request, menu, ref_id)
+    form = await request.form()
+    nxt = str(form.get("next") or "")
+    try:
+        msg = await run_in_threadpool(archive_ops.claim, menu, ref_id, [str(x) for x in form.getlist("names")][:100])
+    except archive.ArchiveError as ex:
+        msg = str(ex)
+    return _back(menu, ref_id, msg, nxt)
 
 
 @router.post("/{menu}/{ref_id}/adopt")

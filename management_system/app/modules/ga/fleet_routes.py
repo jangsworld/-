@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
+from app import archive
 from app.common import templates, today
 from app.config import settings as cfg
 from app.db import audit, get_settings, query_one
@@ -223,7 +224,8 @@ async def damage_save(request: Request):
     f = dict(await request.form())
     if not fleet._int(f.get("vehicle_id")):
         return _redirect("/ga/vehicles?tab=damages", "차량을 고르세요")
-    fleet.save_damage(f, request.state.user["display_name"])
+    did = fleet.save_damage(f, request.state.user["display_name"])
+    archive.ensure_quiet("ga.damages", did)
     nxt = f.get("next") or "/ga/vehicles?tab=damages"
     return _redirect(nxt if nxt.startswith("/ga/") else "/ga/vehicles?tab=damages", "사고·파손 기록을 저장했습니다")
 
@@ -251,6 +253,7 @@ async def fine_save(request: Request):
     nxt = nxt if nxt.startswith("/ga/") else "/ga/vehicles?tab=fines"
     if not fid:
         return _redirect(nxt, msg)
+    archive.ensure_quiet("ga.fines", fid)
     return _redirect(nxt, "과태료를 저장했습니다" + (f" · {msg}" if msg else ""))
 
 

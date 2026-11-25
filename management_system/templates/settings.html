@@ -147,7 +147,7 @@
           <form method="post" action="/settings/archive-auto" class="d-inline"><input type="hidden" name="on" value="1"><button class="btn btn-sm btn-danger ms-2">확인했습니다. 다시 켜기</button></form></div>{% endif %}
         <form method="post" action="/settings/archive-auto" class="mt-2 d-flex flex-wrap align-items-center gap-2"><input type="hidden" name="on" value="{{ '0' if arch_auto else '1' }}">
           <span>NAS 폴더에 직접 넣거나 고친 파일을 자동으로 반영하기: <b>{{ '켜짐' if arch_auto else '꺼짐' }}</b></span><button class="btn btn-sm btn-outline-secondary">{{ '끄기' if arch_auto else '켜기' }}</button>
-          <span class="help">과태료·사고·상벌은 여러 건이 폴더를 같이 써서 자동으로 올리지 않습니다</span></form>
+          <span class="help">건마다의 폴더에 넣은 파일만 자동으로 올라갑니다</span></form>
         <div class="help mt-2">폴더 구조: <b>회사 \ 모듈(인사관리·총무관리) \ 메뉴 \ 대상(직원·차량번호·계약명 등) \ 날짜_파일이름</b>.
           위치는 서버 설정 파일(config/bms.toml 의 archive_root)에서 정합니다. NAS 폴더에서 파일을 직접 옮기거나 고치면 BMS에서 열 때 "바뀌었다"고 알려 줍니다(올릴 때의 지문과 견줍니다).</div>
       </div></div>

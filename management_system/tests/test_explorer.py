@@ -25,6 +25,14 @@ def _login(c, user):
 
 @pytest.fixture(scope="module")
 def client():
+    real, archive.start_worker = archive.start_worker, lambda: None      # 뒤에서 도는 정리 작업이 시험 도중 끼어들지 않게
+    try:
+        yield from _client()
+    finally:
+        archive.start_worker = real
+
+
+def _client():
     with TestClient(app) as c:
         for u, r in (("ex_ga", "ga"), ("ex_view", "viewer")):
             if not auth.query_one("SELECT 1 FROM users WHERE username=?", (u,)):
@@ -206,21 +214,22 @@ def test_permissions_and_csrf(client, cid):
 
 
 def test_shared_folder_is_protected(client, cid):
-    """과태료처럼 두 건이 폴더를 같이 쓰면, 다른 건의 서류가 든 폴더는 폴더째 바꾸거나 지울 수 없음."""
-    vid = ga.save("ga_vehicles", None, {"plate_no": "99자9999", "model": "공유차", "status": "운행", "company": "1"})
-    f1, f2 = [execute("INSERT INTO ga_vehicle_fines(vehicle_id, violation_at, kind, amount, status) VALUES (?,?,?,?,?)", (vid, d, "주정차", 1, "접수"))
-              for d in ("2026-01-01 10:00", "2026-02-01 10:00")]
+    """다른 건의 서류가 섞여 들어 있는 폴더는 폴더째 바꾸거나 지울 수 없음."""
+    i, j = cid("보호 하나"), cid("보호 둘")
+    base = _base(i)
+    os.makedirs(os.path.join(base, "영수증"))
+    _up(client, i, "하나.pdf", d="영수증")
+    a = _items(i)["하나.pdf"]
+    _write(os.path.join(base, "영수증", "남의것.pdf"))
+    execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256) VALUES (?,?,?,?,?,?,?,?)",
+            ("ga.contracts", j, "1", a["rel_path"].rsplit("/", 1)[0] + "/남의것.pdf", "남의것.pdf", "application/pdf", len(PDF), a["sha256"]))
+    for b in ({"op": "trash_dir", "dir": "영수증"}, {"op": "rename_dir", "dir": "영수증", "name": "x"}):
+        r = _op(client, i, **b).json()
+        assert r["ok"] is False and "다른 건의 서류" in r["msg"]
+    vid = ga.save("ga_vehicles", None, {"plate_no": "99자9999", "model": "예약차", "status": "운행", "company": "1"})
     try:
-        for f, n in ((f1, "하나.pdf"), (f2, "둘.pdf")):
-            archive.save("ga.fines", f, n, PDF, "", "영수증")
-        for b in ({"op": "trash_dir", "dir": "영수증"}, {"op": "rename_dir", "dir": "영수증", "name": "x"}):
-            r = client.post(f"/files/ga.fines/{f1}/op", json=b).json()
-            assert r["ok"] is False and "다른 건의 서류" in r["msg"]
-        assert archive_ops.sync("ga.fines", f1) == 0
         assert client.post(f"/files/ga.vehicles/{vid}/op", json={"op": "mkdir", "dir": "", "name": "과태료"}).json()["ok"] is False
     finally:
-        execute("DELETE FROM attachments WHERE menu='ga.fines' AND ref_id IN (?,?)", (f1, f2))
-        execute("DELETE FROM ga_vehicle_fines WHERE vehicle_id=?", (vid,))
         execute("DELETE FROM ga_vehicles WHERE id=?", (vid,))
 
 
@@ -567,3 +576,105 @@ def test_edit_reflected_once_when_opened_together(client, cid, clock):
     assert got == [PDF + b" v2"] * 4
     n = query("SELECT COUNT(*) n FROM audit_logs WHERE action='NAS에서 고친 서류 반영' AND target LIKE '%탐색기 동시%'")[0]["n"]
     assert n == 1
+
+
+def test_fines_and_rewards_have_own_folders(client, clock):
+    """과태료·사고·상벌: 건마다 폴더가 따로 생기고, 거기 넣은 파일은 자동으로 올라감. 날짜·종류가 같으면 등록번호를 붙임."""
+    vid = ga.save("ga_vehicles", None, {"plate_no": "97차9797", "model": "건별차_홍길동", "status": "운행", "company": "1"})
+    ids = {}
+    try:
+        for key, at, kind in (("a", "2026-10-01 10:00", "속도위반"), ("b", "2026-11-01 10:00", "주정차위반"), ("c", "2026-11-01 18:00", "주정차위반")):
+            client.post("/ga/fines/save", data={"vehicle_id": vid, "violation_at": at, "kind": kind, "amount": "40000", "status": "접수"})
+            ids[key] = query("SELECT MAX(id) n FROM ga_vehicle_fines WHERE vehicle_id=?", (vid,))[0]["n"]
+        client.post("/ga/damages/save", data={"vehicle_id": vid, "occur_date": "2026-09-01", "kind": "파손", "part": "앞범퍼", "status": "접수"})
+        did = query("SELECT MAX(id) n FROM ga_vehicle_damages WHERE vehicle_id=?", (vid,))[0]["n"]
+        rel = {k: archive.folder("ga.fines", archive.target("ga.fines", v)).replace("\\", "/") for k, v in ids.items()}
+        assert rel["a"].endswith("/법인차량/97차9797 건별차/과태료/2026-10-01 속도위반")
+        assert rel["b"].endswith(f"/2026-11-01 주정차위반 (등록 {ids['b']}번)") and rel["c"].endswith(f"/2026-11-01 주정차위반 (등록 {ids['c']}번)")
+        d = archive.folder("ga.damages", archive.target("ga.damages", did)).replace("\\", "/")
+        assert d.endswith("/97차9797 건별차/사고·파손/2026-09-01 파손 앞범퍼")
+        for x in list(rel.values()) + [d]:
+            assert os.path.isdir(os.path.join(archive.root(), x)), x            # 등록하면 폴더가 미리 생김
+        # 건 폴더에 넣은 파일은 자동으로, 그 건에만
+        _write(os.path.join(archive.root(), rel["b"], "고지서.pdf"), PDF + b"b")
+        for _ in range(2):
+            clock.now += 30
+            archive_ops.sync_all()
+        assert [r["orig_name"] for r in archive.items("ga.fines", ids["b"])] == ["고지서.pdf"]
+        assert archive.items("ga.fines", ids["a"]) == [] and archive.items("ga.fines", ids["c"]) == []
+        # '과태료' 폴더에 바로 넣은 파일: 자동으로 올리지 않고 어느 건인지 고르게 함
+        top = os.path.dirname(os.path.join(archive.root(), rel["a"]))
+        _write(os.path.join(top, "영수증.pdf"), PDF + b"z")
+        os.makedirs(os.path.join(top, "모음"))
+        _write(os.path.join(top, "모음", "사진.pdf"), PDF + b"y")
+        archive.pending_clear()
+        page = client.get("/ga/vehicles?tab=fines&status=&co=all").text
+        assert "pendingCard" in page and "정해지지 않은 파일" in page
+        frag = client.get(f"/files/ga.fines/{ids['a']}/panel").text
+        assert "고른 파일을 이 건으로" in frag and "영수증.pdf" in frag and "모음/사진.pdf" in frag and "고지서.pdf" not in frag
+        client.post(f"/files/ga.fines/{ids['a']}/claim", data={"names": ["영수증.pdf", "모음/사진.pdf", "../../밖.pdf", f"2026-11-01 주정차위반 (등록 {ids['b']}번)/고지서.pdf"]})
+        assert {r["orig_name"] for r in archive.items("ga.fines", ids["a"])} == {"영수증.pdf", "사진.pdf"}
+        assert archive.loose("ga.fines", ids["a"]) == [] and len(archive.items("ga.fines", ids["b"])) == 1
+        # 날짜·종류를 고치면 폴더째 따라감
+        client.post("/ga/fines/save", data={"id": ids["a"], "vehicle_id": vid, "violation_at": "2026-10-02 10:00", "kind": "신호위반", "amount": "1", "status": "접수"})
+        n = archive.folder("ga.fines", archive.target("ga.fines", ids["a"])).replace("\\", "/")
+        assert n.endswith("/2026-10-02 신호위반") and not os.path.exists(os.path.join(archive.root(), rel["a"]))
+        assert all(archive.read(r) for r in archive.items("ga.fines", ids["a"])) and archive.rehome() == 0
+        # 차종을 고치면 차량 폴더째 (안의 과태료·사고 폴더도 함께)
+        ga.save("ga_vehicles", vid, {"model": "새차종"})
+        archive.ensure_all()
+        assert archive.rehome() == 0
+        assert all("/97차9797 새차종/" in r["rel_path"] and archive.read(r) for k in ids for r in archive.items("ga.fines", ids[k]))
+        assert not os.path.exists(os.path.join(os.path.dirname(os.path.dirname(top)), "97차9797 건별차"))
+        # 차량 서류 화면에는 과태료 서류가 섞이지 않음
+        assert archive.unregistered("ga.vehicles", vid) == []
+    finally:
+        for k, i in ids.items():
+            execute("DELETE FROM attachments WHERE menu='ga.fines' AND ref_id=?", (i,))
+        execute("DELETE FROM archive_folders WHERE menu IN ('ga.fines','ga.damages')")
+        execute("DELETE FROM ga_vehicle_fines WHERE vehicle_id=?", (vid,))
+        execute("DELETE FROM ga_vehicle_damages WHERE vehicle_id=?", (vid,))
+        execute("DELETE FROM ga_vehicles WHERE id=?", (vid,))
+        archive.pending_clear()
+
+
+def test_old_shared_fine_folder_is_split(client):
+    """예전 방식('과태료' 폴더에 여러 건이 섞임)의 서류는 건 폴더로 나뉘고 잃는 것이 없음."""
+    import hashlib
+    vid = ga.save("ga_vehicles", None, {"plate_no": "96카9696", "model": "옛차", "status": "운행", "company": "1"})
+    f1, f2 = [execute("INSERT INTO ga_vehicle_fines(vehicle_id, violation_at, kind, amount, status) VALUES (?,?,?,?,?)", (vid, d, "주정차", 1, "접수"))
+              for d in ("2026-01-01 10:00", "2026-02-01 10:00")]
+    try:
+        top = os.path.join(archive.ensure_folder("ga.vehicles", vid), "과태료").replace("\\", "/")
+        os.makedirs(os.path.join(archive.root(), top, "묶음"))
+        for f, name, sd in ((f1, "하나.pdf", ""), (f2, "둘.pdf", ""), (f2, "셋.pdf", "묶음")):
+            rel = "/".join([top] + ([sd] if sd else []) + [name])
+            _write(os.path.join(archive.root(), rel), PDF + name.encode())
+            execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256, subdir) VALUES (?,?,?,?,?,?,?,?,?)",
+                    ("ga.fines", f, "1", rel, name, "application/pdf", 1, hashlib.sha256(PDF + name.encode()).hexdigest(), sd or None))
+        archive.ensure_all()
+        archive.rehome()
+        for f, names in ((f1, {"하나.pdf"}), (f2, {"둘.pdf", "셋.pdf"})):
+            rows = archive.items("ga.fines", f)
+            base = archive.folder("ga.fines", archive.target("ga.fines", f)).replace("\\", "/")
+            assert {r["orig_name"] for r in rows} == names and all(r["rel_path"].startswith(base + "/") and archive.read(r) for r in rows)
+    finally:
+        execute("DELETE FROM attachments WHERE menu='ga.fines' AND ref_id IN (?,?)", (f1, f2))
+        execute("DELETE FROM archive_folders WHERE menu='ga.fines'")
+        execute("DELETE FROM ga_vehicle_fines WHERE vehicle_id=?", (vid,))
+        execute("DELETE FROM ga_vehicles WHERE id=?", (vid,))
+
+
+def test_reward_folder(client):
+    """상벌: 직원 폴더 안에 날짜·포상/징계로 건마다 폴더."""
+    from app.modules.hr import repo
+    eid = repo.create_employee({"name": "상벌사원", "hire_date": "2026-01-02", "department": "경영지원팀", "rank": "사원", "employment_type": "정규직"})
+    try:
+        ids = [repo.save_reward(None, {"employee_id": eid, "kind": "포상", "category": "표창", "action_date": d}) for d in ("2026-03-01", "2026-04-01")]
+        rels = [archive.ensure_folder("hr.rewards", i).replace("\\", "/") for i in ids]
+        assert rels[0].endswith("/2026-03-01 포상") and rels[1].endswith("/2026-04-01 포상") and all("인사관리/상벌현황/" in x for x in rels)
+        assert client.get(f"/files/hr.rewards/{ids[0]}").status_code == 403       # 총무 담당자는 상벌 서류를 볼 수 없음
+        assert client.post(f"/files/hr.rewards/{ids[0]}/claim", data={"names": ["x"]}).status_code == 403
+    finally:
+        execute("DELETE FROM archive_folders WHERE menu='hr.rewards'")
+        repo.delete_employee(eid)
