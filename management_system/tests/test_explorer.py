@@ -275,15 +275,120 @@ def test_auto_register(client, cid, monkeypatch):
         set_setting("archive_auto", before or "")
 
 
-def test_auto_skips_same_title(client, cid, monkeypatch):
-    """이름이 같은 계약이 둘이면 폴더를 같이 쓰므로 자동으로 올리지 않음."""
-    i, j = cid("쌍둥이 계약"), cid("쌍둥이 계약")
-    _write(os.path.join(_base(i), "x.pdf"))
-    clock = _Clock()
-    monkeypatch.setattr(archive_ops, "time", clock)
-    for _ in range(3):
-        clock.now += 60
-        assert archive_ops.sync("ga.contracts", i) == 0 and archive_ops.sync("ga.contracts", j) == 0
+def _mk(title, start, end, **kw):
+    return ga.save("ga_contracts", None, {"category": "렌탈", "title": title, "counterparty": "상대", "status": "유효", "company": "1",
+                                          "start_date": start, "end_date": end, **kw})
+
+
+def _clean(*ids):
+    for i in ids:
+        execute("DELETE FROM attachments WHERE menu='ga.contracts' AND ref_id=?", (i,))
+        execute("DELETE FROM archive_folders WHERE menu='ga.contracts' AND ref_id=?", (i,))
+        execute("DELETE FROM ga_contracts WHERE id=?", (i,))
+
+
+def test_same_title_gets_own_folder(client, clock):
+    """이름이 같은 계약을 새로 등록하면 폴더가 따로 생기고(기간을 붙임), 먼저 있던 건의 폴더도 파일째 그대로 이름만 바뀜. 자동 등록도 됨."""
+    i = _mk("같은이름 복합기", "2025-02-25", "2028-08-25")
+    j = k = None
+    try:
+        base = _base(i)
+        assert os.path.basename(base) == "같은이름 복합기"                       # 하나뿐이면 이름 그대로
+        _up(client, i, "첫계약.pdf", PDF + b"1")
+        os.makedirs(os.path.join(base, "하위"))
+        _write(os.path.join(base, "하위", "대장에 없는 것.txt"), b"memo")
+        r = client.post("/ga/contracts/save", data={"category": "렌탈", "title": "같은이름 복합기", "counterparty": "상대", "status": "유효", "company": "1",
+                                                    "start_date": "2025-03-27", "end_date": "2028-09-27"}, follow_redirects=False)
+        from urllib.parse import unquote
+        assert "따로 만들었습니다" in unquote(r.headers["location"])
+        j = max(x["id"] for x in query("SELECT id FROM ga_contracts WHERE title='같은이름 복합기'"))
+        bi, bj = _base(i), _base(j)
+        assert os.path.basename(bi) == "같은이름 복합기 (25.02.25~28.08.25)" and os.path.basename(bj) == "같은이름 복합기 (25.03.27~28.09.27)"
+        assert not os.path.exists(base) and os.path.exists(os.path.join(bi, "하위", "대장에 없는 것.txt"))   # 폴더째 따라감
+        assert archive.read(_items(i)["첫계약.pdf"]) == PDF + b"1" and archive.rehome() == 0
+        _up(client, j, "둘째계약.pdf", PDF + b"2")
+        assert set(_items(i)) == {"첫계약.pdf"} and set(_items(j)) == {"둘째계약.pdf"}
+        _write(os.path.join(bj, "NAS에서.pdf"), PDF + b"3")                       # 이제 자동 등록도 됨
+        for _ in range(2):
+            clock.now += 30
+            archive_ops.sync("ga.contracts", i)
+            archive_ops.sync("ga.contracts", j)
+        assert set(_items(i)) == {"첫계약.pdf"} and set(_items(j)) == {"둘째계약.pdf", "NAS에서.pdf"}
+        # 이력도 건마다 따로
+        assert "둘째계약.pdf" not in client.get(f"/ga/contracts/{i}").text and "둘째계약.pdf" in client.get(f"/ga/contracts/{j}").text
+        # 이름을 바꾸면 폴더째 바로 따라가고, 하나만 남은 건은 이름 그대로 돌아감
+        client.post("/ga/contracts/save", data={"id": j, "category": "렌탈", "title": "둘째 복합기", "counterparty": "상대", "status": "유효",
+                                                "start_date": "2025-03-27", "end_date": "2028-09-27"})
+        assert os.path.basename(_base(j)) == "둘째 복합기" and os.path.exists(os.path.join(_base(j), "NAS에서.pdf")) and not os.path.exists(bj)
+        assert os.path.basename(_base(i)) == "같은이름 복합기" and archive.read(_items(i)["첫계약.pdf"]) == PDF + b"1"
+        # 기간까지 같으면 등록번호로 나눔
+        k = _mk("같은이름 복합기", "2025-02-25", "2028-08-25")
+        names = {os.path.basename(_base(i)), os.path.basename(_base(k))}
+        assert len(names) == 2 and all("등록" in n for n in names)
+    finally:
+        _clean(*[x for x in (i, j, k) if x])
+
+
+def test_legacy_shared_folder_is_split(client):
+    """예전에 한 폴더에 섞인 두 건: 서류를 각자 폴더로 나누고, 아무 파일도 없어지지 않음. 다 옮겨 빈 폴더만 _빈폴더 로."""
+    i, j = _mk("섞인 복합기", "2025-02-25", "2028-08-25"), _mk("섞인 복합기", "2025-03-27", "2028-09-27")
+    try:
+        co_dir = os.path.join(archive._safe(archive.company.short("1"), 30), "총무관리", "계약·만기 관리")
+        old = os.path.join(archive.root(), co_dir, "섞인 복합기")
+        os.makedirs(os.path.join(old, "하위"))
+        for cid_, name, sd, raw in ((i, "일번.pdf", "", PDF + b"1"), (j, "이번.pdf", "", PDF + b"2"), (j, "이번하위.pdf", "하위", PDF + b"3")):
+            _write(os.path.join(old, *([sd] if sd else []), name), raw)
+            rel = "/".join(co_dir.replace("\\", "/").split("/") + ["섞인 복합기"] + ([sd] if sd else []) + [name])
+            execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256, subdir) VALUES (?,?,?,?,?,?,?,?,?)",
+                    ("ga.contracts", cid_, "1", rel, name, "application/pdf", len(raw), __import__("hashlib").sha256(raw).hexdigest(), sd or None))
+        _write(os.path.join(old, "주인 모름.pdf"), PDF + b"9")
+        archive.ensure_all()
+        archive.rehome()
+        bi, bj = _base(i), _base(j)
+        assert sorted(os.listdir(bi)) == ["일번.pdf"] and sorted(os.listdir(bj)) == ["이번.pdf", "하위"]
+        assert archive.read(_items(i)["일번.pdf"]) == PDF + b"1" and archive.read(_items(j)["이번하위.pdf"]) == PDF + b"3"
+        assert os.path.exists(os.path.join(old, "주인 모름.pdf"))                   # 누구 것인지 모르는 파일은 그 자리에
+        os.replace(os.path.join(old, "주인 모름.pdf"), os.path.join(bi, "주인 모름.pdf"))
+        assert archive.rehome() == 0
+    finally:
+        _clean(i, j)
+
+
+def test_shared_empty_old_folder_goes_to_empty_box(client):
+    i, j = _mk("빈섞임 계약", "2025-01-01", "2025-12-31"), _mk("빈섞임 계약", "2026-01-01", "2026-12-31")
+    try:
+        co_dir = "/".join([archive._safe(archive.company.short("1"), 30), "총무관리", "계약·만기 관리", "빈섞임 계약"])
+        old = os.path.join(archive.root(), *co_dir.split("/"))
+        os.makedirs(old)
+        for cid_, name in ((i, "a.pdf"), (j, "b.pdf")):
+            _write(os.path.join(old, name))
+            execute("INSERT INTO attachments(menu, ref_id, company, rel_path, orig_name, mime, size, sha256) VALUES (?,?,?,?,?,?,?,?)",
+                    ("ga.contracts", cid_, "1", co_dir + "/" + name, name, "application/pdf", len(PDF), __import__("hashlib").sha256(PDF).hexdigest()))
+        client.get(f"/ga/contracts/{i}")                                          # 화면만 열어도 나뉨
+        assert os.path.basename(_base(i)) == "빈섞임 계약 (25.01.01~25.12.31)" and archive.read(_items(j)["b.pdf"]) == PDF
+        assert not os.path.exists(old) and os.path.isdir(os.path.join(archive.root(), archive.EMPTY, *co_dir.split("/")))
+    finally:
+        _clean(i, j)
+
+
+def test_new_contract_never_mixes_with_deleted_one(client, clock):
+    """지운 계약의 폴더가 남아 있을 때 같은 이름으로 새로 등록해도 옛 서류와 섞이지 않음. 미리 만들어 둔 폴더는 그대로 씀."""
+    i = _mk("지웠다 다시", "2024-01-01", "2024-12-31")
+    j = k = None
+    try:
+        old = _base(i)
+        _write(os.path.join(old, "옛서류.pdf"))
+        execute("DELETE FROM ga_contracts WHERE id=?", (i,))
+        j = _mk("지웠다 다시", "2026-01-01", "2026-12-31")
+        assert os.path.basename(_base(j)) == "지웠다 다시 (26.01.01~26.12.31)" and archive.unregistered("ga.contracts", j) == []
+        assert os.path.exists(os.path.join(old, "옛서류.pdf"))
+        pre = os.path.join(os.path.dirname(old), "미리 만든 폴더 계약")
+        os.makedirs(pre)
+        _write(os.path.join(pre, "미리.pdf"))
+        k = _mk("미리 만든 폴더 계약", "2026-01-01", "2026-12-31")
+        assert _base(k) == pre and [w["name"] for w in archive.unregistered("ga.contracts", k)] == ["미리.pdf"]
+    finally:
+        _clean(*[x for x in (i, j, k) if x])
 
 
 def test_preview_and_thumb(client, cid):
@@ -443,7 +548,22 @@ def test_auto_folder_has_no_button(client, cid, clock):
     clock.now += 10
     frag = client.get(url).text
     assert re.search(r'class="fx-when"[^>]*>고침 \d\d-\d\d \d\d:\d\d', frag) and "반영 중" not in frag and 'data-wait="0"' in frag
-    # 이름이 같은 계약이 둘이면 자동이 아니므로 단추가 있음
-    cid("탐색기 단추없음")
-    _write(os.path.join(base, "둘째.pdf"), PDF + b"7")
-    assert "고른 파일 대장에 올리기" in client.get(url).text
+
+
+
+def test_edit_reflected_once_when_opened_together(client, cid, clock):
+    """고친 파일을 동시에 두 번 열어도 반영 기록은 한 번만."""
+    import threading
+    i = cid("탐색기 동시")
+    _base(i)
+    _up(client, i, "계약.pdf")
+    _sync(i, clock)
+    a = _items(i)["계약.pdf"]
+    _edit(a, PDF + b" v2", 1700000000)
+    got = []
+    ts = [threading.Thread(target=lambda: got.append(archive_ops.read_fresh(dict(a)))) for _ in range(4)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert got == [PDF + b" v2"] * 4
+    n = query("SELECT COUNT(*) n FROM audit_logs WHERE action='NAS에서 고친 서류 반영' AND target LIKE '%탐색기 동시%'")[0]["n"]
+    assert n == 1

@@ -169,7 +169,125 @@ def allowed(menu: str, role: str | None) -> bool:
 def target(menu: str, ref_id: int) -> dict | None:
     if menu not in MENUS:
         return None
-    return MENUS[menu][3](ref_id)
+    t = MENUS[menu][3](ref_id)
+    if t and menu in UNIQUE:
+        _make_unique(menu, int(ref_id), t)
+    return t
+
+
+# ── 이름이 같아도 건마다 폴더를 따로 ───────────────────────────────────
+# 같은 이름의 건이 둘 이상이면 모두 이름 뒤에 기간을 붙임: '복합기 임대차 (25.02.25~28.08.25)'. 기간까지 같으면 등록번호도 붙임.
+# 이름이 같은 '지운 건'의 폴더가 남아 있을 때도 새 건에는 붙여, 옛 서류와 섞이지 않게 함.
+UNIQUE = {"ga.contracts", "ga.company", "mgmt.training"}
+
+
+def _names(menu: str) -> list[dict]:
+    """같은 메뉴 폴더를 쓰는 건들의 이름. 계약과 면허·보험은 '계약·만기 관리' 폴더를 함께 씀."""
+    if menu == "mgmt.training":
+        return [{"menu": menu, "id": r["id"], "company": None, "name": r["name"], "a": None, "b": None}
+                for r in query("SELECT id, name FROM training_courses")]
+    return ([{"menu": "ga.contracts", "id": r["id"], "company": r["company"], "name": r["title"], "a": r["start_date"], "b": r["end_date"]}
+             for r in query("SELECT id, title, company, start_date, end_date FROM ga_contracts")]
+            + [{"menu": "ga.company", "id": r["id"], "company": r["company"], "name": f"{r['category']}_{r['name']}", "a": r["start_date"], "b": r["expire_date"]}
+               for r in query("SELECT id, category, name, company, start_date, expire_date FROM ga_company_items")])
+
+
+def _term(a, b) -> str:
+    def short(d):
+        d = str(d or "")[:10]
+        return d[2:].replace("-", ".") if re.fullmatch(r"\d{4}-\d\d-\d\d", d) else ""
+    return f"{short(a)}~{short(b)}" if short(a) or short(b) else ""
+
+
+def _twins(menu: str, ref_id: int, name: str, comp) -> list[dict]:
+    """같은 회사·같은 메뉴 폴더에서 폴더 이름이 같아지는 건들 (자기 포함)."""
+    key = _safe(name).lower()
+    return [n for n in _names(menu) if _safe(n["name"]).lower() == key
+            and (menu == "mgmt.training" or company.norm(n["company"]) == company.norm(comp))]
+
+
+def _make_unique(menu: str, ref_id: int, t: dict):
+    plain = t["target"]
+    same = _twins(menu, ref_id, plain, t.get("company"))
+    if len(same) <= 1 and not _left_by_deleted(menu, ref_id, _target_dir(menu, t).replace("\\", "/")):
+        return
+    me = next((n for n in same if n["menu"] == menu and n["id"] == ref_id), {"a": None, "b": None})
+    term = _term(me["a"], me["b"])
+    alone = term and sum(1 for n in same if _term(n["a"], n["b"]) == term) == 1
+    tail = f" ({term})" if alone else f" ({term + ' · ' if term else ''}등록 {'면허 ' if menu == 'ga.company' else ''}{ref_id}번)"
+    t["target"] = _safe(plain, 60 - len(tail)) + tail
+    t["dup"] = tail.strip()
+    t["title"] = t["title"].replace(plain, t["target"], 1) if plain in t["title"] else f"{t['title']}{tail}"
+
+
+def _left_by_deleted(menu: str, ref_id: int, rel: str) -> bool:
+    """이 이름의 폴더가, 지금은 지워진 다른 건이 쓰던 것으로 남아 있는지."""
+    for r in query("SELECT menu, ref_id FROM archive_folders WHERE rel=? AND NOT (menu=? AND ref_id=?)", (rel, menu, ref_id)):
+        if r["menu"] in MENUS and not MENUS[r["menu"]][3](r["ref_id"]) and os.path.isdir(os.path.join(root(), rel)):
+            return True
+    return False
+
+
+def shared_by_others(rel: str, menu: str, ref_id: int) -> bool:
+    """그 폴더에 다른 건의 서류가 있거나 다른 건이 그 폴더를 쓰고 있는지 (폴더째 옮기면 안 되는지)."""
+    p = rel + "/"
+    if query_one("SELECT 1 FROM attachments WHERE substr(rel_path, 1, ?)=? AND deleted_at IS NULL AND NOT (menu=? AND ref_id=?)", (len(p), p, menu, int(ref_id))):
+        return True
+    return any(r["menu"] in MENUS and MENUS[r["menu"]][3](r["ref_id"]) for r in
+               query("SELECT menu, ref_id FROM archive_folders WHERE rel=? AND NOT (menu=? AND ref_id=?)", (rel, menu, int(ref_id))))
+
+
+def _move_own_folder(menu: str, ref_id: int, rel: str, dup: bool = False):
+    """이름·기간이 바뀌어 폴더 이름이 달라졌으면 폴더째 새 이름으로 (대장에 없는 파일·하위 폴더도 함께)."""
+    rel = rel.replace("\\", "/")
+    r = query_one("SELECT rel FROM archive_folders WHERE menu=? AND ref_id=?", (menu, int(ref_id)))
+    old = r["rel"] if r else ""
+    if not old and dup:                                      # 예전에 같은 이름의 건과 섞여 쓰던 폴더: 폴더째 옮기지 않고 자기 서류만 나눔 (_split_files)
+        return
+    if not old:                                              # 기록이 없던 건: 붙은 서류가 있는 폴더로 짐작
+        for a in query("SELECT rel_path, subdir FROM attachments WHERE menu=? AND ref_id=? AND deleted_at IS NULL", (menu, int(ref_id))):
+            d, sd = a["rel_path"].rsplit("/", 1)[0], a["subdir"] or ""
+            old = d[:-len(sd) - 1] if sd and d.endswith("/" + sd) else d
+            break
+    if old and old != rel and len(old.split("/")) >= 4 and old.split("/")[0] not in (TRASH, EMPTY):
+        ob, nb = os.path.normpath(os.path.join(root(), old)), os.path.normpath(os.path.join(root(), rel))
+        if _inside(root(), ob) and _inside(root(), nb) and os.path.isdir(ob) and not os.path.exists(nb) and not shared_by_others(old, menu, ref_id):
+            os.makedirs(os.path.dirname(nb), exist_ok=True)
+            os.replace(ob, nb)
+            p = old + "/"
+            for a in query("SELECT id, rel_path FROM attachments WHERE substr(rel_path, 1, ?)=? AND deleted_at IS NULL", (len(p), p)):
+                execute("UPDATE attachments SET rel_path=? WHERE id=?", (rel + a["rel_path"][len(old):], a["id"]))
+            audit("files", "폴더 이름 정리", old.split("/")[-1], "→ " + rel.split("/")[-1])
+
+
+def _split_files(menu: str, ref_id: int, rel: str):
+    """다른 건과 같이 쓰던 폴더에 있는 이 건의 서류를 자기 폴더로 옮김 (남의 서류·대장에 없는 파일은 그대로 둠)."""
+    rel = rel.replace("\\", "/")
+    n, left = 0, set()
+    for a in query("SELECT * FROM attachments WHERE menu=? AND ref_id=? AND deleted_at IS NULL", (menu, int(ref_id))):
+        want = rel + ("/" + a["subdir"] if a.get("subdir") else "")
+        d, name = a["rel_path"].rsplit("/", 1)
+        if d == want:
+            continue
+        src, dst = os.path.normpath(os.path.join(root(), a["rel_path"])), os.path.normpath(os.path.join(root(), want, name))
+        if not (_inside(root(), src) and _inside(root(), dst)) or not os.path.exists(src) or os.path.exists(dst):
+            continue
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        os.replace(src, dst)
+        execute("UPDATE attachments SET rel_path=? WHERE id=?", (want + "/" + name, a["id"]))
+        left.add(os.path.dirname(src))
+        n += 1
+    for d in left:
+        _tidy_dirs(d)
+    if n:
+        audit("files", "폴더 나눔", rel.split("/")[-1], f"같은 이름의 다른 건과 같이 쓰던 폴더에서 서류 {n}개를 옮김")
+        pending_clear(menu)
+
+
+def dup_note(menu: str, ref_id: int) -> str:
+    """등록 뒤 안내: 이름이 같은 건이 있어 폴더를 따로 만들었음."""
+    t = target(menu, ref_id) if menu in UNIQUE else None
+    return f" · 같은 이름의 건이 있어 서류 폴더를 '{t['target']}'(으)로 따로 만들었습니다" if t and t.get("dup") else ""
 
 
 def folder(menu: str, t: dict) -> str:
@@ -236,8 +354,21 @@ def _same_thing(name: str, key: str) -> bool:
     return bool(k) and (n == k or any(n.startswith(k + sep) for sep in (" ", "_", "-", "(")))
 
 
-def ensure_folder(menu: str, ref_id: int) -> str | None:
-    """대상 폴더를 준비하고 상대 경로를 돌려줌. 이미 있으면 그대로, 비슷한 이름의 폴더가 딱 하나 있으면 이름을 바꿔 씀, 없으면 새로 만듦."""
+def ensure_folder(menu: str, ref_id: int, siblings: bool = True) -> str | None:
+    """대상 폴더를 준비하고 상대 경로를 돌려줌. 이미 있으면 그대로, 비슷한 이름의 폴더가 딱 하나 있으면 이름을 바꿔 씀, 없으면 새로 만듦.
+    이름이 같은 다른 건이 있으면 그 건들의 폴더도 함께 맞춤(건마다 따로)."""
+    with FS_LOCK:
+        rel = _ensure_folder(menu, ref_id)
+        if rel and menu in UNIQUE:
+            t = MENUS[menu][3](ref_id)
+            if siblings and t:
+                for n in _twins(menu, int(ref_id), t["target"], t.get("company")):
+                    if (n["menu"], n["id"]) != (menu, int(ref_id)):
+                        _ensure_folder(n["menu"], n["id"])
+        return rel
+
+
+def _ensure_folder(menu: str, ref_id: int) -> str | None:
     t = target(menu, ref_id)
     if not t:
         return None
@@ -247,6 +378,8 @@ def ensure_folder(menu: str, ref_id: int) -> str | None:
     if not _inside(r, full):
         return None
     try:
+        if menu in UNIQUE:
+            _move_own_folder(menu, ref_id, rel, bool(t.get("dup")))
         if not os.path.isdir(full):
             parent = os.path.dirname(full)
             twins = []
@@ -261,6 +394,10 @@ def ensure_folder(menu: str, ref_id: int) -> str | None:
                 audit("files", "폴더 이름 정리", twins[0], "→ " + os.path.basename(full))
             else:
                 os.makedirs(full, exist_ok=True)
+        if menu in UNIQUE:
+            _split_files(menu, ref_id, rel)
+            execute("INSERT INTO archive_folders(menu, ref_id, rel) VALUES (?,?,?) ON CONFLICT(menu, ref_id) DO UPDATE SET rel=excluded.rel",
+                    (menu, int(ref_id), rel.replace("\\", "/")))
     except OSError:
         log.exception("폴더 준비 실패: %s", rel)
         return None
@@ -282,8 +419,8 @@ def ensure_all() -> int:
     t = datetime.now().strftime("%Y-%m-%d")
     jobs = [("hr.employees", "SELECT id FROM employees WHERE resign_date IS NULL OR resign_date='' OR resign_date>=?", (t,)),
             ("ga.vehicles", "SELECT id FROM ga_vehicles WHERE status<>'매각'", ()),
-            ("ga.contracts", "SELECT id FROM ga_contracts WHERE status='유효'", ()),
-            ("ga.company", "SELECT id FROM ga_company_items WHERE status IN ('유효','갱신중')", ()),
+            ("ga.contracts", "SELECT id FROM ga_contracts WHERE status='유효' OR id IN (SELECT ref_id FROM attachments WHERE menu='ga.contracts' AND deleted_at IS NULL)", ()),
+            ("ga.company", "SELECT id FROM ga_company_items WHERE status IN ('유효','갱신중') OR id IN (SELECT ref_id FROM attachments WHERE menu='ga.company' AND deleted_at IS NULL)", ()),
             ("ga.assets", "SELECT id FROM ga_assets WHERE status<>'폐기'", ())]
     for menu, sql, p in jobs:
         for row in query(sql, p):
@@ -699,7 +836,8 @@ def rehome() -> int:
         sd = att.get("subdir") or ""
         old_base = cur_dir[:-len(sd) - 1] if sd and cur_dir.endswith("/" + sd) else cur_dir
         ob, nb = os.path.normpath(os.path.join(r, old_base)), os.path.normpath(os.path.join(r, base))
-        if old_base != base and _inside(r, ob) and _inside(r, nb) and os.path.isdir(ob) and not os.path.exists(nb)                 and len(old_base.split("/")) >= 4 and old_base.split("/")[0] not in (TRASH, EMPTY):
+        if old_base != base and _inside(r, ob) and _inside(r, nb) and os.path.isdir(ob) and not os.path.exists(nb) \
+                and not (att["menu"] in UNIQUE and shared_by_others(old_base, att["menu"], att["ref_id"])) and len(old_base.split("/")) >= 4 and old_base.split("/")[0] not in (TRASH, EMPTY):
             try:
                 os.makedirs(os.path.dirname(nb), exist_ok=True)
                 os.replace(ob, nb)

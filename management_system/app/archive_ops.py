@@ -241,18 +241,9 @@ def auto_menu(menu: str) -> bool:
     return menu in PENDING and not PENDING[menu][2]
 
 
-def _alone(menu: str, ref_id: int) -> bool:
-    """같은 이름의 계약·항목이 둘 이상이면 폴더를 같이 쓰므로 자동으로 올리지 않음."""
-    tbl, col = {"ga.contracts": ("ga_contracts", "title"), "ga.company": ("ga_company_items", "name")}.get(menu, ("", ""))
-    if not tbl:
-        return True
-    r = query_one(f"SELECT COUNT(*) n FROM {tbl} WHERE {col}=(SELECT {col} FROM {tbl} WHERE id=?)", (ref_id,))
-    return r["n"] <= 1
-
-
 def auto_for(menu: str, ref_id: int) -> bool:
     """이 건의 폴더에 넣은 파일이 자동으로 올라가는지 (아니면 화면에 [대장에 올리기] 단추가 보임)."""
-    return auto_on() and auto_menu(menu) and _alone(menu, ref_id)
+    return auto_on() and auto_menu(menu)
 
 
 def refused(menu: str, ref_id: int, waiting: list[dict]) -> set[str]:
@@ -350,6 +341,11 @@ def release():
 
 
 def _apply_edit(a: dict, path: str, manual: bool) -> str:
+    with FS_LOCK:
+        return _apply_edit_locked(a, path, manual)
+
+
+def _apply_edit_locked(a: dict, path: str, manual: bool) -> str:
     """바뀐 파일 하나를 반영. ''=아직(복사·저장 중), 'same'=내용은 같음, 'ok'=반영, 'bad'=받아들일 수 없음, 'hold'=대량 변경으로 멈춤."""
     try:
         st = os.stat(path)
@@ -372,7 +368,10 @@ def _apply_edit(a: dict, path: str, manual: bool) -> str:
     except OSError:                                          # 다른 사람이 열어 두고 저장하는 중
         return ""
     sha = hashlib.sha256(raw).hexdigest()
-    if sha == a["sha256"]:
+    now_row = query_one("SELECT sha256 FROM attachments WHERE id=? AND deleted_at IS NULL", (a["id"],))
+    if not now_row:
+        return "same"
+    if sha == now_row["sha256"]:                              # 그대로이거나, 같은 순간 다른 요청이 먼저 반영함 (기록을 두 번 남기지 않게)
         execute("UPDATE attachments SET mtime=? WHERE id=?", (str(st.st_mtime_ns), a["id"]))
         return "same"
     try:
@@ -392,7 +391,7 @@ def _apply_edit(a: dict, path: str, manual: bool) -> str:
             return "hold"
         _changes.append(now)
     execute("UPDATE attachments SET sha256=?, size=?, mtime=?, modified_at=datetime('now','localtime') WHERE id=? AND sha256=?",
-            (sha, len(raw), str(st.st_mtime_ns), a["id"], a["sha256"]))
+            (sha, len(raw), str(st.st_mtime_ns), a["id"], now_row["sha256"]))
     t = target(a["menu"], a["ref_id"]) or {"title": ""}
     audit("files", "NAS에서 고친 서류 반영", f"{MENUS[a['menu']][1]} {t['title']}"[:120], f"{a['orig_name']} · {a['size'] // 1024}KB → {len(raw) // 1024}KB")
     return "ok"

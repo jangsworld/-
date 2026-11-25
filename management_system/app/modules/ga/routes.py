@@ -587,7 +587,8 @@ def contract_detail(request: Request, cid: int):
     if not c:
         raise HTTPException(404, "계약을 찾을 수 없습니다")
     c = services.contract_view(c)
-    fkey = f"{archive.MENUS['ga.contracts'][1]} {c['title']} ("[:120]       # 서류 기록의 대상 이름 앞부분 (상대방 이름이 바뀌어도 찾게)
+    at = archive.target("ga.contracts", cid) or {}
+    fkey = f"{archive.MENUS['ga.contracts'][1]} {at['target'] if at.get('dup') else c['title']} ("[:120]   # 서류 기록의 대상 이름 앞부분 (상대방 이름이 바뀌어도 찾게)
     hist = _history("(module='ga' AND action IN ('계약 등록','계약 수정') AND target=?) OR (module='ga' AND action='계약 만기 알림 메일' AND target=?) "
                     "OR (module='files' AND substr(target, 1, ?)=?) OR (module='files' AND detail LIKE ?)",
                     (f"#{cid}", c["title"], len(fkey), fkey, f"ga.contracts #{cid} %"))
@@ -683,6 +684,8 @@ async def generic_save(request: Request, kind: str):
         from app import archive
         await run_in_threadpool(archive.ensure_quiet, "ga." + kind, rid)
         extra = await archive.save_uploads("ga." + kind, rid, uploads)
+        if kind == "contracts" and not f.get("id"):
+            extra += archive.dup_note("ga.contracts", rid)
     nxt = f.get("next") or {"vehicles": f"/ga/vehicles/{rid}", "maint": f"/ga/vehicles/{f.get('vehicle_id')}",
                             "seals": "/ga/docs?tab=seal", "contracts": "/ga/contracts", "rules": "/ga/events"}.get(kind, "/ga/dashboard")
     return _redirect(nxt if nxt.startswith("/ga/") else "/ga/dashboard", "저장되었습니다" + extra)

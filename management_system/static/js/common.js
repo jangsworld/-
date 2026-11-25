@@ -564,7 +564,7 @@ document.querySelectorAll('select[data-search]').forEach((sel) => {
 
   wraps.forEach((wrap) => {
     const url = wrap.dataset.url, next = wrap.dataset.next;
-    let cur = '', busy = false, menu = null, drag = null, timer = 0, tries = 0;
+    let cur = '', busy = false, menu = null, drag = null, timer = 0, tries = 0, opened = 0;
     const $ = (q) => wrap.querySelector(q), $$ = (q) => [...wrap.querySelectorAll(q)];
     const fail = (m) => { toast(m); };
 
@@ -697,6 +697,8 @@ document.querySelectorAll('select[data-search]').forEach((sel) => {
       },
     };
     const openFile = (x) => {
+      if (Date.now() - opened < 900) return;                // 두 번 눌러도 한 번만
+      opened = Date.now();
       if (!x.dataset.view) { location.href = '/files/get/' + x.dataset.id + '?dl=1'; return; }
       const all = $$('.fx-file:not([hidden])[data-view]');
       preview(all.map((y) => ({ id: y.dataset.id, name: y.dataset.name, view: y.dataset.view })), all.indexOf(x), all.some((y) => y.dataset.changed) ? () => refresh('', true) : null);

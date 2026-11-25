@@ -1037,6 +1037,13 @@ CREATE INDEX IF NOT EXISTS idx_doc_mails ON hr_doc_mails(doc_id);
 CREATE INDEX IF NOT EXISTS idx_leave_emp ON leave_records(employee_id, start_date);
 CREATE INDEX IF NOT EXISTS idx_leave_promo ON leave_promotions(employee_id, year);
 CREATE INDEX IF NOT EXISTS idx_leave_plans ON leave_plans(employee_id, year);
+-- 문서 보관함: 건마다 실제로 쓰는 폴더 (이름이 바뀌면 폴더째 따라가고, 지운 건의 폴더에 새 건이 섞이지 않게)
+CREATE TABLE IF NOT EXISTS archive_folders (
+    menu   TEXT NOT NULL,
+    ref_id INTEGER NOT NULL,
+    rel    TEXT NOT NULL,
+    PRIMARY KEY (menu, ref_id)
+);
 -- 문서 보관함: 각 메뉴에 붙인 서류 대장 (파일은 NAS 의 메뉴별 폴더, app/archive.py)
 CREATE TABLE IF NOT EXISTS attachments (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
