@@ -16,35 +16,52 @@
       NAS에서 위 폴더에 파일을 직접 넣어 두어도 됩니다 (안에 폴더를 만들어 넣어도 인식합니다). 이 화면을 열면 "대장에 없는 파일"로 보이고, 버튼 한 번으로 대장에 올라갑니다.</div>
   </div>
 </div>
-{% if fp.waiting %}
-<form class="card mb-3 border-warning" method="post" action="/files/{{ fp.menu }}/{{ fp.ref_id }}/adopt">{% if fp.next %}<input type="hidden" name="next" value="{{ fp.next }}">{% endif %}
-  <div class="card-header bg-warning-subtle d-flex align-items-center gap-2"><span><i class="bi bi-folder-symlink"></i> 폴더에 있는데 대장에 없는 파일 <b>{{ fp.waiting|length }}개</b></span>
-    <span class="help">NAS 폴더(안에 만든 하위 폴더 포함)에 직접 넣어 둔 파일입니다. 다시 올릴 필요 없이 그 자리 그대로 대장에 올립니다 (폴더가 두 벌 생기지 않습니다)</span>
-    <button class="btn btn-sm btn-primary ms-auto text-nowrap"><i class="bi bi-check2-square"></i> 고른 파일 대장에 올리기</button></div>
-  <ul class="list-group list-group-flush small">
-    {% for w in fp.waiting %}<li class="list-group-item py-1"><label class="d-flex gap-2 align-items-center mb-0">
-      <input type="checkbox" class="form-check-input" name="names" value="{{ w.name }}" checked>
-      {% if w.sub %}<span class="badge text-bg-light border"><i class="bi bi-folder"></i> {{ w.sub|replace('/', ' \\ ') }}</span>{% endif %} <span class="fw-semibold">{{ w.file }}</span>
-      <span class="text-muted ms-auto">{{ '%.1f'|format(w.size / 1024 / 1024) ~ 'MB' if w.size >= 1048576 else (w.size // 1024) ~ 'KB' }}</span></label></li>{% endfor %}
-  </ul>
-</form>
-{% endif %}
-<div class="card">
-  <div class="card-header">붙인 서류 <span class="badge text-bg-secondary ms-1">{{ fp.rows|length }}개</span></div>
-  <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
-    <thead><tr><th>파일</th><th>메모</th><th class="num">크기</th><th>올린 때</th><th>올린 사람</th><th></th></tr></thead>
-    <tbody>
-    {% for r in fp.rows %}
-      <tr>
-        <td><a href="/files/get/{{ r.id }}" {% if r.inline %}target="_blank" rel="noopener"{% endif %} class="fw-semibold">
-          <i class="bi {{ 'bi-file-earmark-pdf' if r.mime == 'application/pdf' else ('bi-image' if r.mime.startswith('image/') else 'bi-file-earmark') }}"></i> {{ r.orig_name }}</a>{% if r.sub %} <span class="badge text-bg-light border"><i class="bi bi-folder"></i> {{ r.sub }}</span>{% endif %}</td>
-        <td class="small">{{ r.note or '' }}</td>
-        <td class="num small">{{ '%.1f'|format(r.size / 1024 / 1024) ~ 'MB' if r.size >= 1048576 else (r.size // 1024) ~ 'KB' }}</td>
-        <td class="small text-muted">{{ r.uploaded_at[:16] }}</td><td class="small">{{ r.uploaded_by or '' }}</td>
-        <td class="text-end text-nowrap"><a class="btn btn-sm btn-link p-0 me-2" href="/files/get/{{ r.id }}?dl=1">내려받기</a>
-          <form method="post" action="/files/del/{{ r.id }}" class="d-inline" data-confirm="'{{ r.orig_name }}' 을(를) 지울까요?&#10;&#10;파일은 없애지 않고 보관함의 '_삭제함' 폴더로 옮깁니다.">{% if fp.next %}<input type="hidden" name="next" value="{{ fp.next }}">{% endif %}
-            <button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-trash"></i></button></form></td>
-      </tr>
-    {% else %}<tr><td colspan="6" class="text-center text-muted p-4">아직 붙인 서류가 없습니다</td></tr>{% endfor %}
-    </tbody></table></div>
+{% set _root = fp.folder.split(' \\ ')[-1] %}
+<div class="card fx" data-fx data-root="{{ _root }}">
+  <div class="card-header d-flex flex-wrap align-items-center gap-2">
+    <button type="button" class="btn btn-sm btn-light border" data-fx-up title="위 폴더로" disabled><i class="bi bi-arrow-up"></i></button>
+    <nav class="fx-path" data-fx-path><i class="bi bi-folder2-open text-warning"></i> <span class="text-muted">{{ fp.folder.split(' \\ ')[:-1]|join(' › ') }} ›</span> <a href="#" data-fx-go=""><b>{{ _root }}</b></a></nav>
+    <span class="badge text-bg-secondary">붙인 서류 {{ fp.rows|length }}개</span>
+    <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="보기 방식">
+      <button type="button" class="btn btn-outline-secondary active" data-fx-view="icons" title="큰 아이콘"><i class="bi bi-grid-3x3-gap"></i></button>
+      <button type="button" class="btn btn-outline-secondary" data-fx-view="list" title="자세히"><i class="bi bi-list-ul"></i></button></div>
+  </div>
+  {% if fp.waiting %}
+  <form id="fxAdopt-{{ fp.menu|replace('.', '-') }}-{{ fp.ref_id }}" method="post" action="/files/{{ fp.menu }}/{{ fp.ref_id }}/adopt" class="fx-new d-flex flex-wrap align-items-center gap-2">
+    {% if fp.next %}<input type="hidden" name="next" value="{{ fp.next }}">{% endif %}
+    <span><i class="bi bi-folder-symlink"></i> 폴더에 있는데 대장에 없는 파일 <b>{{ fp.waiting|length }}개</b></span>
+    <span class="help">NAS 폴더(안에 만든 하위 폴더 포함)에 직접 넣어 둔 파일입니다. <span class="badge text-bg-warning">새 파일</span> 표시가 있는 것이며, 그 자리 그대로 대장에 올립니다 (폴더가 두 벌 생기지 않습니다)</span>
+    <button class="btn btn-sm btn-primary ms-auto text-nowrap"><i class="bi bi-check2-square"></i> 고른 파일 대장에 올리기</button>
+  </form>
+  {% endif %}
+  <div class="fx-head"><span>이름</span><span>올린 때</span><span>종류</span><span class="text-end">크기</span><span>메모 · 올린 사람</span><span></span></div>
+  <div class="fx-body fx-icons" data-fx-body>
+    {% for d in fp.folders %}
+    <a href="#" class="fx-item fx-folder" data-fx-go="{{ d.path }}" data-parent="{{ d.parent }}" title="{{ d.name }} (파일 {{ d.count }}개)">
+      <span class="fx-ico"><i class="bi bi-folder-fill"></i>{% if d.new %}<span class="fx-dot" title="새 파일 {{ d.new }}개"></span>{% endif %}</span>
+      <span class="fx-name"><i class="bi bi-folder-fill fx-mini"></i>{{ d.name }}</span><span class="fx-c">{% if d.new %}<span class="badge text-bg-warning">새 파일 {{ d.new }}</span>{% endif %}</span>
+      <span class="fx-c">파일 폴더</span><span class="fx-c text-end">{{ d.count }}개</span><span class="fx-c"></span><span class="fx-c"></span></a>
+    {% endfor %}
+    {% for e in fp.entries %}
+    <div class="fx-item fx-file {{ 'fx-isnew' if e.new }}" data-dir="{{ e.dir }}" title="{{ e.name }}{% if e.note %} — {{ e.note }}{% endif %}">
+      {% if e.new %}
+      <label class="fx-ico"><i class="bi {{ e.icon }} fx-{{ e.tone }}"></i><input type="checkbox" class="form-check-input fx-check" name="names" value="{{ e.path }}" form="fxAdopt-{{ fp.menu|replace('.', '-') }}-{{ fp.ref_id }}" checked></label>
+      <span class="fx-name"><i class="bi {{ e.icon }} fx-{{ e.tone }} fx-mini"></i>{{ e.name }} <span class="badge text-bg-warning">새 파일</span></span>
+      <span class="fx-c text-muted">대장에 없음</span>
+      {% else %}
+      <a class="fx-ico" href="/files/get/{{ e.id }}" {% if e.inline %}target="_blank" rel="noopener"{% endif %}><i class="bi {{ e.icon }} fx-{{ e.tone }}"></i></a>
+      <a class="fx-name" href="/files/get/{{ e.id }}" {% if e.inline %}target="_blank" rel="noopener"{% endif %}><i class="bi {{ e.icon }} fx-{{ e.tone }} fx-mini"></i>{{ e.name }}</a>
+      <span class="fx-c">{{ e.date }}</span>
+      {% endif %}
+      <span class="fx-c">{{ e.kind }}</span>
+      <span class="fx-c text-end">{{ '%.1f'|format(e.size / 1024 / 1024) ~ 'MB' if e.size >= 1048576 else (e.size // 1024) ~ 'KB' }}</span>
+      <span class="fx-c text-truncate">{{ e.note }}{% if e.by %}{{ ' · ' if e.note }}{{ e.by }}{% endif %}</span>
+      <span class="fx-c fx-act text-nowrap">{% if e.id %}<a class="me-2" href="/files/get/{{ e.id }}?dl=1" title="내려받기"><i class="bi bi-download"></i></a>
+        <form method="post" action="/files/del/{{ e.id }}" class="d-inline" data-confirm="'{{ e.name }}' 을(를) 지울까요?&#10;&#10;파일은 없애지 않고 보관함의 '_삭제함' 폴더로 옮깁니다.">{% if fp.next %}<input type="hidden" name="next" value="{{ fp.next }}">{% endif %}
+          <button class="btn btn-sm btn-link text-danger p-0" title="지우기"><i class="bi bi-trash"></i></button></form>{% endif %}</span>
+    </div>
+    {% endfor %}
+    <div class="fx-empty text-muted" data-fx-empty {% if fp.entries or fp.folders %}hidden{% endif %}>이 폴더는 비어 있습니다</div>
+  </div>
+  <div class="card-footer help" data-fx-status>폴더를 누르면 안으로 들어갑니다 · 파일 이름을 누르면 열립니다</div>
 </div>

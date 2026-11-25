@@ -517,3 +517,44 @@ document.querySelectorAll('select[data-search]').forEach((sel) => {
   const form = sel.closest('form');                       // 등록·수정 창을 다시 열 때: 찾던 글자를 지우고 전체 목록에서 값이 잡히게
   if (form) form.addEventListener('reset', () => { box.value = ''; sel.replaceChildren(...all); });
 });
+
+// ── 서류 탐색기: 폴더를 누르면 안으로, 위로 가기, 경로 표시, 큰 아이콘/자세히 보기 ──
+(() => {
+  const esc = (t) => { const d = document.createElement('span'); d.textContent = t; return d.innerHTML; };
+  document.querySelectorAll('[data-fx]').forEach((box) => {
+    const body = box.querySelector('[data-fx-body]'), path = box.querySelector('[data-fx-path]'), up = box.querySelector('[data-fx-up]');
+    const head = box.querySelector('.fx-head'), status = box.querySelector('[data-fx-status]'), empty = box.querySelector('[data-fx-empty]');
+    const prefix = path.querySelector('span') ? path.querySelector('span').outerHTML : '';
+    let cur = '';
+    const show = (dir) => {
+      cur = dir;
+      let folders = 0, files = 0;
+      body.querySelectorAll('.fx-folder').forEach((el) => { el.hidden = el.dataset.parent !== cur; if (!el.hidden) folders++; });
+      body.querySelectorAll('.fx-file').forEach((el) => { el.hidden = el.dataset.dir !== cur; if (!el.hidden) files++; });
+      empty.hidden = folders + files > 0;
+      up.disabled = !cur;
+      const parts = cur ? cur.split('/') : [];
+      let html = '<i class="bi bi-folder2-open text-warning"></i> ' + prefix + ' <a href="#" data-fx-go="">' + (cur ? esc(box.dataset.root) : '<b>' + esc(box.dataset.root) + '</b>') + '</a>';
+      parts.forEach((p, i) => { const to = parts.slice(0, i + 1).join('/'); html += ' › <a href="#" data-fx-go="' + esc(to).replace(/"/g, '&quot;') + '">' + (i === parts.length - 1 ? '<b>' + esc(p) + '</b>' : esc(p)) + '</a>'; });
+      path.innerHTML = html;
+      if (status) status.textContent = '폴더 ' + folders + '개 · 파일 ' + files + '개' + (cur ? '' : ' · 폴더를 누르면 안으로 들어갑니다');
+    };
+    const view = (mode) => {
+      body.classList.toggle('fx-icons', mode !== 'list'); body.classList.toggle('fx-list', mode === 'list');
+      head.classList.toggle('fx-on', mode === 'list');
+      box.querySelectorAll('[data-fx-view]').forEach((b) => b.classList.toggle('active', b.dataset.fxView === mode));
+      try { localStorage.setItem('bms_fx_view', mode); } catch (_) {}
+    };
+    box.addEventListener('click', (e) => {
+      const go = e.target.closest('[data-fx-go]');
+      if (go) { e.preventDefault(); show(go.dataset.fxGo); return; }
+      if (e.target.closest('[data-fx-up]')) { show(cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/')) : ''); return; }
+      const v = e.target.closest('[data-fx-view]');
+      if (v) view(v.dataset.fxView);
+    });
+    let saved = 'icons';
+    try { saved = localStorage.getItem('bms_fx_view') || 'icons'; } catch (_) {}
+    view(saved === 'list' ? 'list' : 'icons');
+    show('');
+  });
+})();

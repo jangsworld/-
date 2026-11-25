@@ -329,6 +329,36 @@ def unregistered(menu: str, ref_id: int) -> list[dict]:
     return out
 
 
+def subdirs(menu: str, ref_id: int) -> list[str]:
+    """대상 폴더 안의 하위 폴더들(대상 폴더 기준 경로, 빈 폴더 포함). 탐색기 화면에서 폴더를 폴더로 보여 주려고."""
+    t = target(menu, ref_id)
+    if not t:
+        return []
+    r = root()
+    full = os.path.normpath(os.path.join(r, folder(menu, t)))
+    if not _inside(r, full) or not os.path.isdir(full):
+        return []
+    skip_top = RESERVED_SUBDIRS.get(menu, set())
+    out = []
+
+    def walk(d: str, prefix: str, depth: int):
+        try:
+            names = sorted(os.listdir(d))
+        except OSError:
+            return
+        for name in names:
+            if len(out) >= 200 or name.startswith((".", "~$", "@")) or (depth == 0 and name in skip_top):
+                continue
+            p = os.path.join(d, name)
+            if os.path.isdir(p):
+                out.append(prefix + name)
+                if depth + 1 < SCAN_DEPTH:
+                    walk(p, prefix + name + "/", depth + 1)
+
+    walk(full, "", 0)
+    return out
+
+
 def adopt(menu: str, ref_id: int, names: list[str], note: str = "") -> tuple[int, list[str]]:
     """폴더(하위 폴더 포함)에 넣어 둔 파일을 옮기지 않고 그 자리 그대로 대장에 올림. (올린 수, 못 올린 이유들)"""
     t = target(menu, ref_id)

@@ -300,3 +300,53 @@ body:has(.form-actions) .toast-container { bottom: 64px !important; }
 /* 상세 화면의 항목-값 표: 긴 값(폴더 경로·메일 주소)이 좁은 화면에서 넘치지 않게 줄바꿈 */
 .table.kv-table th:nth-child(n), .table.kv-table td:nth-child(n) { white-space: normal; overflow-wrap: anywhere; }
 .kv-table th { width: 7.5rem; }
+
+/* ── 서류 탐색기 (윈도우 탐색기처럼: 폴더·파일 아이콘, 큰 아이콘 / 자세히 보기) ── */
+.fx-path { font-size: .88rem; min-width: 0; overflow-wrap: anywhere; }
+.fx-path a { text-decoration: none; color: #1d2b3a; }
+.fx-path a:hover { text-decoration: underline; }
+.fx-new { background: #fff8e1; border-bottom: 1px solid #f3dfa0; padding: .5rem .9rem; font-size: .86rem; }
+.fx-body { padding: .6rem; min-height: 120px; }
+.fx-item { color: #1d2b3a; text-decoration: none; border: 1px solid transparent; border-radius: 6px; }
+.fx-item:hover { background: #eaf3ff; border-color: #c5dcf7; }
+.fx-item[hidden] { display: none !important; }
+.fx-ico { position: relative; display: inline-block; line-height: 1; }
+.fx-folder .fx-ico i { color: #f5b82e; }
+.fx-pdf { color: #d93025; } .fx-img { color: #1a9a8a; } .fx-hwp { color: #2b7de0; } .fx-doc { color: #2b5797; }
+.fx-xls { color: #1e7145; } .fx-ppt { color: #d24726; } .fx-etc { color: #8a94a0; }
+.fx-dot { position: absolute; top: -2px; right: -4px; width: 10px; height: 10px; border-radius: 50%; background: #ffc107; border: 2px solid #fff; }
+.fx-isnew { background: #fffdf3; }
+.fx-name { overflow-wrap: anywhere; }
+a.fx-name { color: #1d2b3a; text-decoration: none; } a.fx-name:hover { text-decoration: underline; }
+.fx-empty { padding: 1.6rem; text-align: center; width: 100%; }
+.fx-head { display: none; }
+/* 큰 아이콘 */
+.fx-icons { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .35rem; }
+.fx-icons .fx-item { width: 118px; padding: .5rem .3rem; display: flex; flex-direction: column; align-items: center; text-align: center; position: relative; }
+.fx-icons .fx-ico i { font-size: 2.7rem; }
+.fx-icons .fx-name { font-size: .78rem; line-height: 1.25; margin-top: .3rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.fx-icons .fx-c { display: none; }
+.fx-icons .fx-act { display: none; position: absolute; top: 2px; right: 4px; background: rgba(255,255,255,.92); border-radius: 4px; padding: 0 .25rem; }
+.fx-icons .fx-item:hover .fx-act, .fx-icons .fx-item:focus-within .fx-act { display: block; }
+.fx-icons .fx-check { position: absolute; left: -6px; top: -4px; }
+/* 자세히 */
+.fx-head.fx-on, .fx-list .fx-item { display: grid; grid-template-columns: minmax(180px, 3fr) 9.5rem 6.5rem 5rem minmax(90px, 2fr) 3.6rem; gap: .6rem; align-items: center; }
+.fx-head.fx-on { padding: .3rem 1.2rem; font-size: .78rem; color: #5b6774; font-weight: 600; background: #f7f9fb; border-bottom: 1px solid #e3e7ed; }
+.fx-list { padding: .3rem .6rem; }
+.fx-list .fx-item { padding: .28rem .6rem; font-size: .86rem; }
+.fx-list .fx-item > .fx-ico { display: none; }
+.fx-mini { display: none; margin-right: .45rem; font-size: 1.05rem; vertical-align: -2px; }
+.fx-list .fx-mini { display: inline-block; }
+.fx-folder .fx-mini { color: #f5b82e; }
+.fx-list .fx-c { font-size: .8rem; color: #5b6774; min-width: 0; }
+.fx-list .fx-isnew { position: relative; padding-left: 2.1rem; }
+.fx-list .fx-isnew > label.fx-ico { display: block; position: absolute; left: .6rem; top: 50%; transform: translateY(-50%); }
+.fx-list .fx-isnew label.fx-ico i { display: none; }
+.fx-list .fx-isnew .fx-check { position: static; margin: 0; display: block; }
+@media (max-width: 700px) {
+  .fx-head.fx-on { display: none; }
+  .fx-list .fx-item { grid-template-columns: 1fr auto; }
+  .fx-list .fx-c { display: none; } .fx-list .fx-c.fx-act { display: block; }
+  .fx-icons .fx-item { width: 31%; }
+  .fx-icons .fx-act { display: block; }
+}

@@ -55,14 +55,58 @@ def _back(menu: str, ref_id: int, msg: str, nxt: str = "") -> RedirectResponse:
     return RedirectResponse(f"/files/{menu}/{ref_id}?msg=" + quote(msg), status_code=303)
 
 
+FILE_LOOK = {      # 확장자 → (아이콘, 색 이름, 종류 이름)  — 탐색기처럼 보이게
+    "pdf": ("bi-file-earmark-pdf-fill", "pdf", "PDF 문서"), "jpg": ("bi-file-earmark-image-fill", "img", "사진"),
+    "jpeg": ("bi-file-earmark-image-fill", "img", "사진"), "png": ("bi-file-earmark-image-fill", "img", "사진"),
+    "webp": ("bi-file-earmark-image-fill", "img", "사진"), "hwp": ("bi-file-earmark-text-fill", "hwp", "한글 문서"),
+    "hwpx": ("bi-file-earmark-text-fill", "hwp", "한글 문서"), "doc": ("bi-file-earmark-word-fill", "doc", "워드 문서"),
+    "docx": ("bi-file-earmark-word-fill", "doc", "워드 문서"), "xls": ("bi-file-earmark-excel-fill", "xls", "엑셀 문서"),
+    "xlsx": ("bi-file-earmark-excel-fill", "xls", "엑셀 문서"), "pptx": ("bi-file-earmark-ppt-fill", "ppt", "파워포인트"),
+}
+
+
+def _explorer(menu: str, ref_id: int, rows: list[dict], waiting: list[dict]) -> dict:
+    """탐색기 화면용: 폴더 목록과 파일 목록(대장에 올린 것 + 폴더에만 있는 새 파일)을 한데 모음."""
+    def look(name: str):
+        return FILE_LOOK.get(name.rsplit(".", 1)[-1].lower() if "." in name else "", ("bi-file-earmark-fill", "etc", "파일"))
+
+    entries = []
+    for r in rows:
+        icon, tone, kind = look(r["orig_name"])
+        entries.append({"dir": r.get("subdir") or "", "name": r["orig_name"], "icon": icon, "tone": tone, "kind": kind, "size": r["size"],
+                        "date": (r.get("uploaded_at") or "")[:16], "by": r.get("uploaded_by") or "", "note": r.get("note") or "",
+                        "id": r["id"], "inline": r["inline"], "new": False})
+    for w in waiting:
+        icon, tone, kind = look(w["file"])
+        entries.append({"dir": w["sub"], "name": w["file"], "icon": icon, "tone": tone, "kind": kind, "size": w["size"], "date": "", "by": "",
+                        "note": "", "id": None, "inline": False, "new": True, "path": w["name"]})
+    entries.sort(key=lambda e: (e["dir"], e["name"].lower()))
+    paths = set()
+    try:
+        paths.update(archive.subdirs(menu, ref_id))
+    except Exception:                                       # noqa: BLE001
+        pass
+    for e in entries:                                       # 파일이 들어 있는 폴더와 그 위 폴더들
+        parts = e["dir"].split("/") if e["dir"] else []
+        for i in range(1, len(parts) + 1):
+            paths.add("/".join(parts[:i]))
+    folders = []
+    for p in sorted(paths):
+        inside = [e for e in entries if e["dir"] == p or e["dir"].startswith(p + "/")]
+        folders.append({"path": p, "name": p.rsplit("/", 1)[-1], "parent": p.rsplit("/", 1)[0] if "/" in p else "",
+                        "count": len(inside), "new": sum(1 for e in inside if e["new"])})
+    return {"entries": entries, "folders": folders}
+
+
 def panel(menu: str, ref_id: int, nxt: str = "") -> dict | None:
     """상세 화면 안에 넣는 '서류' 묶음(올리기·대장에 없는 파일·붙인 서류)에 필요한 값."""
     t = archive.target(menu, ref_id)
     if not t:
         return None
     archive.ensure_quiet(menu, ref_id)                      # 폴더를 먼저 준비 (손으로 만든 비슷한 폴더가 있으면 그 폴더를 씀)
-    return {"menu": menu, "ref_id": ref_id, "rows": archive.items(menu, ref_id), "info": archive.MENUS[menu],
-            "waiting": archive.unregistered(menu, ref_id), "next": nxt,
+    rows, waiting = archive.items(menu, ref_id), archive.unregistered(menu, ref_id)
+    return {"menu": menu, "ref_id": ref_id, "rows": rows, "info": archive.MENUS[menu],
+            "waiting": waiting, "next": nxt, **_explorer(menu, ref_id, rows, waiting),
             "folder": " \\ ".join(archive.folder(menu, t).replace("/", "\\").split("\\")), "max_mb": archive.MAX_MB}
 
 
